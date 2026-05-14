@@ -51,12 +51,13 @@ Status values:
   - Revert Postgres notes from `backend/README.md`.
   - If a local Docker volume was created, the user may remove it with `docker compose down -v`.
 - Verification notes:
-  - `docker compose up -d postgres` was attempted, but Docker reported that it could not connect to the Docker daemon at `unix:///Users/wulingyun/.docker/run/docker.sock`.
+  - `git status --short --branch` showed `## main...origin/main` before verification.
+  - `docker compose up -d postgres` completed successfully and started `portfolio-options-agent-postgres`.
+  - `docker compose ps postgres` reported `Up ... (healthy)` with port `5432` published.
+  - `docker inspect --format='{{json .State.Health}}' portfolio-options-agent-postgres` reported `"Status":"healthy"` and `pg_isready` output showed Postgres accepting connections.
   - `docker compose --env-file .env.example config` passed, confirming the Compose file renders with safe placeholder values.
-  - `pytest` from the ambient Python environment failed before collecting project tests because of a broken global `pydantic_core`/pytest plugin architecture mismatch.
-  - `cd backend && ./.venv/bin/python -m pytest` passed: 1 test passed.
-  - To finish Docker verification after starting Docker Desktop, run `docker compose up -d postgres` and `docker compose ps postgres` from the repository root.
-- Status: `blocked`
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 1 test passed in 0.44s.
+- Status: `done`
 
 ### P1-T2 - Backend Config Loading
 
@@ -84,7 +85,13 @@ Status values:
 - Rollback notes:
   - Remove config module and tests.
   - Revert dependency changes if any.
-- Status: `not_started`
+- Verification notes:
+  - Added dependency-free typed settings in `backend/app/core/config.py`.
+  - Added placeholder-only `APP_NAME` and `APP_ENV` entries to `.env.example`.
+  - Added monkeypatch tests for safe defaults and environment overrides.
+  - No `.env` file was read, printed, or modified.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 3 tests passed in 0.32s.
+- Status: `done`
 
 ### P1-T3 - SQLAlchemy Session Setup
 
@@ -111,7 +118,13 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove session/base modules and dependency changes.
-- Status: `not_started`
+- Verification notes:
+  - Added SQLAlchemy, psycopg, and Alembic dependencies to `backend/requirements.txt`.
+  - Added empty declarative metadata in `backend/app/db/base.py`; no business models or tables were added.
+  - Added engine/session factory and FastAPI DB dependency helper in `backend/app/db/session.py`.
+  - Added tests proving metadata starts empty and an explicit SQLite URL can create a working engine.
+  - `cd backend && ./.venv/bin/python -m pytest` passed with local Postgres access: 6 tests passed in 0.68s.
+- Status: `done`
 
 ### P1-T4 - Alembic Setup
 
@@ -138,7 +151,14 @@ Status values:
   - `cd backend && alembic upgrade head`
 - Rollback notes:
   - Remove Alembic files and dependency changes.
-- Status: `not_started`
+- Verification notes:
+  - Added Alembic config in `backend/alembic.ini`.
+  - Added Alembic environment wiring in `backend/alembic/env.py` using `get_settings().database_url` and `Base.metadata`.
+  - Added `backend/alembic/versions/.gitkeep`; no migration revisions or business tables were created.
+  - Added backend README migration notes.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed against local Postgres.
+  - `alembic downgrade -1` was not run because no migration revisions exist yet; downgrade will be tested once the first schema migration is created.
+- Status: `done`
 
 ### P1-T5 - DB Connection Test
 
@@ -162,7 +182,13 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove DB connection test and README note.
-- Status: `not_started`
+- Verification notes:
+  - Added `backend/tests/test_db_connection.py`.
+  - The DB connection test uses the configured database URL and skips cleanly when Postgres is unavailable.
+  - In the sandboxed test run, local TCP access was blocked and the DB connection test skipped with an explicit reason.
+  - With local Postgres access allowed, `cd backend && ./.venv/bin/python -m pytest tests/test_db_connection.py -rs` passed: 1 test passed in 0.40s.
+  - With local Postgres access allowed, `cd backend && ./.venv/bin/python -m pytest` passed: 6 tests passed in 0.68s.
+- Status: `done`
 
 ## Phase 2 - Users and Accounts
 
@@ -190,7 +216,17 @@ Status values:
   - `cd backend && alembic upgrade head`
 - Rollback notes:
   - Downgrade migration or remove generated migration/model.
-- Status: `not_started`
+- Verification notes:
+  - Added `backend/app/models/user.py` with UUID primary key, display name, optional email, auth provider, active flag, timestamps, and soft delete timestamp.
+  - Imported `User` in `backend/app/db/base.py` so Alembic can see the model metadata.
+  - Added migration `backend/alembic/versions/0001_create_users.py`.
+  - Added `backend/tests/test_user_model.py`.
+  - Updated the DB metadata test now that the first business model exists.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 9 tests passed in 0.62s.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed, applying `0001_create_users`.
+  - `cd backend && ./.venv/bin/alembic current` reported `0001_create_users (head)`.
+  - Local Postgres metadata query confirmed `public.users` exists.
+- Status: `done`
 
 ### P2-T2 - Accounts Table
 
@@ -216,7 +252,14 @@ Status values:
   - `cd backend && alembic upgrade head`
 - Rollback notes:
   - Downgrade migration or remove account model/migration.
-- Status: `not_started`
+- Verification notes:
+  - Added `backend/app/models/account.py` with UUID primary key, `user_id` foreign key to `users.id`, broker name, account type, display name, base currency, manual-entry flag, timestamps, and soft delete timestamp.
+  - Added account ownership and soft-delete indexes in `backend/alembic/versions/0002_create_accounts.py`.
+  - Updated model metadata imports so Alembic can discover both `User` and `Account` without circular imports.
+  - Added `backend/tests/test_account_model.py`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed, applying `0002_create_accounts`.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 20 tests passed in 0.27s.
+- Status: `done`
 
 ### P2-T3 - First Migration
 
@@ -240,7 +283,13 @@ Status values:
   - `cd backend && alembic upgrade head`
 - Rollback notes:
   - Revert migration file and associated models if needed.
-- Status: `not_started`
+- Verification notes:
+  - Reviewed `0002_create_accounts` for primary key, user foreign key, account fields, timestamps, and indexes.
+  - `cd backend && ./.venv/bin/alembic current` reported `0002_create_accounts (head)`.
+  - `cd backend && ./.venv/bin/alembic downgrade 0001_create_users` passed.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed.
+  - Final `cd backend && ./.venv/bin/alembic current` reported `0002_create_accounts (head)`.
+- Status: `done`
 
 ### P2-T4 - User/Account Schemas
 
@@ -264,7 +313,13 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove schema files and tests.
-- Status: `not_started`
+- Verification notes:
+  - Added `backend/app/schemas/user.py` with create/read schemas and email validation.
+  - Added `backend/app/schemas/account.py` with create/update/read schemas, account type validation, and base-currency normalization.
+  - Added `email-validator` to `backend/requirements.txt` for Pydantic `EmailStr`.
+  - Added `backend/tests/test_user_account_schemas.py`.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 20 tests passed in 0.27s.
+- Status: `done`
 
 ### P2-T5 - User/Account Routes
 
@@ -291,7 +346,14 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove routes/services and route registration.
-- Status: `not_started`
+- Verification notes:
+  - Added user service and routes for `POST /users`, `GET /users`, and `GET /users/{user_id}`.
+  - Added account service and routes for `POST /users/{user_id}/accounts`, `GET /users/{user_id}/accounts`, `GET /accounts/{account_id}`, `PATCH /accounts/{account_id}`, and `DELETE /accounts/{account_id}`.
+  - Registered the route modules in `backend/app/main.py`.
+  - Account deletion is implemented as a soft delete for now.
+  - Missing users/accounts return `404`; account list excludes soft-deleted accounts.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 20 tests passed in 0.27s.
+- Status: `done`
 
 ### P2-T6 - Users/Accounts Tests
 
@@ -315,7 +377,13 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove test files and fixtures.
-- Status: `not_started`
+- Verification notes:
+  - Added DB-backed pytest fixtures in `backend/tests/conftest.py` that clean users/accounts before and after each API test.
+  - Added API tests for user create/list/get and missing-user behavior.
+  - Added API tests for account create/list/get/update/delete, missing owner behavior, and missing account behavior.
+  - Fixed the synthetic API test email to use a valid placeholder domain accepted by `EmailStr`.
+  - Final test run: `cd backend && ./.venv/bin/python -m pytest` passed with 20 tests passed in 0.27s.
+- Status: `done`
 
 ## Phase 3 - Portfolio Core
 

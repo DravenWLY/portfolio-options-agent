@@ -2,3 +2,7 @@ fastapi
 uvicorn
 pytest
 httpx
+sqlalchemy
+psycopg[binary]
+alembic
+email-validator

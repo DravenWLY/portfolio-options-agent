@@ -38,6 +38,18 @@ docker compose down -v
 
 The backend does not connect to PostgreSQL yet. SQLAlchemy and Alembic will be added in later implementation tasks.
 
+## Database Migrations
+
+Alembic is configured, but no business tables exist yet.
+
+From the `backend/` directory:
+
+```bash
+alembic upgrade head
+```
+
+There are no migration revisions yet, so downgrade has nothing to apply until the first schema migration is created.
+
 ## Test
 
 ```bash

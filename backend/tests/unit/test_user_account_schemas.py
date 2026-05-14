@@ -5,6 +5,9 @@ from app.schemas.account import AccountCreate, AccountUpdate
 from app.schemas.user import UserCreate
 
 
+pytestmark = pytest.mark.unit
+
+
 def test_user_create_schema_accepts_optional_email() -> None:
     payload = UserCreate(display_name="Demo User")
 

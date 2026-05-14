@@ -1,11 +1,11 @@
+import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+
+pytestmark = [pytest.mark.api, pytest.mark.smoke]
 
 
-def test_health() -> None:
-    client = TestClient(app)
-
+def test_health(client: TestClient) -> None:
     response = client.get("/health")
 
     assert response.status_code == 200

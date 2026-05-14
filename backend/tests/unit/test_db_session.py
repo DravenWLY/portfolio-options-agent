@@ -1,7 +1,11 @@
+import pytest
 from sqlalchemy import text
 
 from app.db.base import Base
 from app.db.session import create_db_engine
+
+
+pytestmark = pytest.mark.unit
 
 
 def test_base_metadata_is_available() -> None:

@@ -17,9 +17,10 @@ This is not financial advice. This project must not execute trades, store broker
 | Local dev | Docker Compose Postgres + backend venv + frontend dev server | Professional, reproducible, and resume-friendly. |
 | Background jobs | Simple database job table first; RQ/Celery later | The MVP needs resumable runs and visible state more than distributed scale. |
 | Streaming | Server-Sent Events for agent progress first; WebSocket later if bidirectional market streaming is needed | SSE is simpler, works well for progress timelines, and avoids overbuilding. |
-| Market data MVP | Provider-agnostic interfaces, ManualProvider, YFinanceProvider for cheap fallback, one options-capable provider adapter behind config | Do not couple Fidelity account management to quote data. Every quote must carry provider, timestamp, and freshness. |
+| Market data layer | Provider-agnostic interfaces, ManualProvider, YFinanceProvider for cheap fallback, one options-capable provider adapter behind config after the broker sync foundation | Do not couple Fidelity account management to quote data. Every quote must carry provider, timestamp, and freshness. |
+| Broker portfolio sync | SnapTrade read-only as the primary broker portfolio sync path; manual input and Fidelity CSV import remain backup/fallback paths; long-term Akoya/Fidelity Access style permissioned data; Plaid Investments as fallback where coverage fits | Fidelity does not provide a simple public retail API. Broker holdings/cash freshness must be tracked separately from market quote freshness. No scraping, broker passwords, MFA bypass, or trading/order endpoints. |
 | TradingAgents integration | Optional dependency + adapter fallback. Local editable install for development; pinned Git/package extra for public users; no source copy, no submodule. | Keeps upstream updates possible, public install clean, deterministic app features usable without TradingAgents. |
-| MVP | Multi-user/multi-account manual portfolio + deterministic options/risk analytics + report/agent run history + quote freshness | Small enough to build, strong enough to demonstrate backend, fintech, data modeling, and AI app engineering skill. |
+| MVP | Multi-user/multi-account SnapTrade-first portfolio sync + normalized portfolio storage + broker freshness + manual/CSV fallback + deterministic analytics | Small enough to build, strong enough to demonstrate backend, fintech, data modeling, and AI app engineering skill. |
 
 ## System Overview
 
@@ -30,7 +31,7 @@ flowchart TD
   Jobs["Background Job Runner / Agent Orchestrator"]
   Core["Deterministic Portfolio / Options / Risk Engine"]
   MD["Provider-Agnostic Market Data Layer"]
-  Broker["Manual / CSV / Future Read-Only Broker Import Layer"]
+  Broker["SnapTrade-First Read-Only Broker Sync Layer / Manual CSV Fallback"]
   TA["Optional TradingAgents Adapter"]
   DB["PostgreSQL"]
   Cache["Redis or DB-backed Cache"]
@@ -541,6 +542,9 @@ Global conventions:
 | `trades` | Manual trade journal | `id`; `account_id`; `symbol`; `option_contract_id NULL`; `trade_type`; `side`; `quantity`; `price`; `fees`; `trade_time`; `notes`; `source`; timestamps | Index `(account_id, trade_time DESC)`; idempotency key unique per import | No auto-execution. Trades are records of manual actions/imports. |
 | `transaction_imports` | Batch import sessions | `id`; `account_id`; `broker_import_file_id`; `status`; `started_at`; `completed_at`; `summary JSONB`; timestamps | Index account/status | Distinguish file upload from parsed transaction batch. |
 | `broker_import_files` | Uploaded broker file metadata | `id`; `account_id`; `broker_name`; `file_name`; `file_type`; `storage_uri`; `sha256`; `status`; `validation_errors JSONB`; timestamps; soft delete | Unique `(account_id, sha256)`; index account/status | Raw files should live in private storage, not git. |
+| `broker_connections` | User-permissioned broker/aggregator connection metadata | `id`; `user_id -> users.id`; `provider`; `broker_name`; `provider_connection_id`; `connection_status`; `sync_status`; `data_freshness_status`; `last_successful_sync_at`; `last_attempted_sync_at`; `consent_expires_at`; `secret_ref`; `scopes TEXT[]`; `raw_metadata JSONB`; timestamps; soft delete | Unique `(provider, provider_connection_id)`; index `(user_id, provider, connection_status)` | Store secret references only. Never store Fidelity usernames/passwords. Use OAuth/Fidelity Access/user-permissioned flows only. |
+| `broker_accounts` | Provider account mapping for synced broker accounts | `id`; `broker_connection_id -> broker_connections.id`; `account_id -> accounts.id NULL`; `provider_account_id`; `display_name`; `account_type`; `base_currency`; `sync_status`; `data_freshness_status`; `last_successful_sync_at`; `raw_payload JSONB`; timestamps; soft delete | Unique `(broker_connection_id, provider_account_id)`; index mapped `account_id` | Keeps provider identity separate from internal account identity; supports remapping and manual accounts. |
+| `broker_sync_runs` | Individual broker sync attempts | `id`; `broker_connection_id`; `broker_account_id NULL`; `trigger`; `status`; `started_at`; `completed_at`; `provider_request_id`; `accounts_count`; `positions_count`; `transactions_count`; `error JSONB`; `summary JSONB`; timestamps | Index connection/time; index status | Status examples: queued, running, succeeded, failed, partially_succeeded, cancelled. Needed for observability and retries. |
 | `watchlists` | User/account watchlists | `id`; `user_id`; `account_id NULL`; `name`; timestamps; soft delete | Unique `(user_id, name)` active | Watchlists can be account-specific or user-level. |
 | `watchlist_items` | Symbols/contracts in watchlists | `id`; `watchlist_id`; `symbol`; `option_contract_id NULL`; `notes`; timestamps | Unique `(watchlist_id, symbol, option_contract_id)` | Later add sort order and tags. |
 | `portfolio_snapshots` | Traceable account summary snapshots | `id`; `account_id`; `as_of`; `input_hash`; `summary JSONB`; `calculation_version`; timestamps | Index `(account_id, as_of DESC)`; unique `(account_id, input_hash)` | Store deterministic calculation outputs used by reports. |
@@ -879,17 +883,37 @@ Streaming policy:
 
 ## Section K - Fidelity and Broker Data Import
 
-Do not assume Fidelity has a public retail API for individual developers. Version 1 should be manual-first and CSV-ready.
+Do not assume Fidelity has a public retail API for individual developers. The current priority is SnapTrade-first broker portfolio sync, with manual input and Fidelity CSV import retained as backup/fallback paths.
 
-### Version 1
+### Broker Portfolio Sync vs Market Data
 
+Broker portfolio sync and market data are separate subsystems.
+
+Broker portfolio sync answers: "What does the broker currently say this user owns and how much cash/buying power does the account have?"
+
+Market data answers: "What are the current quotes, option-chain values, IV, Greeks, and quote timestamps for securities and contracts?"
+
+These should not share provider assumptions. A Fidelity account should first attempt read-only SnapTrade sync, then fall back to manual entry or CSV import if API sync is unavailable. Future permissioned paths may include Akoya/Fidelity Access or Plaid Investments. Quotes may come from Tradier, Alpaca, Polygon, ORATS, ThetaData, yfinance, or a manual quote provider.
+
+The UI must show both freshness states:
+
+- Broker sync freshness: whether account holdings, option positions, cash, and transactions are current.
+- Market quote freshness: whether stock/option quotes and Greeks are live, delayed, stale, or EOD-only.
+
+If broker positions are stale, the UI must warn: market prices may be current, but holdings, cash, collateral, and option positions may not be current. A trade candidate must not be labeled immediately actionable when either broker sync freshness or quote freshness is stale.
+
+### Version 1 Priority
+
+- SnapTrade read-only broker portfolio sync as the primary path.
 - Manual account creation.
 - Manual cash balance input.
 - Manual stock position input.
 - Manual option position input.
 - CSV import for positions if Fidelity exports it.
 - CSV import for transactions if Fidelity exports it.
-- Manual corrections after import.
+- Manual corrections after sync/import.
+
+Manual entry and CSV import remain important for fallback, testing, demos, and reconciliation. They are no longer the main integration path.
 
 ### Future Read-Only Integrations
 
@@ -899,6 +923,134 @@ Do not assume Fidelity has a public retail API for individual developers. Versio
 - Other OAuth/user-permissioned APIs.
 
 All broker integrations should be read-only unless the product is explicitly redesigned after legal/compliance review. This project should not store Fidelity username/password, scrape Fidelity, automate browser login, bypass MFA, depend on unofficial APIs, or place orders.
+
+### Provider Evaluation
+
+| Provider/path | Strengths | Limitations | Recommended role |
+| --- | --- | --- | --- |
+| SnapTrade | Designed for brokerage account connections; supports balances, positions, account history, and option positions where broker support exists; connection/account IDs map naturally to app records; may support manual refresh and different data freshness plans | Paid/commercial dependency; data freshness varies by plan/broker; includes trading APIs that this app must not call; SnapTrade `userSecret` must be stored securely | Primary broker portfolio sync path. Use read-only adapter methods only. Use OAuth/Fidelity Access style connections when available. Do not expose secrets to frontend or call trading/order endpoints. |
+| Manual input + Fidelity CSV import | Safest fallback; no credentials; user remains in control; compatible with public GitHub; easy to explain and test with synthetic files | Not real-time; CSV formats may change; requires reconciliation and manual corrections | Backup/fallback path when SnapTrade sync is unavailable, stale, unsupported, or intentionally disabled. Also useful for tests and demos. |
+| Akoya / Fidelity Access style permissioned data | Strongest long-term safety posture for Fidelity-style data sharing; user-permissioned, not scraped; FDX-aligned; avoids third-party password sharing | Business access, contracts, coverage, and pricing may be less convenient for a student/open-source MVP; implementation may be enterprise-oriented | Long-term/enterprise-safe direction, especially for Fidelity support and future hosted product discussions. |
+| Plaid Investments | Broad investments product for holdings, securities, and investment transactions; familiar developer tooling; useful fallback for institutions where coverage is good | Investment data is often updated overnight; on-demand refresh may be add-on/unsupported at some institutions; options-position fidelity must be verified for this product's needs | Secondary fallback adapter if account/holding/transaction coverage is acceptable. Do not treat as live options-position source without verification. |
+
+Main recommendation:
+
+1. Primary path: `SnapTradeAdapter` in read-only mode only.
+2. Fallback path: manual input plus Fidelity CSV import.
+3. Long-term: Akoya/Fidelity Access style user-permissioned data for enterprise-safe Fidelity support.
+4. Secondary fallback: Plaid Investments if coverage is acceptable for target users and option-position detail is sufficient.
+
+### BrokerPortfolioProvider Interface
+
+The broker portfolio provider is read-only and account-state-oriented.
+
+```python
+class BrokerPortfolioProvider:
+    def list_connections(self, user_ref: str) -> list[BrokerConnection]: ...
+    def list_accounts(self, connection_ref: str) -> list[BrokerAccountSnapshot]: ...
+    def get_balances(self, provider_account_id: str) -> BrokerBalanceSnapshot: ...
+    def get_positions(self, provider_account_id: str) -> list[BrokerPositionSnapshot]: ...
+    def get_option_positions(self, provider_account_id: str) -> list[BrokerOptionPositionSnapshot]: ...
+    def get_transactions(
+        self,
+        provider_account_id: str,
+        start: date,
+        end: date,
+    ) -> list[BrokerTransactionSnapshot]: ...
+    def refresh_account(self, provider_account_id: str) -> BrokerSyncRun: ...
+```
+
+Every broker sync result must include:
+
+- provider
+- broker name/institution name
+- provider connection ID
+- provider account ID
+- broker sync timestamp
+- received timestamp
+- connection status
+- sync status
+- data freshness status
+- raw payload reference or JSONB payload where safe
+- error/warning details where applicable
+
+Suggested freshness values:
+
+- `fresh`: recently synced and provider reports data is current enough for display.
+- `cached`: SnapTrade or another provider returned cached/daily data.
+- `delayed`: provider explicitly reports delayed data.
+- `stale`: outside local freshness policy.
+- `unknown`: provider did not supply enough metadata.
+- `error`: last sync failed.
+- `reauth_required`: user must reconnect or renew consent.
+
+### MarketDataProvider Contrast
+
+The market data provider remains quote/chain-oriented:
+
+```python
+class MarketDataProvider:
+    def get_stock_quote(self, symbol: str) -> StockQuote: ...
+    def get_option_snapshot(self, option_symbol: str) -> OptionQuote: ...
+    def get_option_chain(self, symbol: str, expiration: date) -> OptionChain: ...
+```
+
+Market data records carry quote timestamp and quote freshness. Broker sync records carry account-state timestamp and broker sync freshness. The final risk report should show both when making portfolio-aware option decisions.
+
+### SnapTradeAdapter Design
+
+Do not implement this adapter in documentation/planning tasks. When implementation resumes, SnapTrade should be the first broker sync adapter target, after the internal normalized storage primitives exist.
+
+Design constraints:
+
+- Read-only use only.
+- Use SnapTrade connection/OAuth/Fidelity Access style flows where supported.
+- Never store Fidelity username/password.
+- Never bypass MFA.
+- Never call order placement or trading endpoints.
+- Never expose SnapTrade client secrets, user secrets, or provider tokens to frontend code.
+- Treat SnapTrade `userSecret` as sensitive. Store it only in a secret manager or encrypted local secret store; the database stores `secret_ref` or `encrypted_secret_ref` only.
+- Never store SnapTrade `userSecret` plaintext in normal database columns, logs, frontend state, report content, generated artifacts, examples, or test fixtures.
+- Store provider connection IDs and provider account IDs for reconciliation.
+- Track whether returned data is real-time, cached, daily, stale, or unknown.
+- Support manual refresh only when provider plan/broker supports it.
+- Treat option positions as first-class data, not as generic stock holdings.
+
+Proposed mapping:
+
+| SnapTrade concept | Internal record |
+| --- | --- |
+| SnapTrade user ID | Internal user ID or stable provider alias; never use mutable email as provider identity. |
+| SnapTrade userSecret | Secret manager entry referenced by `broker_connections.secret_ref`. |
+| Connection | `broker_connections.provider_connection_id`. |
+| Brokerage account | `broker_accounts.provider_account_id`, optionally mapped to `accounts.id`. |
+| Balances | `cash_balances` snapshots and broker sync metadata. |
+| Positions | `stock_positions` / future normalized holdings snapshots. |
+| Option positions | `option_positions` linked to normalized `option_contracts` where possible. |
+| Activities/transactions | `trades` and future transaction tables after user review/reconciliation. |
+
+`SnapTradeAdapter` should expose methods through `BrokerPortfolioProvider` and be tested with mocked HTTP responses. Real SnapTrade sandbox/integration tests must be marked `external` and excluded from default tests.
+
+### Broker Sync Database Design
+
+Do not add these tables until the sync feature is approved for implementation. The schema design should reserve these concepts:
+
+- `broker_connections`: provider, broker, connection status, sync status, data freshness status, last successful sync, provider connection ID, consent expiration, scopes, and secret reference.
+- `broker_accounts`: provider account ID, mapped internal account ID, account type/name, broker sync status, data freshness status, and raw provider payload.
+- `broker_sync_runs`: sync attempts, trigger source, status, counts, provider request ID, error payload, and summary.
+- `provider_credentials_metadata`: existing secret-reference table concept remains for API keys and provider credentials metadata only.
+
+Important fields:
+
+- `last_successful_sync_at`
+- `last_attempted_sync_at`
+- `broker_sync_status`
+- `data_freshness_status`
+- `provider_account_id`
+- `provider_connection_id`
+- `secret_ref` or `encrypted_secret_ref`
+
+Raw credentials must never be stored in database rows, source code, examples, test fixtures, logs, frontend state, or report artifacts.
 
 ### BrokerAdapter Interface
 
@@ -938,8 +1090,9 @@ The app should work when LLMs are disabled. Agent workflows enrich deterministic
 | Load user/account context | DB query | No | No | Yes | Yes | Yes |
 | Load portfolio/open positions | DB query | No | No | Yes | Yes | Yes |
 | Load target/risk rules | DB query | No | No | Yes | Yes | Yes |
-| Load market data | Provider call/cache | Yes | No | Yes | Yes | Yes |
-| Load option chain | Provider call/cache | Yes | No | Yes | Yes | Yes |
+| Load broker portfolio sync data | SnapTrade/mock/cache | Yes | No | Yes | Yes | Yes |
+| Load market data | Provider call/cache | Yes | No | Yes | Yes | Phase 10 |
+| Load option chain | Provider call/cache | Yes | No | Yes | Yes | Phase 10 |
 | Portfolio analytics | Pure Python | No | No | Yes by input hash | Yes | Yes |
 | Option screener | Pure Python | No | No | Yes by chain hash | Yes | Yes |
 | Risk checks | Pure Python | No | No | Yes | Yes | Yes |
@@ -947,7 +1100,7 @@ The app should work when LLMs are disabled. Agent workflows enrich deterministic
 | Technical analyst | Python/LLM optional | Maybe | Optional | Yes | Yes | Later |
 | Options analyst narrative | LLM over structured data | No | Yes | Yes by input hash | Yes | Later |
 | Portfolio risk manager narrative | LLM over deterministic results | No | Yes | Yes | Yes | Later |
-| TradingAgents stock research | TradingAgents adapter | Yes | Yes | Partly | Yes | Phase 6 |
+| TradingAgents stock research | TradingAgents adapter | Yes | Yes | Partly | Yes | Later |
 | Final markdown report | Template + optional LLM | No | Optional | Yes | Yes | Yes |
 | Persist outputs | DB write | No | No | N/A | Yes | Yes |
 | Stream progress | SSE | No | No | N/A | N/A | Yes |
@@ -1062,7 +1215,7 @@ Market data UI:
 - stale warning
 - selected option-chain snapshot metadata
 
-MVP should focus on accounts, positions, option positions, allocation, run analysis, report history, report deletion, and quote freshness.
+MVP should focus on accounts, SnapTrade-backed broker portfolio sync, internal positions, option positions, broker sync freshness, portfolio summary, and clear fallback paths. Market quote freshness remains separate and comes after the SnapTrade sync foundation.
 
 ## Section O - Backend API Design
 
@@ -1093,27 +1246,34 @@ Auth assumption for MVP: local user selector with `user_id` in requests or devel
 | `POST /accounts/{account_id}/screen-covered-calls` | filters/provider | candidates/report | positions/options/quotes | MVP |
 | `GET /accounts/{account_id}/assignment-scenario` | query open positions or ids | scenario result | read/write scenarios optional | MVP |
 | `GET /accounts/{account_id}/open-options-review` | none | open option review | positions/contracts/quotes | MVP |
-| `GET /market/quotes/{symbol}` | none | `StockQuote` | cache/stock_quotes | MVP |
-| `GET /market/quotes?symbols=AAPL,MSFT` | none | `StockQuote[]` | cache/stock_quotes | MVP |
-| `GET /market/bars/{symbol}` | interval/range query | bars | market cache | Later MVP |
-| `GET /options/{symbol}/expirations` | provider query | expirations | cache | MVP |
-| `GET /options/{symbol}/chain` | expiration/provider query | option chain | chain cache/quotes/contracts | MVP |
-| `GET /options/contracts/{contract_id}/snapshot` | provider query | option quote | option quotes | MVP |
-| `GET /market/provider-status` | none | provider status list | credentials metadata/cache | MVP |
-| `POST /accounts/{account_id}/imports/fidelity-csv` | multipart file/import type | import preview or accepted import | import files/imports | Phase 8 |
-| `GET /accounts/{account_id}/imports` | none | imports | imports/files | Phase 8 |
-| `GET /imports/{import_id}` | none | import detail | imports/files | Phase 8 |
-| `POST /agent-runs` | run type/account/symbols/budget | `AgentRun` | runs/thread/messages | Phase 5 |
-| `GET /agent-runs/{run_id}` | none | run detail | runs/steps | Phase 5 |
-| `GET /agent-runs/{run_id}/stream` | SSE | event stream | runs/steps/messages | Phase 5 |
-| `POST /agent-runs/{run_id}/cancel` | none | status | runs/audit | Phase 5 |
-| `POST /agent-runs/{run_id}/resume` | none | status | runs/steps | Phase 6 |
-| `GET /reports` | filters | thread list | report_threads | Phase 5 |
-| `GET /reports/{thread_id}` | none | thread/messages/artifacts | reports/messages | Phase 5 |
-| `DELETE /reports/{thread_id}` | none | soft delete status | reports/messages/artifacts/audit | Phase 5 |
-| `POST /reports/{thread_id}/restore` | none | restored thread | reports/messages/artifacts/audit | Phase 5 |
-| `DELETE /reports/{thread_id}/permanent` | none | purge status | reports/messages/artifacts/steps | Phase 5 |
-| `GET /reports/{thread_id}/export/markdown` | none | markdown file/stream | reports/messages/artifacts | Phase 5 |
+| `POST /broker-sync/snaptrade/users` | user/account scope | provider user metadata | broker connections/secret refs | Phase 6 |
+| `POST /broker-sync/snaptrade/connection-portal` | user/provider connection request | portal URL and safe metadata | broker connections | Phase 6 |
+| `GET /users/{user_id}/broker-connections` | none | connection list/status/freshness | broker connections | Phase 6 |
+| `GET /broker-connections/{connection_id}/accounts` | none | broker account mappings | broker accounts | Phase 6 |
+| `POST /broker-accounts/{broker_account_id}/sync` | optional refresh mode | sync run | broker sync runs/internal portfolio tables | Phase 6 |
+| `GET /broker-sync-runs/{sync_run_id}` | none | sync status/counts/sanitized errors | broker sync runs | Phase 6 |
+| `GET /accounts/{account_id}/broker-freshness` | none | broker sync freshness | broker accounts/sync runs | Phase 8 |
+| `GET /market/quotes/{symbol}` | none | `StockQuote` | cache/stock_quotes | Phase 10 |
+| `GET /market/quotes?symbols=AAPL,MSFT` | none | `StockQuote[]` | cache/stock_quotes | Phase 10 |
+| `GET /market/bars/{symbol}` | interval/range query | bars | market cache | Phase 10 |
+| `GET /options/{symbol}/expirations` | provider query | expirations | cache | Phase 10 |
+| `GET /options/{symbol}/chain` | expiration/provider query | option chain | chain cache/quotes/contracts | Phase 10 |
+| `GET /options/contracts/{contract_id}/snapshot` | provider query | option quote | option quotes | Phase 10 |
+| `GET /market/provider-status` | none | provider status list | credentials metadata/cache | Phase 10 |
+| `POST /accounts/{account_id}/imports/fidelity-csv` | multipart file/import type | import preview or accepted import | import files/imports | Phase 9 |
+| `GET /accounts/{account_id}/imports` | none | imports | imports/files | Phase 9 |
+| `GET /imports/{import_id}` | none | import detail | imports/files | Phase 9 |
+| `POST /agent-runs` | run type/account/symbols/budget | `AgentRun` | runs/thread/messages | Later |
+| `GET /agent-runs/{run_id}` | none | run detail | runs/steps | Later |
+| `GET /agent-runs/{run_id}/stream` | SSE | event stream | runs/steps/messages | Later |
+| `POST /agent-runs/{run_id}/cancel` | none | status | runs/audit | Later |
+| `POST /agent-runs/{run_id}/resume` | none | status | runs/steps | Later |
+| `GET /reports` | filters | thread list | report_threads | Later |
+| `GET /reports/{thread_id}` | none | thread/messages/artifacts | reports/messages | Later |
+| `DELETE /reports/{thread_id}` | none | soft delete status | reports/messages/artifacts/audit | Later |
+| `POST /reports/{thread_id}/restore` | none | restored thread | reports/messages/artifacts/audit | Later |
+| `DELETE /reports/{thread_id}/permanent` | none | purge status | reports/messages/artifacts/steps | Later |
+| `GET /reports/{thread_id}/export/markdown` | none | markdown file/stream | reports/messages/artifacts | Later |
 | `GET /settings` | user/account query | settings | account settings/provider metadata | MVP |
 | `PATCH /settings` | settings patch | settings | account settings/audit | MVP |
 | `POST /api-keys/test` | provider/secret_ref or env key name | test result | provider metadata | Later MVP |
@@ -1299,10 +1459,14 @@ Smallest professional MVP:
 - React/Vite frontend.
 - Local user selector instead of public auth.
 - Multiple users and accounts.
-- Manual portfolio input.
+- SnapTrade read-only broker portfolio sync as the primary account data path.
+- Manual portfolio input as fallback.
+- Fidelity CSV import as backup when API sync is unavailable.
 - Cash balances.
 - Stock positions.
 - Option positions.
+- Broker sync status and data freshness status.
+- Broker sync stale/cached/unknown warnings.
 - Target allocation bands.
 - Cash reserve tracking.
 - Option collateral tracking.
@@ -1311,19 +1475,20 @@ Smallest professional MVP:
 - Covered-call eligibility checker.
 - Assignment scenario analysis.
 - Account-level risk report.
-- Quote freshness status.
-- Simple market data provider interface.
-- ManualProvider plus one low-cost provider adapter.
-- Report history.
-- Agent run history.
-- Delete/restore/permanent delete report behavior.
-- Markdown report output.
+- Quote freshness status after the broker sync foundation.
+- Simple market data provider interface after the broker sync foundation.
+- ManualProvider plus one low-cost market data provider adapter after the broker sync foundation.
+- Report history after the SnapTrade-first portfolio MVP.
+- Agent run history after the SnapTrade-first portfolio MVP.
+- Delete/restore/permanent delete report behavior after report history.
+- Markdown report output after report history.
 - No automatic trading.
 
 Explicitly not in MVP:
 
-- Real Fidelity API integration.
+- Direct Fidelity login/API integration.
 - Automatic trade execution.
+- SnapTrade trading/order endpoints.
 - Public SaaS auth.
 - Payment/subscription system.
 - Advanced tax optimization.
@@ -1388,20 +1553,21 @@ Tests:
 
 - Unit health test, DB connection test, migration up/down smoke test.
 
-### Phase 2 - Portfolio/Account Core
+### Phase 2 - Users and Accounts
 
 Goals:
 
-- Users/accounts/cash/stock/option positions.
-- Target allocations.
-- Portfolio summary API.
+- Users and accounts.
+- Local account ownership boundaries.
+- Safe API/schema foundation.
 
 Files:
 
 - `backend/app/models/*`
 - `backend/app/schemas/*`
 - `backend/app/api/routes/*`
-- `backend/app/services/portfolio/*`
+- `backend/app/services/users.py`
+- `backend/app/services/accounts.py`
 
 Risks:
 
@@ -1409,175 +1575,236 @@ Risks:
 
 Acceptance:
 
-- Create user/account, enter positions, fetch portfolio summary.
+- Create/list/get users and accounts with synthetic tests.
 
 Tests:
 
 - API tests for CRUD and ownership checks.
 
-### Phase 3 - Options/Risk Engine
+### Phase 3 - Internal Portfolio Storage Primitives
 
 Goals:
 
-- Deterministic option formulas.
-- CSP screener.
-- Covered-call eligibility.
-- Assignment scenario.
-- Collateral/free-cash logic.
+- Cash balances.
+- Stock/ETF positions.
+- Option contracts.
+- Option positions.
+- Internal portfolio summary.
+- Storage that can receive SnapTrade, manual, or CSV fallback data.
 
 Files:
 
-- `backend/app/services/options/*`
-- `backend/app/services/risk/*`
-- `backend/tests/services/*`
+- `backend/app/models/*`
+- `backend/app/schemas/*`
+- `backend/app/services/portfolio/*`
+- `backend/app/api/routes/portfolio.py`
 
 Risks:
 
-- Formula ambiguity.
+- Coupling storage too tightly to one provider.
 
 Acceptance:
 
-- Known fixtures produce expected calculations.
+- Internal normalized records support SnapTrade sync, manual entry, and CSV fallback.
 
 Tests:
 
-- Formula unit tests, scenario tests, risk rule tests.
+- API/model/schema/service tests with synthetic data.
 
-### Phase 4 - Market Data Layer
+### Phase 4 - Broker Sync Foundation
 
 Goals:
 
-- Provider interfaces.
-- Quote freshness model.
-- Manual provider and one real adapter.
-- Cache policy.
+- Broker connections.
+- Broker accounts.
+- Broker sync runs.
+- Secret-reference metadata.
+- Connection/sync/freshness statuses.
+- Broker sync interfaces.
+
+Files:
+
+- `backend/app/models/broker_connection.py`
+- `backend/app/models/broker_account.py`
+- `backend/app/models/broker_sync_run.py`
+- `backend/app/services/broker_import/*`
+
+Risks:
+
+- Accidentally storing provider secrets or coupling broker sync to market data.
+
+Acceptance:
+
+- Broker sync metadata can represent SnapTrade connections without plaintext secrets.
+
+Tests:
+
+- Model/schema/interface tests; no network or real credentials.
+
+### Phase 5 - SnapTrade Read-Only Adapter, Mock-First
+
+Goals:
+
+- BrokerPortfolioProvider interface.
+- SnapTradeAdapter skeleton.
+- Environment variable names only.
+- Exceptions and response models.
+- Mocked tests for register user, connection portal URL, accounts, balances, positions, and option positions.
+
+Files:
+
+- `backend/app/services/broker_import/providers/*`
+- `backend/tests/adapters/*`
+- `.env.example`
+
+Risks:
+
+- Accidentally calling trading/order endpoints or requiring real SnapTrade credentials in default tests.
+
+Acceptance:
+
+- SnapTrade adapter behavior is mocked, read-only, and secret-safe.
+
+Tests:
+
+- Mocked adapter tests; external tests skipped by default.
+
+### Phase 6 - SnapTrade Connection Flow Backend
+
+Goals:
+
+- Register/create SnapTrade user through backend.
+- Generate connection portal URL.
+- List broker connections.
+- List broker accounts.
+- Sync account data.
+- Inspect sync run status.
+
+Files:
+
+- `backend/app/api/routes/broker_sync.py`
+- `backend/app/services/broker_import/*`
+- `backend/tests/api/test_broker_sync*.py`
+
+Risks:
+
+- Leaking provider secrets to frontend.
+
+Acceptance:
+
+- Backend endpoints use mocked SnapTrade calls and never expose secrets.
+
+Tests:
+
+- Mocked API tests only.
+
+### Phase 7 - SnapTrade Portfolio Normalization
+
+Goals:
+
+- Map balances to `cash_balances`.
+- Map stock/ETF holdings to `stock_positions`.
+- Map option holdings to `option_contracts` and `option_positions`.
+- Preserve safe raw payloads.
+- Reconcile duplicates.
+
+Files:
+
+- `backend/app/services/broker_import/normalization/*`
+- `backend/app/services/broker_import/reconciliation.py`
+
+Risks:
+
+- Incorrect mapping of option positions or unsafe raw payload persistence.
+
+Acceptance:
+
+- Synthetic mocked SnapTrade payloads normalize into internal tables idempotently.
+
+Tests:
+
+- Synthetic mocked normalization tests.
+
+### Phase 8 - Portfolio Dashboard Backend from Synced Data
+
+Goals:
+
+- Portfolio summary from internal tables.
+- Broker sync freshness endpoint.
+- Stale/cached/unknown data warnings.
+- No market data coupling.
+
+Files:
+
+- `backend/app/services/portfolio/*`
+- `backend/app/api/routes/portfolio.py`
+- `backend/app/api/routes/broker_sync.py`
+
+Risks:
+
+- Misleading users when broker holdings are stale but market quotes are current.
+
+Acceptance:
+
+- Dashboard backend can show synced portfolio state and broker freshness warnings.
+
+Tests:
+
+- API/service tests with synthetic synced data.
+
+### Phase 9 - Manual Input and CSV Fallback
+
+Goals:
+
+- Keep manual entry available.
+- Add simple CSV import backup.
+- Use synthetic fixtures only.
+- Avoid blocking SnapTrade progress.
+
+Files:
+
+- `backend/app/api/routes/portfolio.py`
+- `backend/app/api/routes/imports.py`
+- `backend/app/services/broker_import/fidelity_csv.py`
+
+Risks:
+
+- CSV formats vary and fallback work can distract from SnapTrade-first sync.
+
+Acceptance:
+
+- Manual and CSV fallback use the same internal storage primitives.
+
+Tests:
+
+- Synthetic fallback API/parser tests.
+
+### Phase 10 - Market Data Layer
+
+Goals:
+
+- MarketDataProvider.
+- OptionDataProvider.
+- Quote freshness.
+- Manual provider.
+- Low-cost fallback provider.
 
 Files:
 
 - `backend/app/services/market_data/*`
-- `backend/app/models/market_data.py`
+- `backend/tests/services/market_data/*`
 
 Risks:
 
-- Provider licensing and API changes.
+- Confusing broker sync freshness with quote freshness.
 
 Acceptance:
 
-- Quotes/chains include provider/timestamp/freshness.
+- Stock quotes, option quotes, option chains, IV, Greeks, and quote freshness remain separate from broker holdings/cash sync.
 
 Tests:
 
-- Mock provider tests, stale quote tests, fallback tests.
-
-### Phase 5 - Reports and Agent Runs
-
-Goals:
-
-- Report threads/messages.
-- Agent runs/steps.
-- SSE progress.
-- Markdown report viewer.
-- Delete/restore/purge.
-
-Files:
-
-- `backend/app/services/reports/*`
-- `backend/app/services/agents/*`
-- `backend/app/api/routes/reports.py`
-- `backend/app/api/routes/agent_runs.py`
-
-Risks:
-
-- Deletion semantics.
-
-Acceptance:
-
-- Run deterministic report, view history/detail, delete/restore/export.
-
-Tests:
-
-- Report lifecycle API tests, SSE smoke test.
-
-### Phase 6 - TradingAgents Integration
-
-Goals:
-
-- Optional adapter.
-- Missing dependency fallback.
-- Parse outputs.
-- Cost/rate-limit handling.
-
-Files:
-
-- `backend/app/services/tradingagents_adapter/*`
-- optional dependency config
-
-Risks:
-
-- Upstream API changes.
-
-Acceptance:
-
-- App works without TradingAgents; adapter works when installed.
-
-Tests:
-
-- Mocked adapter tests, optional integration test.
-
-### Phase 7 - Frontend Dashboard
-
-Goals:
-
-- Account dashboard.
-- Allocation page.
-- Options pages.
-- Agent monitor.
-- Report history.
-- Market provider status.
-
-Files:
-
-- `frontend/src/*`
-
-Risks:
-
-- Overbuilding UI.
-
-Acceptance:
-
-- End-to-end synthetic workflow from account setup to report view.
-
-Tests:
-
-- Component tests and Playwright smoke tests.
-
-### Phase 8 - Import and Polish
-
-Goals:
-
-- Fidelity CSV import.
-- Demo data.
-- README screenshots.
-- Architecture diagram.
-- Broader tests.
-
-Files:
-
-- `backend/app/services/broker_import/*`
-- `examples/*`
-- `docs/*`
-
-Risks:
-
-- CSV formats vary.
-
-Acceptance:
-
-- Synthetic CSV import preview and confirm workflow.
-
-Tests:
-
-- Parser fixture tests, duplicate detection tests.
+- Mock provider tests, quote freshness tests, stale quote tests.
 
 ## Section U - First 10 Concrete Implementation Tasks
 
@@ -1585,16 +1812,16 @@ Do not start these until this design is reviewed.
 
 | # | Task | Why it matters | Files | Expected result | Test |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Add backend project config | Move beyond ad hoc requirements | `backend/pyproject.toml` or requirements update | Consistent dependencies and tooling | `pytest` still passes |
-| 2 | Add Docker Compose Postgres | Stable local database | `docker-compose.yml`, `.env.example` | `docker compose up postgres` works | DB health command |
-| 3 | Add SQLAlchemy session/settings | Database foundation | `backend/app/core/config.py`, `backend/app/db/session.py` | Backend can connect to Postgres | DB connection test |
-| 4 | Initialize Alembic | Schema evolution | `backend/alembic/*`, `alembic.ini` | Empty migration system works | `alembic upgrade head` |
-| 5 | Create initial user/account/cash/position models | Core product data | `backend/app/models/*` | Tables for MVP entities | Migration test |
-| 6 | Add user/account APIs | First app workflow | `backend/app/api/routes/users.py`, `accounts.py` | CRUD local users/accounts | API tests |
-| 7 | Add manual portfolio APIs | Manual-first data entry | portfolio routes/schemas/services | Add cash, stock, option positions | API tests |
-| 8 | Add deterministic portfolio summary service | First value-producing core | `services/portfolio/summary.py` | Total value, cash categories, allocations | Unit tests with synthetic fixtures |
-| 9 | Add option formula module | Prevent LLM metric invention | `services/options/formulas.py` | ROI, collateral, breakeven, spread, capture | Formula unit tests |
-| 10 | Add report thread schema/API | Durable AI-app history foundation | reports models/routes/services | Create/list/view/delete report threads | Report lifecycle tests |
+| 1 | Finish internal stock position storage | SnapTrade/manual/CSV need normalized holdings storage | `backend/app/models/stock_position.py`, schemas, migration | Account-scoped stock/ETF positions | Model/API tests |
+| 2 | Add option contract storage | SnapTrade option positions need normalized contract identity | `backend/app/models/option_contract.py`, schemas, migration | OCC-style contracts resolved idempotently | Model/schema tests |
+| 3 | Add option position storage | Broker sync must preserve short/long option holdings | `backend/app/models/option_position.py`, schemas, migration | Account option positions linked to contracts | Model/API tests |
+| 4 | Add broker connection metadata | SnapTrade needs safe connection tracking | `broker_connections` model/schema/migration | Connection/status/freshness metadata without secrets | Migration/model tests |
+| 5 | Add broker account mapping | Provider accounts must map to internal accounts | `broker_accounts` model/schema/migration | Provider account IDs mapped safely | Migration/model tests |
+| 6 | Add broker sync run tracking | Sync attempts need observability and retry history | `broker_sync_runs` model/schema/migration | Sync status, timestamps, counts, sanitized errors | Migration/model tests |
+| 7 | Add secret reference metadata | SnapTrade `userSecret` must not be stored plaintext | `provider_credentials_metadata` or secret-ref model | Database stores only `secret_ref` / `encrypted_secret_ref` | Secret safety tests |
+| 8 | Add BrokerPortfolioProvider interface | Keep broker sync separate from market data | provider interface/models | Accounts, balances, positions, option positions, freshness | Mocked contract tests |
+| 9 | Add SnapTradeAdapter skeleton | Primary broker sync path starts read-only and mock-first | SnapTrade provider module | Read-only methods only, no trading/order endpoints | Mocked adapter tests |
+| 10 | Add SnapTrade connection flow API | Backend owns registration and connection portal generation | broker sync routes/services | Mocked register user and portal URL flow | Mocked API tests |
 
 ## License and Third-Party Notices
 
@@ -1659,7 +1886,10 @@ External provider references reviewed in May 2026:
 - [Cboe U.S. options multicast top specification](https://www.cboe.com/document/tech-spec/document/technical-specifications/cboe-titanium-u.s.-options-multicast-top-specification)
 - [Alpha Vantage API documentation](https://www.alphavantage.co/documentation/)
 - [Plaid Investments API](https://plaid.com/docs/api/products/investments/)
+- [Plaid Investments overview](https://plaid.com/docs/investments/)
 - [SnapTrade account data](https://docs.snaptrade.com/docs/account-data)
+- [SnapTrade list accounts and data freshness notes](https://docs.snaptrade.com/reference/Account%20Information/AccountInformation_listUserAccounts)
 - [SnapTrade option positions endpoint](https://docs.snaptrade.com/reference/Options/Options_listOptionHoldings)
 - [Akoya Accounts and Investments API](https://akoya.com/products/investments)
+- [Fidelity Access data security](https://www.fidelity.com/security/fidelity-access-data-security)
 - [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)

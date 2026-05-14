@@ -1,7 +1,11 @@
+import pytest
 from uuid import UUID
 
 from app.db.base import Base
 from app.models.user import User
+
+
+pytestmark = pytest.mark.unit
 
 
 def test_user_model_is_registered_with_base_metadata() -> None:

@@ -1,4 +1,9 @@
+import pytest
+
 from app.core.config import DEFAULT_DATABASE_URL, Settings, get_settings
+
+
+pytestmark = pytest.mark.unit
 
 
 def test_get_settings_uses_safe_defaults(monkeypatch) -> None:

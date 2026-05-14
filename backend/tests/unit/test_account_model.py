@@ -1,5 +1,10 @@
+import pytest
+
 from app.db.base import Base
 from app.models.account import Account
+
+
+pytestmark = pytest.mark.unit
 
 
 def test_account_model_is_registered_with_base_metadata() -> None:

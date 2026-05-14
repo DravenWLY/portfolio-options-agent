@@ -385,7 +385,7 @@ Status values:
   - Final test run: `cd backend && ./.venv/bin/python -m pytest` passed with 20 tests passed in 0.27s.
 - Status: `done`
 
-## Phase 3 - Portfolio Core
+## Phase 3 - Internal Portfolio Storage Primitives
 
 ### P3-T1 - Cash Balances
 
@@ -410,84 +410,105 @@ Status values:
   - `cd backend && alembic upgrade head`
 - Rollback notes:
   - Downgrade migration and remove cash modules.
-- Status: `not_started`
+- Verification notes:
+  - Added immutable cash snapshot model `backend/app/models/cash_balance.py`.
+  - Added `backend/alembic/versions/0003_create_cash_balances.py`.
+  - Added `backend/app/schemas/cash_balance.py`.
+  - Added `backend/app/services/portfolio/cash_balances.py`.
+  - Added portfolio cash routes in `backend/app/api/routes/portfolio.py` and registered them in `backend/app/main.py`.
+  - Added API tests for create/latest cash balance flows and missing-account/missing-snapshot cases.
+  - Added unit tests for the cash balance model and schema validation.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed.
+  - `cd backend && ./.venv/bin/alembic downgrade 0002_create_accounts` passed.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed.
+  - `cd backend && ./.venv/bin/alembic current` reported `0003_create_cash_balances (head)`.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 30 tests passed in 0.36s.
+- Status: `done`
 
 ### P3-T2 - Stock Positions
 
 - Task id: `P3-T2`
-- Title: stock positions
-- Objective: Add manually entered stock/ETF positions.
+- Title: stock_positions
+- Objective: Add normalized account-scoped stock/ETF position storage that can receive data from SnapTrade, manual entry, or CSV fallback.
 - Files expected to change:
   - `backend/app/models/stock_position.py`
   - `backend/app/schemas/stock_position.py`
   - `backend/app/api/routes/portfolio.py`
   - `backend/alembic/versions/*`
+  - `backend/tests/unit/test_stock_position_model.py`
   - `docs/implementation_plan.md`
 - Dependencies: `P3-T1`
 - Implementation steps:
-  1. Add stock position model.
-  2. Add create/update/delete endpoints.
-  3. Keep data account-scoped.
+  1. Add stock/ETF position model with account ownership, symbol, quantity, cost basis fields, source, as-of timestamp, and safe raw metadata placeholder if needed.
+  2. Add schema validation using synthetic examples only.
+  3. Keep the model source-agnostic so SnapTrade, manual entry, and CSV import can all populate it later.
 - Acceptance criteria:
-  - Positions can be managed without broker integration.
+  - Stock/ETF positions are normalized and account-scoped.
+  - No broker-specific assumptions are hardcoded into the storage model.
 - Tests to run:
   - `cd backend && pytest`
+  - `cd backend && alembic upgrade head`
 - Rollback notes:
-  - Remove model/schema/routes and migration.
+  - Downgrade migration and remove stock position model/schema/tests.
 - Status: `not_started`
 
 ### P3-T3 - Option Contracts
 
 - Task id: `P3-T3`
-- Title: option contracts
-- Objective: Normalize option contract identity for positions and quotes.
+- Title: option_contracts
+- Objective: Normalize option contract identity for SnapTrade option holdings, manual entry, CSV fallback, and future market quotes.
 - Files expected to change:
   - `backend/app/models/option_contract.py`
   - `backend/app/schemas/option_contract.py`
   - `backend/alembic/versions/*`
+  - `backend/tests/unit/test_option_contract_model.py`
   - `docs/implementation_plan.md`
 - Dependencies: `P3-T2`
 - Implementation steps:
-  1. Add OCC symbol, underlying, expiration, strike, type, multiplier.
+  1. Add OCC symbol, underlying, expiration, strike, option type, style, and multiplier.
   2. Add uniqueness on OCC symbol.
-  3. Add validation tests for basic contract fields.
+  3. Add validation tests for synthetic contract fields.
 - Acceptance criteria:
-  - Option contracts can be created or resolved idempotently.
+  - Option contracts can be resolved idempotently from provider or manual data.
 - Tests to run:
   - `cd backend && pytest`
+  - `cd backend && alembic upgrade head`
 - Rollback notes:
-  - Remove contract model/schema/migration.
+  - Downgrade migration and remove contract model/schema/tests.
 - Status: `not_started`
 
 ### P3-T4 - Option Positions
 
 - Task id: `P3-T4`
-- Title: option positions
-- Objective: Add account-scoped option positions linked to option contracts.
+- Title: option_positions
+- Objective: Add normalized account-scoped option position storage linked to option contracts.
 - Files expected to change:
   - `backend/app/models/option_position.py`
   - `backend/app/schemas/option_position.py`
   - `backend/app/api/routes/portfolio.py`
   - `backend/alembic/versions/*`
+  - `backend/tests/unit/test_option_position_model.py`
   - `docs/implementation_plan.md`
 - Dependencies: `P3-T3`
 - Implementation steps:
-  1. Add option position model.
-  2. Support long/short quantity and status.
-  3. Add API for manual option position entry.
+  1. Add option position model linked to account and option contract.
+  2. Support long/short quantity, average price, status, source, as-of timestamp, and safe raw metadata placeholder if needed.
+  3. Keep data normalized for SnapTrade, manual, and CSV sources.
 - Acceptance criteria:
   - Option positions belong to accounts and contracts.
+  - Short and long positions can be represented without broker-specific coupling.
 - Tests to run:
   - `cd backend && pytest`
+  - `cd backend && alembic upgrade head`
 - Rollback notes:
-  - Remove option position model/schema/API and migration.
+  - Downgrade migration and remove option position model/schema/tests.
 - Status: `not_started`
 
-### P3-T5 - Portfolio Summary Service
+### P3-T5 - Portfolio Summary
 
 - Task id: `P3-T5`
-- Title: portfolio summary service
-- Objective: Compute a deterministic account portfolio summary from cash, stocks, and options.
+- Title: portfolio summary
+- Objective: Compute a deterministic account portfolio summary from internal cash, stock, and option storage.
 - Files expected to change:
   - `backend/app/services/portfolio/summary.py`
   - `backend/app/schemas/portfolio.py`
@@ -496,703 +517,985 @@ Status values:
   - `docs/implementation_plan.md`
 - Dependencies: `P3-T4`
 - Implementation steps:
-  1. Define input/output dataclasses or schemas.
-  2. Compute total cash, position values, and basic exposure fields.
-  3. Avoid market data dependency until Phase 6.
+  1. Define input/output schemas for internal normalized portfolio records.
+  2. Compute total cash, stock notional, option counts, and basic exposure placeholders.
+  3. Avoid broker sync and market data dependencies in this phase.
 - Acceptance criteria:
-  - Synthetic fixtures produce expected summary values.
+  - Synthetic internal records produce expected summary values.
+  - Summary works regardless of whether data came from SnapTrade, manual input, or CSV fallback.
 - Tests to run:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove summary service, route changes, and tests.
 - Status: `not_started`
 
-### P3-T6 - Portfolio Core Tests
+### P3-T6 - Portfolio Storage Tests
 
 - Task id: `P3-T6`
-- Title: portfolio core tests
-- Objective: Ensure cash, stock, option, and summary flows work together.
+- Title: portfolio storage tests
+- Objective: Ensure cash, stock, option contract, option position, and summary flows work together using synthetic data.
 - Files expected to change:
   - `backend/tests/api/test_portfolio.py`
   - `backend/tests/services/test_portfolio_summary.py`
   - `docs/implementation_plan.md`
 - Dependencies: `P3-T5`
 - Implementation steps:
-  1. Add end-to-end API tests for manual portfolio entry.
+  1. Add end-to-end API tests for internal portfolio storage.
   2. Add service tests for summary calculations.
   3. Validate account ownership boundaries.
 - Acceptance criteria:
-  - Portfolio core is covered by API and service tests.
+  - Internal portfolio primitives are ready for SnapTrade normalization.
 - Tests to run:
   - `cd backend && pytest`
 - Rollback notes:
-  - Remove portfolio tests and fixtures.
+  - Remove portfolio storage tests and fixtures.
 - Status: `not_started`
 
-## Phase 4 - Deterministic Option/Risk Engine
+## Phase 4 - Broker Sync Foundation
 
-### P4-T1 - Option Formulas
+### P4-T1 - broker_connections
 
 - Task id: `P4-T1`
-- Title: option formulas
-- Objective: Add deterministic option formula utilities for premium yield, annualized ROI, breakeven, spread, downside buffer, and premium capture.
+- Title: broker_connections
+- Objective: Add connection metadata for read-only broker sync providers, starting with SnapTrade.
 - Files expected to change:
-  - `backend/app/services/options/formulas.py`
-  - `backend/tests/services/options/test_formulas.py`
-  - `docs/implementation_plan.md`
-- Dependencies: Phase 3 complete.
-- Implementation steps:
-  1. Add pure functions using `Decimal` where appropriate.
-  2. Document assumptions in docstrings.
-  3. Add synthetic tests with known expected outputs.
-- Acceptance criteria:
-  - LLMs are not involved in metric calculation.
-- Tests to run:
-  - `cd backend && pytest`
-- Rollback notes:
-  - Remove formulas module and tests.
-- Status: `not_started`
-
-### P4-T2 - Collateral/Free Cash Calculation
-
-- Task id: `P4-T2`
-- Title: collateral/free cash calculation
-- Objective: Calculate short-put collateral usage and free cash after collateral.
-- Files expected to change:
-  - `backend/app/services/risk/collateral.py`
-  - `backend/tests/services/risk/test_collateral.py`
-  - `docs/implementation_plan.md`
-- Dependencies: `P4-T1`
-- Implementation steps:
-  1. Identify short put positions.
-  2. Calculate required collateral from strike, multiplier, and contracts.
-  3. Calculate free cash after collateral.
-- Acceptance criteria:
-  - Synthetic short-put examples produce expected collateral values.
-- Tests to run:
-  - `cd backend && pytest`
-- Rollback notes:
-  - Remove collateral module and tests.
-- Status: `not_started`
-
-### P4-T3 - Covered Call Eligibility
-
-- Task id: `P4-T3`
-- Title: covered call eligibility
-- Objective: Determine whether stock positions support covered calls.
-- Files expected to change:
-  - `backend/app/services/options/covered_calls.py`
-  - `backend/tests/services/options/test_covered_calls.py`
-  - `docs/implementation_plan.md`
-- Dependencies: `P4-T1`
-- Implementation steps:
-  1. Count eligible 100-share lots by symbol.
-  2. Account for existing short calls if modeled.
-  3. Return deterministic eligibility and warnings.
-- Acceptance criteria:
-  - Eligibility is computed without LLM involvement.
-- Tests to run:
-  - `cd backend && pytest`
-- Rollback notes:
-  - Remove covered-call module and tests.
-- Status: `not_started`
-
-### P4-T4 - Assignment Scenario
-
-- Task id: `P4-T4`
-- Title: assignment scenario
-- Objective: Project cash and allocation after hypothetical short-put assignment.
-- Files expected to change:
-  - `backend/app/services/risk/assignment.py`
-  - `backend/app/schemas/assignment.py`
-  - `backend/tests/services/risk/test_assignment.py`
-  - `docs/implementation_plan.md`
-- Dependencies: `P4-T2`
-- Implementation steps:
-  1. Convert selected short puts into hypothetical stock positions.
-  2. Reduce cash by assignment exposure.
-  3. Return projected cash and exposures.
-- Acceptance criteria:
-  - Assignment projections are repeatable and traceable.
-- Tests to run:
-  - `cd backend && pytest`
-- Rollback notes:
-  - Remove assignment module, schema, and tests.
-- Status: `not_started`
-
-### P4-T5 - Deterministic Option/Risk Tests
-
-- Task id: `P4-T5`
-- Title: deterministic option/risk tests
-- Objective: Add combined tests covering formulas, collateral, covered calls, and assignment scenarios.
-- Files expected to change:
-  - `backend/tests/services/options/*`
-  - `backend/tests/services/risk/*`
-  - `docs/implementation_plan.md`
-- Dependencies: `P4-T4`
-- Implementation steps:
-  1. Add synthetic fixtures.
-  2. Add regression tests for edge cases.
-  3. Ensure no real account values appear in fixtures.
-- Acceptance criteria:
-  - Deterministic engine behavior is covered before exposing routes.
-- Tests to run:
-  - `cd backend && pytest`
-- Rollback notes:
-  - Remove combined tests/fixtures.
-- Status: `not_started`
-
-## Phase 5 - Reports and Agent Run History
-
-### P5-T1 - report_threads
-
-- Task id: `P5-T1`
-- Title: report_threads
-- Objective: Add database model for chat-like report thread containers.
-- Files expected to change:
-  - `backend/app/models/report_thread.py`
-  - `backend/app/schemas/report_thread.py`
+  - `backend/app/models/broker_connection.py`
+  - `backend/app/schemas/broker_connection.py`
   - `backend/alembic/versions/*`
+  - `backend/tests/unit/test_broker_connection_model.py`
   - `docs/implementation_plan.md`
-- Dependencies: Phase 2 complete.
+- Dependencies: Phase 3 storage primitives complete.
 - Implementation steps:
-  1. Add user/account-linked report thread model.
-  2. Add status, title, tags, timestamps, and soft delete.
-  3. Generate migration.
+  1. Add user-scoped broker connection model.
+  2. Store provider, broker name, provider connection ID, status fields, consent metadata, timestamps, and `secret_ref`.
+  3. Do not store plaintext provider secrets.
 - Acceptance criteria:
-  - Report threads are account/user-scoped and soft deletable.
+  - Broker connection metadata supports SnapTrade without exposing credentials.
 - Tests to run:
   - `cd backend && pytest`
   - `cd backend && alembic upgrade head`
 - Rollback notes:
-  - Downgrade migration and remove model/schema.
+  - Downgrade migration and remove broker connection model/schema/tests.
 - Status: `not_started`
 
-### P5-T2 - report_messages
+### P4-T2 - broker_accounts
 
-- Task id: `P5-T2`
-- Title: report_messages
-- Objective: Add ordered report messages for user input, system events, agent output, errors, and final reports.
+- Task id: `P4-T2`
+- Title: broker_accounts
+- Objective: Map provider accounts to internal accounts without coupling internal IDs to SnapTrade IDs.
 - Files expected to change:
-  - `backend/app/models/report_message.py`
-  - `backend/app/schemas/report_message.py`
+  - `backend/app/models/broker_account.py`
+  - `backend/app/schemas/broker_account.py`
   - `backend/alembic/versions/*`
+  - `backend/tests/unit/test_broker_account_model.py`
   - `docs/implementation_plan.md`
-- Dependencies: `P5-T1`
+- Dependencies: `P4-T1`
 - Implementation steps:
-  1. Add thread-linked message model.
-  2. Include message type, markdown content, JSON payload, sequence, and soft delete.
-  3. Add ordering constraints.
+  1. Add provider account ID, broker connection ID, optional internal account ID, display name, account type, and freshness fields.
+  2. Enforce uniqueness by broker connection and provider account ID.
+  3. Preserve safe provider metadata in JSONB only where useful.
 - Acceptance criteria:
-  - Messages are ordered and tied to one thread.
+  - A SnapTrade brokerage account can be mapped to an internal account record.
 - Tests to run:
   - `cd backend && pytest`
+  - `cd backend && alembic upgrade head`
 - Rollback notes:
-  - Remove message model/schema/migration.
+  - Downgrade migration and remove broker account model/schema/tests.
 - Status: `not_started`
 
-### P5-T3 - agent_runs
+### P4-T3 - broker_sync_runs
 
-- Task id: `P5-T3`
-- Title: agent_runs
-- Objective: Add run metadata for deterministic and LLM-backed analyses.
+- Task id: `P4-T3`
+- Title: broker_sync_runs
+- Objective: Track individual broker sync attempts for observability, retries, and stale-data warnings.
 - Files expected to change:
-  - `backend/app/models/agent_run.py`
-  - `backend/app/schemas/agent_run.py`
+  - `backend/app/models/broker_sync_run.py`
+  - `backend/app/schemas/broker_sync_run.py`
   - `backend/alembic/versions/*`
+  - `backend/tests/unit/test_broker_sync_run_model.py`
   - `docs/implementation_plan.md`
-- Dependencies: `P5-T1`
+- Dependencies: `P4-T2`
 - Implementation steps:
-  1. Add run type, status, budgets, provider/model summary, and error fields.
-  2. Link run to user/account/thread where available.
-  3. Generate migration.
+  1. Add sync run model with trigger, status, started/completed timestamps, counts, provider request ID, summary, and error JSONB.
+  2. Link runs to broker connection and optionally broker account.
+  3. Avoid storing sensitive raw credentials or account secrets.
 - Acceptance criteria:
-  - Runs can represent queued/running/completed/failed states.
+  - Sync runs can represent succeeded, failed, partial, and cancelled syncs.
 - Tests to run:
   - `cd backend && pytest`
+  - `cd backend && alembic upgrade head`
 - Rollback notes:
-  - Remove run model/schema/migration.
+  - Downgrade migration and remove sync run model/schema/tests.
 - Status: `not_started`
 
-### P5-T4 - agent_steps
+### P4-T4 - Provider Credentials Metadata
 
-- Task id: `P5-T4`
-- Title: agent_steps
-- Objective: Add per-step trace records for analysis progress, retries, token usage, and errors.
+- Task id: `P4-T4`
+- Title: provider_credentials_metadata or secret reference model
+- Objective: Store provider credential metadata and secret references without storing plaintext secrets.
 - Files expected to change:
-  - `backend/app/models/agent_step.py`
-  - `backend/app/schemas/agent_step.py`
+  - `backend/app/models/provider_credentials_metadata.py`
+  - `backend/app/schemas/provider_credentials_metadata.py`
   - `backend/alembic/versions/*`
+  - `backend/tests/unit/test_provider_credentials_metadata_model.py`
   - `docs/implementation_plan.md`
-- Dependencies: `P5-T3`
+- Dependencies: `P4-T1`
 - Implementation steps:
-  1. Add run-linked ordered steps.
-  2. Include input/output JSON snapshots, status, timing, usage, and error data.
-  3. Add uniqueness on run/step order.
+  1. Add provider, credential name, scopes, status, and `secret_ref` or `encrypted_secret_ref`.
+  2. Ensure model and docs forbid plaintext SnapTrade `userSecret` storage.
+  3. Keep frontend responses from exposing secret references unless explicitly safe.
 - Acceptance criteria:
-  - Agent run progress can be reconstructed from stored steps.
+  - Provider credential metadata can reference secrets safely.
+- Tests to run:
+  - `cd backend && pytest`
+  - `cd backend && alembic upgrade head`
+- Rollback notes:
+  - Downgrade migration and remove credential metadata model/schema/tests.
+- Status: `not_started`
+
+### P4-T5 - Broker Sync Status Enums
+
+- Task id: `P4-T5`
+- Title: connection_status, sync_status, data_freshness_status enums
+- Objective: Standardize broker connection and freshness status values used by SnapTrade and future providers.
+- Files expected to change:
+  - `backend/app/services/broker_import/statuses.py`
+  - `backend/app/schemas/broker_sync_status.py`
+  - `backend/tests/unit/test_broker_sync_statuses.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P4-T3`
+- Implementation steps:
+  1. Define connection status values such as connected, disconnected, reauth_required, error, unknown.
+  2. Define sync status values such as idle, queued, running, succeeded, failed, partially_succeeded, cancelled.
+  3. Define data freshness values such as fresh, cached, stale, unknown, error, reauth_required.
+- Acceptance criteria:
+  - Status values are centralized and test-covered.
 - Tests to run:
   - `cd backend && pytest`
 - Rollback notes:
-  - Remove step model/schema/migration.
+  - Remove status modules and tests.
 - Status: `not_started`
 
-### P5-T5 - Markdown Report Output
+### P4-T6 - Broker Sync Interfaces
 
-- Task id: `P5-T5`
-- Title: markdown report output
-- Objective: Generate markdown report content from deterministic report messages.
+- Task id: `P4-T6`
+- Title: broker sync interfaces
+- Objective: Define app-owned broker sync service boundaries before adding SnapTrade-specific code.
 - Files expected to change:
-  - `backend/app/services/reports/markdown.py`
-  - `backend/app/api/routes/reports.py`
-  - `backend/tests/services/reports/test_markdown.py`
+  - `backend/app/services/broker_import/interfaces.py`
+  - `backend/app/services/broker_import/models.py`
+  - `backend/tests/services/test_broker_sync_interfaces.py`
   - `docs/implementation_plan.md`
-- Dependencies: `P5-T2`
+- Dependencies: `P4-T5`
 - Implementation steps:
-  1. Add markdown rendering service.
-  2. Add export endpoint for markdown.
-  3. Use synthetic test report data.
+  1. Define internal broker sync request/result models.
+  2. Keep provider-specific HTTP details out of internal services.
+  3. Make room for SnapTrade, Akoya, Plaid, manual, and CSV sources.
 - Acceptance criteria:
-  - Markdown export is deterministic and contains no private fixture data.
-- Tests to run:
-  - `cd backend && pytest`
-- Rollback notes:
-  - Remove markdown service, route, and tests.
-- Status: `not_started`
-
-### P5-T6 - Delete/Restore Behavior
-
-- Task id: `P5-T6`
-- Title: delete/restore behavior
-- Objective: Add soft delete, restore, and permanent delete behavior for report threads.
-- Files expected to change:
-  - `backend/app/services/reports/deletion.py`
-  - `backend/app/api/routes/reports.py`
-  - `backend/tests/api/test_report_deletion.py`
-  - `docs/implementation_plan.md`
-- Dependencies: `P5-T5`
-- Implementation steps:
-  1. Implement soft delete and restore.
-  2. Implement permanent purge for sensitive content.
-  3. Add audit-log placeholder or explicit TODO if audit table is not present.
-- Acceptance criteria:
-  - Deleted reports are hidden by default.
-  - Restored reports reappear.
-  - Permanent delete removes sensitive content.
-- Tests to run:
-  - `cd backend && pytest`
-- Rollback notes:
-  - Remove deletion service/route changes/tests.
-- Status: `not_started`
-
-### P5-T7 - Reports and Agent Run Tests
-
-- Task id: `P5-T7`
-- Title: reports and agent run tests
-- Objective: Cover report threads, messages, runs, steps, export, and deletion lifecycle.
-- Files expected to change:
-  - `backend/tests/api/test_reports.py`
-  - `backend/tests/api/test_agent_runs.py`
-  - `backend/tests/services/reports/*`
-  - `docs/implementation_plan.md`
-- Dependencies: `P5-T6`
-- Implementation steps:
-  1. Add API tests for report lifecycle.
-  2. Add service tests for markdown and deletion.
-  3. Add run/step status tests.
-- Acceptance criteria:
-  - Report and run history are test-covered before LLM integration.
-- Tests to run:
-  - `cd backend && pytest`
-- Rollback notes:
-  - Remove report/agent tests and fixtures.
-- Status: `not_started`
-
-## Phase 6 - Market Data Interface
-
-### P6-T1 - MarketDataProvider Interface
-
-- Task id: `P6-T1`
-- Title: MarketDataProvider interface
-- Objective: Define provider-agnostic stock quote and intraday bar interfaces.
-- Files expected to change:
-  - `backend/app/services/market_data/interfaces.py`
-  - `backend/app/services/market_data/models.py`
-  - `backend/tests/services/market_data/test_interfaces.py`
-  - `docs/implementation_plan.md`
-- Dependencies: Phase 1 complete.
-- Implementation steps:
-  1. Define protocol or abstract base class.
-  2. Define quote/bar data structures with provider and timestamps.
-  3. Avoid real provider calls.
-- Acceptance criteria:
-  - Interfaces are importable and testable without network.
+  - Internal sync service interfaces are importable and testable without network or credentials.
 - Tests to run:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove interface/model/test files.
 - Status: `not_started`
 
-### P6-T2 - OptionDataProvider Interface
+### P4-T7 - Broker Sync Foundation Tests
+
+- Task id: `P4-T7`
+- Title: broker sync foundation tests
+- Objective: Cover broker connection/account/sync metadata, statuses, and safe secret-reference behavior.
+- Files expected to change:
+  - `backend/tests/api/test_broker_sync_foundation.py`
+  - `backend/tests/services/test_broker_sync_interfaces.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P4-T6`
+- Implementation steps:
+  1. Add synthetic model/schema tests.
+  2. Add status and interface tests.
+  3. Add assertions that fixtures use fake secret references only.
+- Acceptance criteria:
+  - Broker sync foundation is ready for a SnapTrade adapter without storing real credentials.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove broker sync foundation tests.
+- Status: `not_started`
+
+## Phase 5 - SnapTrade Read-Only Adapter, Mock-First
+
+### P5-T1 - BrokerPortfolioProvider Interface
+
+- Task id: `P5-T1`
+- Title: BrokerPortfolioProvider interface
+- Objective: Define the read-only provider interface for account, balance, position, option position, transaction, and refresh operations.
+- Files expected to change:
+  - `backend/app/services/broker_import/providers/base.py`
+  - `backend/app/services/broker_import/providers/models.py`
+  - `backend/tests/adapters/test_broker_portfolio_provider_interface.py`
+  - `docs/implementation_plan.md`
+- Dependencies: Phase 4 complete.
+- Implementation steps:
+  1. Define methods for accounts, balances, positions, option positions, transactions, and refresh.
+  2. Include sync timestamp, sync status, and data freshness status in provider models.
+  3. Keep market data quotes out of this interface.
+- Acceptance criteria:
+  - Provider interface can be tested without SnapTrade credentials or network calls.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove provider interface files and tests.
+- Status: `not_started`
+
+### P5-T2 - SnapTradeAdapter Skeleton
+
+- Task id: `P5-T2`
+- Title: SnapTradeAdapter skeleton
+- Objective: Add a read-only SnapTrade adapter shell that does not call trading/order endpoints.
+- Files expected to change:
+  - `backend/app/services/broker_import/providers/snaptrade.py`
+  - `backend/tests/adapters/test_snaptrade_adapter_skeleton.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P5-T1`
+- Implementation steps:
+  1. Add adapter class implementing `BrokerPortfolioProvider`.
+  2. Stub read-only methods only.
+  3. Add explicit guardrails against trading/order operations.
+- Acceptance criteria:
+  - Adapter skeleton imports and exposes read-only methods only.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove SnapTrade adapter skeleton and tests.
+- Status: `not_started`
+
+### P5-T3 - SnapTrade Config Names
+
+- Task id: `P5-T3`
+- Title: config from environment variable names only
+- Objective: Add configuration names for SnapTrade without adding real credentials or reading private `.env` content.
+- Files expected to change:
+  - `backend/app/core/config.py`
+  - `.env.example`
+  - `backend/tests/unit/test_config.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P5-T2`
+- Implementation steps:
+  1. Add placeholder variable names only, such as `SNAPTRADE_CLIENT_ID` and `SNAPTRADE_CONSUMER_KEY`.
+  2. Keep placeholder values synthetic.
+  3. Do not read, print, or modify `.env`.
+- Acceptance criteria:
+  - Config documents expected environment variable names without real secrets.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove SnapTrade config fields and placeholder docs.
+- Status: `not_started`
+
+### P5-T4 - SnapTrade Exceptions and Response Models
+
+- Task id: `P5-T4`
+- Title: exception classes and response models
+- Objective: Add app-owned exceptions and typed response models for SnapTrade adapter behavior.
+- Files expected to change:
+  - `backend/app/services/broker_import/providers/exceptions.py`
+  - `backend/app/services/broker_import/providers/snaptrade_models.py`
+  - `backend/tests/adapters/test_snaptrade_models.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P5-T3`
+- Implementation steps:
+  1. Define provider unavailable, auth, reauth required, stale data, and rate-limit exceptions.
+  2. Define typed models for accounts, balances, positions, option positions, and connection portal URL responses.
+  3. Keep raw provider payload handling safe and optional.
+- Acceptance criteria:
+  - SnapTrade errors map to app-owned exceptions.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove exceptions/models/tests.
+- Status: `not_started`
+
+### P5-T5 - Mocked SnapTrade User and Account Tests
+
+- Task id: `P5-T5`
+- Title: mocked tests for register user, connection portal URL, and list accounts
+- Objective: Test SnapTrade registration, connection portal URL, and account listing with mocked HTTP responses.
+- Files expected to change:
+  - `backend/tests/adapters/test_snaptrade_user_and_accounts.py`
+  - `backend/app/services/broker_import/providers/snaptrade.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P5-T4`
+- Implementation steps:
+  1. Mock register/create user response.
+  2. Mock connection portal URL response.
+  3. Mock list accounts response with connection/account IDs and freshness status.
+- Acceptance criteria:
+  - Tests pass without network, real SnapTrade credentials, or real broker data.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove mocked adapter tests and related adapter methods.
+- Status: `not_started`
+
+### P5-T6 - Mocked SnapTrade Portfolio Data Tests
+
+- Task id: `P5-T6`
+- Title: mocked tests for balances, positions, and option positions
+- Objective: Test read-only SnapTrade account data methods with synthetic mocked payloads.
+- Files expected to change:
+  - `backend/tests/adapters/test_snaptrade_portfolio_data.py`
+  - `backend/app/services/broker_import/providers/snaptrade.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P5-T5`
+- Implementation steps:
+  1. Mock balances response.
+  2. Mock stock/ETF positions response.
+  3. Mock option positions response.
+  4. Verify market quote data is not treated as broker sync data.
+- Acceptance criteria:
+  - SnapTrade adapter reads portfolio data only and never calls trading/order endpoints.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove mocked portfolio data tests and related adapter methods.
+- Status: `not_started`
+
+### P5-T7 - External Test Guardrails
+
+- Task id: `P5-T7`
+- Title: external tests skipped by default
+- Objective: Prepare optional external SnapTrade tests that are disabled unless explicitly selected later.
+- Files expected to change:
+  - `backend/tests/adapters/test_snaptrade_external.py`
+  - `backend/tests/README.md`
+  - `backend/pytest.ini`
+  - `docs/implementation_plan.md`
+- Dependencies: `P5-T6`
+- Implementation steps:
+  1. Add skipped external test placeholder or documented marker guidance.
+  2. Require `external` marker for real provider tests.
+  3. Ensure default `pytest` still avoids network and credentials.
+- Acceptance criteria:
+  - External tests cannot run accidentally in the default suite.
+- Tests to run:
+  - `cd backend && pytest`
+  - `cd backend && pytest -m external` only when explicitly configured later.
+- Rollback notes:
+  - Remove external test placeholder/docs.
+- Status: `not_started`
+
+## Phase 6 - SnapTrade Connection Flow Backend
+
+### P6-T1 - Register SnapTrade User Endpoint
+
+- Task id: `P6-T1`
+- Title: backend endpoint to register/create SnapTrade user
+- Objective: Add backend-only flow for creating or resolving a SnapTrade user without exposing secrets to frontend.
+- Files expected to change:
+  - `backend/app/api/routes/broker_sync.py`
+  - `backend/app/services/broker_import/snaptrade_connection.py`
+  - `backend/tests/api/test_snaptrade_connection_flow.py`
+  - `docs/implementation_plan.md`
+- Dependencies: Phase 5 complete.
+- Implementation steps:
+  1. Add endpoint that uses backend config and secret references only.
+  2. Store provider connection/user metadata safely.
+  3. Mock SnapTrade calls in API tests.
+- Acceptance criteria:
+  - Endpoint works with mocked SnapTrade and never returns provider secrets.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove route/service/tests.
+- Status: `not_started`
+
+### P6-T2 - Connection Portal URL Endpoint
 
 - Task id: `P6-T2`
-- Title: OptionDataProvider interface
-- Objective: Define option expirations, chain, snapshot, and quote stream interfaces.
+- Title: backend endpoint to generate connection portal URL
+- Objective: Generate a SnapTrade connection portal URL through the backend only.
+- Files expected to change:
+  - `backend/app/api/routes/broker_sync.py`
+  - `backend/app/services/broker_import/snaptrade_connection.py`
+  - `backend/tests/api/test_snaptrade_connection_flow.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P6-T1`
+- Implementation steps:
+  1. Add endpoint for connection portal URL generation.
+  2. Return only the URL and non-sensitive metadata.
+  3. Mock provider call and verify no secrets in response.
+- Acceptance criteria:
+  - Frontend can receive portal URL without SnapTrade secrets.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove portal endpoint/service/test changes.
+- Status: `not_started`
+
+### P6-T3 - List Broker Connections Endpoint
+
+- Task id: `P6-T3`
+- Title: endpoint to list broker connections
+- Objective: List broker connections and statuses for a user.
+- Files expected to change:
+  - `backend/app/api/routes/broker_sync.py`
+  - `backend/app/services/broker_import/connections.py`
+  - `backend/tests/api/test_broker_connections.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P6-T2`
+- Implementation steps:
+  1. Add user-scoped list endpoint.
+  2. Include connection status, sync status, freshness, and last sync timestamps.
+  3. Exclude secret references unless explicitly safe for backend-only diagnostics.
+- Acceptance criteria:
+  - Connections can be listed without exposing credentials.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove list endpoint/service/tests.
+- Status: `not_started`
+
+### P6-T4 - List Broker Accounts Endpoint
+
+- Task id: `P6-T4`
+- Title: endpoint to list broker accounts
+- Objective: List provider accounts mapped to internal accounts.
+- Files expected to change:
+  - `backend/app/api/routes/broker_sync.py`
+  - `backend/app/services/broker_import/accounts.py`
+  - `backend/tests/api/test_broker_accounts.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P6-T3`
+- Implementation steps:
+  1. Add connection-scoped or user-scoped account list endpoint.
+  2. Include provider account ID, mapped account ID, sync status, and data freshness.
+  3. Keep account data synthetic in tests.
+- Acceptance criteria:
+  - Broker accounts can be listed and mapped safely.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove broker account endpoint/service/tests.
+- Status: `not_started`
+
+### P6-T5 - Sync Account Data Endpoint
+
+- Task id: `P6-T5`
+- Title: endpoint to sync account data
+- Objective: Trigger a read-only SnapTrade account sync through backend services.
+- Files expected to change:
+  - `backend/app/api/routes/broker_sync.py`
+  - `backend/app/services/broker_import/sync.py`
+  - `backend/tests/api/test_broker_sync.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P6-T4`
+- Implementation steps:
+  1. Add endpoint to queue or run a read-only sync.
+  2. Create broker sync run metadata.
+  3. Mock provider calls for accounts, balances, positions, and option positions.
+- Acceptance criteria:
+  - Sync endpoint creates traceable sync run records without trading/order calls.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove sync endpoint/service/tests.
+- Status: `not_started`
+
+### P6-T6 - Broker Sync Run Status Endpoint
+
+- Task id: `P6-T6`
+- Title: endpoint to inspect broker sync run status
+- Objective: Let UI inspect broker sync progress, errors, and freshness status.
+- Files expected to change:
+  - `backend/app/api/routes/broker_sync.py`
+  - `backend/app/services/broker_import/sync_runs.py`
+  - `backend/tests/api/test_broker_sync_runs.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P6-T5`
+- Implementation steps:
+  1. Add sync run detail endpoint.
+  2. Return status, counts, timestamps, and sanitized error details.
+  3. Avoid raw secrets or sensitive payloads.
+- Acceptance criteria:
+  - Sync run status is visible and safe for frontend consumption.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove sync run status endpoint/service/tests.
+- Status: `not_started`
+
+### P6-T7 - SnapTrade Connection Flow API Tests
+
+- Task id: `P6-T7`
+- Title: mocked API tests only
+- Objective: Cover SnapTrade connection and sync endpoints using mocked provider responses only.
+- Files expected to change:
+  - `backend/tests/api/test_snaptrade_connection_flow.py`
+  - `backend/tests/api/test_broker_sync.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P6-T6`
+- Implementation steps:
+  1. Add happy-path mocked API tests.
+  2. Add reauth/error/stale provider scenarios.
+  3. Assert no secrets appear in API responses.
+- Acceptance criteria:
+  - Connection flow backend is covered without real SnapTrade calls.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove connection flow API tests.
+- Status: `not_started`
+
+## Phase 7 - SnapTrade Portfolio Normalization
+
+### P7-T1 - Balances to Cash Balances
+
+- Task id: `P7-T1`
+- Title: map balances to cash_balances
+- Objective: Normalize SnapTrade balances into internal cash snapshot records.
+- Files expected to change:
+  - `backend/app/services/broker_import/normalization/cash.py`
+  - `backend/tests/services/test_snaptrade_cash_normalization.py`
+  - `docs/implementation_plan.md`
+- Dependencies: Phase 6 complete.
+- Implementation steps:
+  1. Map provider balances to total cash and related cash categories where available.
+  2. Preserve sync timestamp and source.
+  3. Use conservative defaults when provider fields are missing.
+- Acceptance criteria:
+  - Synthetic SnapTrade balances produce expected cash snapshots.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove cash normalization module/tests.
+- Status: `not_started`
+
+### P7-T2 - Stock/ETF Position Normalization
+
+- Task id: `P7-T2`
+- Title: map stock/ETF positions to stock_positions
+- Objective: Normalize SnapTrade stock/ETF holdings into internal stock position records.
+- Files expected to change:
+  - `backend/app/services/broker_import/normalization/stocks.py`
+  - `backend/tests/services/test_snaptrade_stock_normalization.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P7-T1`
+- Implementation steps:
+  1. Map symbols, quantities, costs, market values if present, and as-of timestamps.
+  2. Preserve provider IDs where useful.
+  3. Avoid treating provider market values as live quote data.
+- Acceptance criteria:
+  - Synthetic SnapTrade holdings produce expected stock position records.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove stock normalization module/tests.
+- Status: `not_started`
+
+### P7-T3 - Option Position Normalization
+
+- Task id: `P7-T3`
+- Title: map option positions to option_contracts and option_positions
+- Objective: Normalize SnapTrade option holdings into contracts and account positions.
+- Files expected to change:
+  - `backend/app/services/broker_import/normalization/options.py`
+  - `backend/tests/services/test_snaptrade_option_normalization.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P7-T2`
+- Implementation steps:
+  1. Parse provider option identifiers into normalized contracts where possible.
+  2. Create or resolve option contracts idempotently.
+  3. Map long/short quantities and status into option positions.
+- Acceptance criteria:
+  - Synthetic SnapTrade option holdings produce expected contract and position records.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove option normalization module/tests.
+- Status: `not_started`
+
+### P7-T4 - Safe Raw Provider Payloads
+
+- Task id: `P7-T4`
+- Title: preserve safe raw provider payload in JSONB where useful
+- Objective: Retain useful provider metadata for audit/debugging without storing secrets or unsafe payloads.
+- Files expected to change:
+  - `backend/app/services/broker_import/normalization/sanitization.py`
+  - `backend/tests/services/test_provider_payload_sanitization.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P7-T3`
+- Implementation steps:
+  1. Define allowlist or redaction behavior for raw provider payload fields.
+  2. Strip credentials, tokens, secrets, and sensitive auth fields.
+  3. Test redaction with synthetic payloads.
+- Acceptance criteria:
+  - Raw payload persistence cannot leak provider secrets.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove sanitization module/tests.
+- Status: `not_started`
+
+### P7-T5 - Reconciliation and Duplicate Handling
+
+- Task id: `P7-T5`
+- Title: reconciliation and duplicate handling
+- Objective: Prevent duplicated positions and handle provider updates deterministically.
+- Files expected to change:
+  - `backend/app/services/broker_import/reconciliation.py`
+  - `backend/tests/services/test_broker_reconciliation.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P7-T4`
+- Implementation steps:
+  1. Define idempotency keys for provider account, symbol/contract, source, and as-of timestamps.
+  2. Handle updates, missing positions, and duplicate payload rows.
+  3. Preserve enough sync-run metadata for review.
+- Acceptance criteria:
+  - Re-running the same synthetic sync does not duplicate holdings.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove reconciliation module/tests.
+- Status: `not_started`
+
+### P7-T6 - SnapTrade Normalization Tests
+
+- Task id: `P7-T6`
+- Title: tests with synthetic mocked SnapTrade payloads
+- Objective: Cover end-to-end normalization from mocked SnapTrade portfolio payloads into internal tables.
+- Files expected to change:
+  - `backend/tests/services/test_snaptrade_normalization_end_to_end.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P7-T5`
+- Implementation steps:
+  1. Add synthetic account, balance, stock, ETF, and option fixtures.
+  2. Verify internal cash, stock, contract, and option records.
+  3. Verify sync and freshness metadata are preserved.
+- Acceptance criteria:
+  - SnapTrade normalization is ready for dashboard backend use.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove end-to-end normalization tests.
+- Status: `not_started`
+
+## Phase 8 - Portfolio Dashboard Backend from Synced Data
+
+### P8-T1 - Portfolio Summary from Internal Tables
+
+- Task id: `P8-T1`
+- Title: portfolio summary from internal tables
+- Objective: Serve portfolio summary using normalized synced/manual/CSV records.
+- Files expected to change:
+  - `backend/app/services/portfolio/summary.py`
+  - `backend/app/api/routes/portfolio.py`
+  - `backend/tests/api/test_portfolio_summary.py`
+  - `docs/implementation_plan.md`
+- Dependencies: Phase 7 complete.
+- Implementation steps:
+  1. Read cash, stock, and option position records.
+  2. Produce deterministic account summary fields.
+  3. Include source and as-of metadata.
+- Acceptance criteria:
+  - Portfolio summary works from SnapTrade-normalized synthetic data.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove summary endpoint/service changes/tests.
+- Status: `not_started`
+
+### P8-T2 - Broker Sync Freshness Endpoint
+
+- Task id: `P8-T2`
+- Title: broker sync freshness endpoint
+- Objective: Expose broker sync freshness separately from market quote freshness.
+- Files expected to change:
+  - `backend/app/api/routes/broker_sync.py`
+  - `backend/app/services/broker_import/freshness.py`
+  - `backend/tests/api/test_broker_sync_freshness.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P8-T1`
+- Implementation steps:
+  1. Add endpoint for account broker sync freshness.
+  2. Include last successful sync, current status, data freshness status, and reauth/error flags.
+  3. Do not include market quote freshness here.
+- Acceptance criteria:
+  - UI can display broker sync freshness independently.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove freshness endpoint/service/tests.
+- Status: `not_started`
+
+### P8-T3 - Stale/Cached/Unknown Data Warnings
+
+- Task id: `P8-T3`
+- Title: stale/cached/unknown data warnings
+- Objective: Generate backend warning flags when broker data freshness is not fresh.
+- Files expected to change:
+  - `backend/app/services/portfolio/warnings.py`
+  - `backend/app/schemas/portfolio.py`
+  - `backend/tests/services/test_portfolio_warnings.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P8-T2`
+- Implementation steps:
+  1. Add warning generation for cached, stale, unknown, error, and reauth-required broker data.
+  2. Make warnings explicit that market prices may be current while holdings/cash are stale.
+  3. Keep quote freshness warnings separate for Phase 10.
+- Acceptance criteria:
+  - Stale broker data is never presented as immediately actionable.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove warning service/schema/tests.
+- Status: `not_started`
+
+### P8-T4 - Dashboard Backend Tests
+
+- Task id: `P8-T4`
+- Title: tests
+- Objective: Cover portfolio summary and broker freshness behavior from synced data.
+- Files expected to change:
+  - `backend/tests/api/test_portfolio_dashboard_backend.py`
+  - `backend/tests/services/test_portfolio_warnings.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P8-T3`
+- Implementation steps:
+  1. Add synthetic synced-data fixtures.
+  2. Test summary output and freshness warnings.
+  3. Ensure no market data provider calls occur.
+- Acceptance criteria:
+  - Dashboard backend can support a synced portfolio view without market data coupling.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove dashboard backend tests.
+- Status: `not_started`
+
+## Phase 9 - Manual Input and CSV Fallback
+
+### P9-T1 - Manual Entry Fallback
+
+- Task id: `P9-T1`
+- Title: keep manual entry available
+- Objective: Preserve manual user/account/cash/position entry as a fallback when SnapTrade is unavailable or intentionally disabled.
+- Files expected to change:
+  - `backend/app/api/routes/portfolio.py`
+  - `backend/tests/api/test_manual_portfolio_entry.py`
+  - `docs/implementation_plan.md`
+- Dependencies: Phase 8 complete.
+- Implementation steps:
+  1. Ensure manual entry uses the same internal storage primitives as SnapTrade normalization.
+  2. Mark manual records with source metadata.
+  3. Keep tests synthetic.
+- Acceptance criteria:
+  - Manual entry remains functional without broker API credentials.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove manual fallback route/test changes.
+- Status: `not_started`
+
+### P9-T2 - Fidelity CSV Import Backup
+
+- Task id: `P9-T2`
+- Title: simple CSV import backup
+- Objective: Add CSV import backup for positions/transactions when API sync is unavailable.
+- Files expected to change:
+  - `backend/app/services/broker_import/fidelity_csv.py`
+  - `backend/app/api/routes/imports.py`
+  - `backend/tests/services/test_fidelity_csv_import.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P9-T1`
+- Implementation steps:
+  1. Parse synthetic CSV fixtures only.
+  2. Validate and preview imported rows before persistence.
+  3. Avoid storing broker files in git or tests with real data.
+- Acceptance criteria:
+  - CSV import can act as a backup without scraping or credentials.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove CSV parser/routes/tests.
+- Status: `not_started`
+
+### P9-T3 - Synthetic CSV Fixtures
+
+- Task id: `P9-T3`
+- Title: synthetic fixtures only
+- Objective: Add safe synthetic CSV fixtures and documentation for fallback import tests.
+- Files expected to change:
+  - `backend/tests/fixtures/fidelity_positions_demo.csv`
+  - `backend/tests/fixtures/fidelity_transactions_demo.csv`
+  - `backend/tests/README.md`
+  - `docs/implementation_plan.md`
+- Dependencies: `P9-T2`
+- Implementation steps:
+  1. Add small fake CSV samples.
+  2. Use demo symbols and fake account labels only.
+  3. Document that real broker CSVs are gitignored and must not be committed.
+- Acceptance criteria:
+  - CSV tests use synthetic data only.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove synthetic fixtures and docs.
+- Status: `not_started`
+
+### P9-T4 - Fallback Tests
+
+- Task id: `P9-T4`
+- Title: do not block SnapTrade progress
+- Objective: Verify manual and CSV fallback paths do not block the SnapTrade-first architecture.
+- Files expected to change:
+  - `backend/tests/api/test_portfolio_fallbacks.py`
+  - `backend/tests/services/test_import_fallbacks.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P9-T3`
+- Implementation steps:
+  1. Test manual fallback without provider credentials.
+  2. Test CSV fallback with synthetic files.
+  3. Verify SnapTrade-specific paths are not required for fallback tests.
+- Acceptance criteria:
+  - Manual and CSV backups remain available without becoming the main integration path.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove fallback tests.
+- Status: `not_started`
+
+## Phase 10 - Market Data Layer
+
+### P10-T1 - MarketDataProvider
+
+- Task id: `P10-T1`
+- Title: MarketDataProvider
+- Objective: Define provider-agnostic stock quote and intraday bar interfaces separate from broker sync.
+- Files expected to change:
+  - `backend/app/services/market_data/interfaces.py`
+  - `backend/app/services/market_data/models.py`
+  - `backend/tests/services/market_data/test_interfaces.py`
+  - `docs/implementation_plan.md`
+- Dependencies: Phase 8 complete.
+- Implementation steps:
+  1. Define market quote provider protocol.
+  2. Include quote timestamp, provider, and quote freshness.
+  3. Do not include broker holdings/cash fields.
+- Acceptance criteria:
+  - Market data interfaces are separate from `BrokerPortfolioProvider`.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove market data interface files/tests.
+- Status: `not_started`
+
+### P10-T2 - OptionDataProvider
+
+- Task id: `P10-T2`
+- Title: OptionDataProvider
+- Objective: Define option quote, option chain, IV, and Greeks provider interfaces.
 - Files expected to change:
   - `backend/app/services/market_data/interfaces.py`
   - `backend/app/services/market_data/models.py`
   - `backend/tests/services/market_data/test_option_interfaces.py`
   - `docs/implementation_plan.md`
-- Dependencies: `P6-T1`
+- Dependencies: `P10-T1`
 - Implementation steps:
-  1. Add option provider protocol.
-  2. Define option chain and option quote structures.
-  3. Include IV/Greeks fields and freshness metadata.
+  1. Add option expirations, chain, snapshot, and quote methods.
+  2. Include IV and Greeks fields.
+  3. Include quote freshness and provider timestamp.
 - Acceptance criteria:
-  - Option data models can represent provider-supplied or calculated Greeks.
+  - Option market data is represented without broker account coupling.
 - Tests to run:
   - `cd backend && pytest`
 - Rollback notes:
   - Revert option interface additions.
 - Status: `not_started`
 
-### P6-T3 - ManualProvider
+### P10-T3 - Quote Freshness
 
-- Task id: `P6-T3`
-- Title: ManualProvider
-- Objective: Add a provider for manually entered quotes and synthetic tests.
+- Task id: `P10-T3`
+- Title: quote freshness
+- Objective: Centralize live/delayed/stale/EOD quote freshness classification.
+- Files expected to change:
+  - `backend/app/services/market_data/freshness.py`
+  - `backend/tests/services/market_data/test_freshness.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P10-T2`
+- Implementation steps:
+  1. Define quote freshness statuses.
+  2. Implement timestamp and provider-mode based classification.
+  3. Keep broker sync freshness separate.
+- Acceptance criteria:
+  - Stale quote data is never labeled immediately actionable.
+- Tests to run:
+  - `cd backend && pytest`
+- Rollback notes:
+  - Remove quote freshness module/tests.
+- Status: `not_started`
+
+### P10-T4 - Manual Market Data Provider
+
+- Task id: `P10-T4`
+- Title: manual provider
+- Objective: Add a deterministic market data provider for manually entered quote snapshots and tests.
 - Files expected to change:
   - `backend/app/services/market_data/manual_provider.py`
   - `backend/tests/services/market_data/test_manual_provider.py`
   - `docs/implementation_plan.md`
-- Dependencies: `P6-T2`
+- Dependencies: `P10-T3`
 - Implementation steps:
-  1. Implement provider using in-memory or explicit input data.
-  2. Mark freshness based on supplied timestamps.
-  3. Add synthetic tests.
+  1. Implement provider using explicit synthetic quote inputs.
+  2. Mark freshness based on supplied quote timestamps.
+  3. Avoid network and API keys.
 - Acceptance criteria:
-  - Deterministic tests can run without network or API keys.
+  - Market data tests can run without external providers.
 - Tests to run:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove manual provider and tests.
 - Status: `not_started`
 
-### P6-T4 - Low-Cost Fallback Provider
+### P10-T5 - Low-Cost Fallback Provider
 
-- Task id: `P6-T4`
-- Title: YFinance or other low-cost fallback provider
-- Objective: Add one low-cost fallback provider behind the interface without treating it as production-grade live OPRA data.
+- Task id: `P10-T5`
+- Title: low-cost fallback provider
+- Objective: Add one low-cost fallback provider behind the market data interface without treating it as production-grade live OPRA data.
 - Files expected to change:
   - `backend/app/services/market_data/yfinance_provider.py`
   - `backend/requirements.txt` or future `backend/pyproject.toml`
   - `backend/tests/services/market_data/test_yfinance_provider.py`
   - `docs/implementation_plan.md`
-- Dependencies: `P6-T3`
+- Dependencies: `P10-T4`
 - Implementation steps:
   1. Add provider adapter with clear data-mode labels.
   2. Keep network tests mocked by default.
   3. Document limitations and freshness behavior.
 - Acceptance criteria:
   - Provider can be mocked in tests.
-  - UI/API consumers can see delayed/stale/EOD status.
+  - API consumers can see delayed/stale/EOD status.
 - Tests to run:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove provider, dependency, and tests.
 - Status: `not_started`
 
-### P6-T5 - Quote Freshness Model
+### P10-T6 - Market Data Tests
 
-- Task id: `P6-T5`
-- Title: quote freshness model
-- Objective: Centralize live/delayed/stale/EOD freshness classification.
-- Files expected to change:
-  - `backend/app/services/market_data/freshness.py`
-  - `backend/tests/services/market_data/test_freshness.py`
-  - `docs/implementation_plan.md`
-- Dependencies: `P6-T1`
-- Implementation steps:
-  1. Define freshness statuses.
-  2. Implement timestamp and provider-mode based classification.
-  3. Add edge-case tests.
-- Acceptance criteria:
-  - Stale data is never labeled immediately actionable.
-- Tests to run:
-  - `cd backend && pytest`
-- Rollback notes:
-  - Remove freshness module and tests.
-- Status: `not_started`
-
-### P6-T6 - Market Data Tests
-
-- Task id: `P6-T6`
-- Title: market data tests
-- Objective: Add coverage for provider interfaces, manual provider, fallback provider mocks, and freshness logic.
+- Task id: `P10-T6`
+- Title: tests
+- Objective: Cover market data provider interfaces, manual provider, fallback provider mocks, and quote freshness.
 - Files expected to change:
   - `backend/tests/services/market_data/*`
   - `docs/implementation_plan.md`
-- Dependencies: `P6-T5`
+- Dependencies: `P10-T5`
 - Implementation steps:
-  1. Add tests for provider contracts.
-  2. Add tests for fallback behavior.
+  1. Add provider contract tests.
+  2. Add fallback behavior tests.
   3. Add stale quote warning tests.
 - Acceptance criteria:
-  - Market data layer is safe to use without real credentials.
+  - Market data layer is safe to use without real credentials and remains separate from broker sync.
 - Tests to run:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove market data tests and fixtures.
-- Status: `not_started`
-
-## Phase 7 - TradingAgents Adapter
-
-### P7-T1 - Optional Dependency Detection
-
-- Task id: `P7-T1`
-- Title: optional dependency detection
-- Objective: Detect whether TradingAgents is installed without requiring it for core app startup.
-- Files expected to change:
-  - `backend/app/services/tradingagents_adapter/versioning.py`
-  - `backend/app/services/tradingagents_adapter/exceptions.py`
-  - `backend/tests/services/test_tradingagents_detection.py`
-  - `docs/implementation_plan.md`
-- Dependencies: Phase 1 complete.
-- Implementation steps:
-  1. Use lazy import detection.
-  2. Return version/status without importing at app startup.
-  3. Add tests for installed/missing cases with monkeypatch.
-- Acceptance criteria:
-  - App works when TradingAgents is absent.
-- Tests to run:
-  - `cd backend && pytest`
-- Rollback notes:
-  - Remove detection modules and tests.
-- Status: `not_started`
-
-### P7-T2 - Adapter Interface
-
-- Task id: `P7-T2`
-- Title: adapter interface
-- Objective: Define app-owned TradingAgents adapter methods and request/result models.
-- Files expected to change:
-  - `backend/app/services/tradingagents_adapter/client.py`
-  - `backend/app/services/tradingagents_adapter/models.py`
-  - `backend/tests/services/test_tradingagents_adapter_interface.py`
-  - `docs/implementation_plan.md`
-- Dependencies: `P7-T1`
-- Implementation steps:
-  1. Define run methods and parsed output models.
-  2. Keep TradingAgents imports hidden inside adapter implementation.
-  3. Add interface tests.
-- Acceptance criteria:
-  - Rest of app depends only on adapter models, not upstream internals.
-- Tests to run:
-  - `cd backend && pytest`
-- Rollback notes:
-  - Remove adapter interface modules and tests.
-- Status: `not_started`
-
-### P7-T3 - Missing Dependency Fallback
-
-- Task id: `P7-T3`
-- Title: missing dependency fallback
-- Objective: Provide clear actionable errors when TradingAgents is not installed.
-- Files expected to change:
-  - `backend/app/services/tradingagents_adapter/client.py`
-  - `backend/app/services/tradingagents_adapter/exceptions.py`
-  - `backend/tests/services/test_tradingagents_missing.py`
-  - `docs/implementation_plan.md`
-- Dependencies: `P7-T2`
-- Implementation steps:
-  1. Raise app-owned exception on missing dependency.
-  2. Include local editable install and optional extra instructions.
-  3. Confirm deterministic features are unaffected.
-- Acceptance criteria:
-  - Missing TradingAgents error is understandable and non-fatal to app startup.
-- Tests to run:
-  - `cd backend && pytest`
-- Rollback notes:
-  - Revert fallback exception and tests.
-- Status: `not_started`
-
-### P7-T4 - Mocked Adapter Tests
-
-- Task id: `P7-T4`
-- Title: mocked adapter tests
-- Objective: Test adapter behavior with fake TradingAgents outputs.
-- Files expected to change:
-  - `backend/tests/services/test_tradingagents_mocked.py`
-  - `backend/app/services/tradingagents_adapter/parser.py`
-  - `docs/implementation_plan.md`
-- Dependencies: `P7-T3`
-- Implementation steps:
-  1. Create fake final state fixture.
-  2. Parse into report-thread draft output.
-  3. Verify errors and missing keys are handled.
-- Acceptance criteria:
-  - Adapter parser works without real LLM calls or API keys.
-- Tests to run:
-  - `cd backend && pytest`
-- Rollback notes:
-  - Remove parser and mocked tests.
-- Status: `not_started`
-
-### P7-T5 - Later Real Integration
-
-- Task id: `P7-T5`
-- Title: later real integration
-- Objective: Add optional real TradingAgents run support after mocked adapter is stable.
-- Files expected to change:
-  - `backend/app/services/tradingagents_adapter/client.py`
-  - optional dependency configuration
-  - `backend/tests/integration/test_tradingagents_real.py`
-  - `docs/implementation_plan.md`
-- Dependencies: `P7-T4`
-- Implementation steps:
-  1. Add optional dependency declaration.
-  2. Support local editable install.
-  3. Run only optional integration tests when dependency and API keys are explicitly available.
-  4. Never read or print `.env`.
-- Acceptance criteria:
-  - Real integration is optional and skipped by default in CI/local tests.
-- Tests to run:
-  - `cd backend && pytest`
-  - Optional integration command to be documented later.
-- Rollback notes:
-  - Remove optional dependency and real integration path.
-- Status: `not_started`
-
-## Phase 8 - Frontend MVP
-
-### P8-T1 - Account Selector
-
-- Task id: `P8-T1`
-- Title: account selector
-- Objective: Add a local user/account selection screen for MVP navigation.
-- Files expected to change:
-  - `frontend/src/*`
-  - `frontend/package.json`
-  - `docs/implementation_plan.md`
-- Dependencies: Phase 2 routes available.
-- Implementation steps:
-  1. Initialize frontend tooling only when this task is approved.
-  2. Add account selector UI backed by users/accounts APIs.
-  3. Keep auth local/dev only.
-- Acceptance criteria:
-  - User can select a synthetic/local account.
-- Tests to run:
-  - frontend test command selected during frontend setup.
-- Rollback notes:
-  - Remove frontend scaffold and package files if needed.
-- Status: `not_started`
-
-### P8-T2 - Account Dashboard
-
-- Task id: `P8-T2`
-- Title: account dashboard
-- Objective: Display account-level cash, positions, and summary cards.
-- Files expected to change:
-  - `frontend/src/pages/*`
-  - `frontend/src/components/*`
-  - `docs/implementation_plan.md`
-- Dependencies: `P8-T1`, Phase 3 APIs.
-- Implementation steps:
-  1. Fetch account portfolio summary.
-  2. Display key values and warnings.
-  3. Avoid marketing-style UI.
-- Acceptance criteria:
-  - Dashboard displays synthetic account summary.
-- Tests to run:
-  - frontend tests and/or Playwright smoke test.
-- Rollback notes:
-  - Remove dashboard page/components.
-- Status: `not_started`
-
-### P8-T3 - Positions Page
-
-- Task id: `P8-T3`
-- Title: positions page
-- Objective: Add stock/ETF position management UI.
-- Files expected to change:
-  - `frontend/src/pages/*`
-  - `frontend/src/components/*`
-  - `docs/implementation_plan.md`
-- Dependencies: `P8-T2`
-- Implementation steps:
-  1. List positions.
-  2. Add edit/create/delete forms.
-  3. Validate inputs.
-- Acceptance criteria:
-  - User can manage synthetic/manual positions through UI.
-- Tests to run:
-  - frontend tests and/or Playwright smoke test.
-- Rollback notes:
-  - Remove positions UI changes.
-- Status: `not_started`
-
-### P8-T4 - Option Positions Page
-
-- Task id: `P8-T4`
-- Title: option positions page
-- Objective: Add option position entry and review UI.
-- Files expected to change:
-  - `frontend/src/pages/*`
-  - `frontend/src/components/*`
-  - `docs/implementation_plan.md`
-- Dependencies: `P8-T3`, Phase 3 option APIs.
-- Implementation steps:
-  1. List option positions.
-  2. Add contract/position entry form.
-  3. Show collateral-related fields when available.
-- Acceptance criteria:
-  - User can enter and review synthetic option positions.
-- Tests to run:
-  - frontend tests and/or Playwright smoke test.
-- Rollback notes:
-  - Remove option positions UI changes.
-- Status: `not_started`
-
-### P8-T5 - Report History Page
-
-- Task id: `P8-T5`
-- Title: report history page
-- Objective: Add report history list and detail navigation.
-- Files expected to change:
-  - `frontend/src/pages/*`
-  - `frontend/src/components/*`
-  - `docs/implementation_plan.md`
-- Dependencies: Phase 5 report APIs.
-- Implementation steps:
-  1. List reports with status and account.
-  2. Add filters/search if API supports it.
-  3. Add delete/export actions when available.
-- Acceptance criteria:
-  - User can view old synthetic reports.
-- Tests to run:
-  - frontend tests and/or Playwright smoke test.
-- Rollback notes:
-  - Remove report history UI changes.
-- Status: `not_started`
-
-### P8-T6 - Agent Run Monitor Page
-
-- Task id: `P8-T6`
-- Title: agent run monitor page
-- Objective: Add UI for run status, progress, errors, retry notices, token usage, and final report.
-- Files expected to change:
-  - `frontend/src/pages/*`
-  - `frontend/src/components/*`
-  - `docs/implementation_plan.md`
-- Dependencies: Phase 5 agent run APIs and SSE endpoint.
-- Implementation steps:
-  1. Connect to run detail API.
-  2. Connect to SSE progress stream.
-  3. Show current step, errors, usage, and final report.
-- Acceptance criteria:
-  - User can monitor a synthetic or deterministic analysis run.
-- Tests to run:
-  - frontend tests and/or Playwright smoke test.
-- Rollback notes:
-  - Remove run monitor UI changes.
 - Status: `not_started`

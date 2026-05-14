@@ -5,6 +5,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.db.session import create_db_engine
 
 
+pytestmark = pytest.mark.db
+
+
 def test_configured_database_connection() -> None:
     engine = create_db_engine()
 

@@ -45,10 +45,36 @@ Rules for coding agents working in `portfolio-options-agent`.
 - After each task, update `docs/implementation_plan.md`.
 - Stop for review after each task.
 
-## Testing and Verification Rules
+## Testing Rules
 
+- Treat the backend test framework as production engineering infrastructure, not as throwaway scaffolding.
+- Use `pytest` as the default backend test runner.
+- Default backend test command: `cd backend && pytest`.
+- If the global `pytest` command is broken by local machine plugins or Python installation issues, use the project virtual environment command: `cd backend && ./.venv/bin/python -m pytest`.
+- Keep tests fast, deterministic, isolated, and synthetic by default.
+- Prefer the test pyramid: many unit tests, focused service tests, API tests for route contracts, database/migration tests for persistence boundaries, and only a small number of explicit integration tests.
+- Register and use pytest markers consistently: `unit`, `api`, `db`, `migration`, `integration`, `external`, `slow`, `regression`, `adapter`, and `smoke`.
+- `external` and `slow` tests must not run by default.
 - Run relevant tests after behavior changes.
-- Backend test command should usually be `cd backend && pytest`.
+- Any deterministic finance calculation must have unit tests.
+- Any API route should have API tests.
+- Any database schema change should include migration verification.
+- Any bug fix should include a regression test.
+- Any adapter boundary should have mocked adapter/contract tests before real integration tests.
+- External API tests must be mocked by default.
+- LLM calls must be mocked by default.
+- TradingAgents adapter tests must be mocked by default unless explicitly marked `integration` or `external`.
+- Broker, market-data, LLM-provider, and TradingAgents tests must not make network calls in the default test suite.
+- Do not use real broker exports, real account data, real reports, or real credentials in fixtures.
+- Tests must not require real OpenAI, Claude, Gemini, Tradier, Alpaca, Fidelity, broker, or market-data credentials.
+- Tests must use synthetic data only.
+- Do not use real holdings, real account values, real reports, real broker files, or real strategy thresholds in tests.
+- Keep test fixtures small, reusable, and explicit.
+- Prefer clear Arrange-Act-Assert test structure.
+- Avoid brittle assertions that depend on wall-clock time, external market state, network availability, API rate limits, or provider-specific response ordering.
+- Use monkeypatching, fakes, or dependency injection for external boundaries.
+- API tests should verify status codes, response shape, important validation failures, and permission/ownership behavior.
+- Database tests should clean up after themselves and must not depend on data left by previous tests.
 - If database migrations are involved, explain Alembic commands and test migration upgrade/downgrade when practical.
 - If a command cannot be run, explain why and provide the exact command for the user to run.
 - Do not claim tests passed unless they were actually run.

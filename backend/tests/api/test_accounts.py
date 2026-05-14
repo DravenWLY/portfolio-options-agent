@@ -1,4 +1,9 @@
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+
+pytestmark = [pytest.mark.api, pytest.mark.db]
 
 
 def _create_user(client: TestClient) -> str:
@@ -7,7 +12,7 @@ def _create_user(client: TestClient) -> str:
     return response.json()["id"]
 
 
-def test_create_list_get_update_and_delete_account(client: TestClient) -> None:
+def test_create_list_get_update_and_delete_account(client: TestClient, db_session: Session) -> None:
     user_id = _create_user(client)
 
     create_response = client.post(
@@ -44,7 +49,7 @@ def test_create_list_get_update_and_delete_account(client: TestClient) -> None:
     assert hidden_response.status_code == 404
 
 
-def test_create_account_for_missing_user_returns_404(client: TestClient) -> None:
+def test_create_account_for_missing_user_returns_404(client: TestClient, db_session: Session) -> None:
     response = client.post(
         "/users/00000000-0000-0000-0000-000000000001/accounts",
         json={
@@ -57,7 +62,7 @@ def test_create_account_for_missing_user_returns_404(client: TestClient) -> None
     assert response.status_code == 404
 
 
-def test_account_validation_rejects_invalid_account_type(client: TestClient) -> None:
+def test_account_validation_rejects_invalid_account_type(client: TestClient, db_session: Session) -> None:
     user_id = _create_user(client)
 
     response = client.post(

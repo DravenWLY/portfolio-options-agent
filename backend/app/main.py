@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api.routes import accounts, users
+from app.api.routes import accounts, portfolio, users
 
 app = FastAPI(
     title="portfolio-options-agent",
@@ -10,6 +10,7 @@ app = FastAPI(
 
 app.include_router(users.router)
 app.include_router(accounts.router)
+app.include_router(portfolio.router)
 
 
 @app.get("/health")

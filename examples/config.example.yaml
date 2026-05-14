@@ -1,0 +1,16 @@
+# Synthetic demo configuration only.
+# Do not copy real API keys, broker credentials, account values, or private settings here.
+
+app:
+  environment: demo
+  log_level: INFO
+
+market_data:
+  provider: synthetic
+  symbols:
+    - DEMO
+    - SAMPLE
+
+features:
+  enable_tradingagents_adapter: false
+  enable_broker_imports: false

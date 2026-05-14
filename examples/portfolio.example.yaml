@@ -1,0 +1,15 @@
+# Synthetic demo portfolio only.
+# Do not include real holdings, real account values, or real trades.
+
+portfolio:
+  name: demo_manual_income_portfolio
+  base_currency: USD
+  positions:
+    - symbol: DEMO
+      asset_type: equity
+      quantity: 100
+      cost_basis: 10.00
+    - symbol: SAMPLE
+      asset_type: cash
+      quantity: 2500
+      cost_basis: 1.00

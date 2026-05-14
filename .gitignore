@@ -1,0 +1,70 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.env
+secrets/
+private/
+private_configs/
+config.local.*
+*.local.yaml
+*.local.yml
+*.local.json
+
+# Private trading/account configuration
+accounts.yaml
+portfolio.yaml
+strategy_rules.yaml
+broker_credentials.yaml
+
+# Account data, broker files, and generated artifacts
+/data/
+/reports/
+/imports/
+/exports/
+/statements/
+/transactions/
+/logs/
+/cache/
+/checkpoints/
+*.db
+*.sqlite
+*.sqlite3
+*.csv
+*.qfx
+*.ofx
+*.pdf
+
+# API keys and certificates
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Frontend
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+
+# Editors and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo

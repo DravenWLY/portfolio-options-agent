@@ -1,0 +1,80 @@
+# AGENTS.md
+
+Rules for coding agents working in `portfolio-options-agent`.
+
+## Project Boundary
+
+- This repository is an independent project. Do not modify `../TradingAgents` as part of routine work here.
+- Prefer wrappers, adapters, and new modules over modifying TradingAgents core.
+- Do not copy TradingAgents source code into this repository.
+- Do not vendor TradingAgents as a subfolder.
+- Do not add a git submodule unless explicitly requested.
+
+## Safety Rules
+
+- Do not store API keys, access tokens, broker credentials, or secrets in code.
+- Do not commit real account data, real reports, real trades, broker CSVs, statements, transactions, or private configs.
+- Do not implement broker scraping.
+- Do not scrape Fidelity or any broker through browser automation.
+- Do not bypass MFA or automate credential entry.
+- Do not implement automatic trading or broker order execution.
+- Do not present outputs as guaranteed financial advice.
+- Do not rely on LLMs for deterministic financial calculations. Use explicit, testable code for calculations.
+
+## Engineering Rules
+
+- Keep changes small, focused, and reviewable.
+- Before major edits, inspect the relevant files and explain the plan.
+- Add tests for behavior changes when practical.
+- Keep examples synthetic. Never use real holdings, real thresholds, real account values, or real user data.
+- After edits, list changed files and tests run.
+
+## Secret Handling Rules
+
+- Never read, open, print, summarize, modify, or expose `.env`, `.env.*`, broker credential files, private configs, API keys, or access tokens.
+- Use `.env.example` only to document variable names with placeholder values.
+- If a command requires real credentials, tell the user exactly what command to run locally instead of trying to inspect secrets.
+- Do not log API keys, broker data, account values, real reports, or private strategy parameters.
+- Never put API keys in frontend code.
+
+## Implementation Loop Rule
+
+- For multi-step work, maintain `docs/implementation_plan.md`.
+- Each task in `docs/implementation_plan.md` must include task id, objective, expected files, dependencies, implementation steps, acceptance criteria, tests, rollback notes, and status.
+- Implement only one task at a time unless explicitly told otherwise.
+- After each task, update `docs/implementation_plan.md`.
+- Stop for review after each task.
+
+## Testing and Verification Rules
+
+- Run relevant tests after behavior changes.
+- Backend test command should usually be `cd backend && pytest`.
+- If database migrations are involved, explain Alembic commands and test migration upgrade/downgrade when practical.
+- If a command cannot be run, explain why and provide the exact command for the user to run.
+- Do not claim tests passed unless they were actually run.
+
+## Git Hygiene Rules
+
+- Start by checking `git status` when making changes.
+- Keep diffs small.
+- Do not commit automatically.
+- Do not create large unrelated refactors.
+- Do not modify generated/private data.
+- After edits, summarize changed files and tests run.
+
+## Task Scope Rules
+
+- Do not build multiple phases in one pass.
+- Do not implement frontend, backend, database, agent adapter, and market data all at once.
+- Prefer small sequential tasks:
+  1. `docs/implementation_plan.md`
+  2. Docker Compose Postgres
+  3. backend config loading
+  4. SQLAlchemy session
+  5. Alembic setup
+  6. users/accounts schema
+  7. portfolio core
+  8. deterministic option formulas
+  9. report history
+  10. TradingAgents adapter
+- If the requested task is too broad, propose a smaller first task before coding.

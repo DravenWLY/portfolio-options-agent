@@ -1,0 +1,12 @@
+# Synthetic demo strategy rules only.
+# These are placeholders, not real strategy thresholds or recommendations.
+
+rules:
+  income_review:
+    enabled: true
+    cadence: weekly_demo
+  risk_review:
+    enabled: true
+    max_demo_position_count: 5
+  trade_execution:
+    automatic_orders_enabled: false

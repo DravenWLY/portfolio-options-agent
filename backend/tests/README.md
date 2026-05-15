@@ -33,6 +33,8 @@ Tests must not require real OpenAI, Claude, Gemini, Tradier, Alpaca, Fidelity, o
 
 Use demo users, demo accounts, fake keys, placeholder symbols, and synthetic reports. Do not use real holdings, real account values, real reports, real broker files, or private strategy thresholds in tests.
 
+CSV fixtures under `backend/tests/fixtures/` must be synthetic demo files only. Real Fidelity exports, broker CSVs, statements, transactions, PDFs, and spreadsheets are private data and must never be committed. Keep fallback import tests small and explicit, and use demo symbols such as `DEMO` or `DEMOETF`.
+
 ## Commands
 
 Run the default test suite:

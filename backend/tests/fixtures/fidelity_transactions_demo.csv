@@ -1,0 +1,3 @@
+transaction_id,trade_date,symbol,action,quantity,amount,description
+demo-txn-001,2026-05-14,DEMO,BUY,10,-500.00,Synthetic buy
+demo-txn-002,2026-05-15,DEMOETF,DIVIDEND,0,12.34,Synthetic dividend

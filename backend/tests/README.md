@@ -71,8 +71,10 @@ Run regression tests:
 cd backend && pytest -m regression
 ```
 
-Run external tests only if they are intentionally added later and credentials are configured outside the repository:
+Run external tests only if they are intentionally added later, credentials are configured outside the repository, and the user explicitly approves that run:
 
 ```bash
 cd backend && pytest -m external
 ```
+
+External broker-provider tests must never read or print `.env`, `.env.*`, broker credentials, API keys, account data, or provider secrets. SnapTrade tests in the default suite must use mocked clients only; any real-provider coverage belongs behind the `external` marker and should stay skipped until a safe external-test plan is approved.

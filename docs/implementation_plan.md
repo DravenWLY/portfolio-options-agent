@@ -756,7 +756,20 @@ Status values:
   - `cd backend && alembic upgrade head`
 - Rollback notes:
   - Downgrade migration and remove broker connection model/schema/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added user-scoped broker connection metadata model `backend/app/models/broker_connection.py`.
+  - Added migration `backend/alembic/versions/0008_create_broker_connections.py`.
+  - Added `backend/app/schemas/broker_connection.py` with provider, connection status, sync status, data freshness status, timestamps, scopes, metadata, and `secret_ref`.
+  - Added schema validation to reject obvious plaintext credential material in `secret_ref`.
+  - Added unit tests for broker connection model registration, columns, constraints, indexes, and schema validation.
+  - Updated shared database test cleanup fixture to remove broker connection rows before users.
+  - Did not add broker account mapping, sync runs, SnapTrade adapter code, endpoints, external API calls, frontend code, market data code, or TradingAgents integration.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed, applying `0008_create_broker_connections`.
+  - `cd backend && ./.venv/bin/alembic downgrade 0007_create_option_positions` passed.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed after downgrade.
+  - `cd backend && ./.venv/bin/alembic current` reported `0008_create_broker_connections (head)`.
+  - `cd backend && ./.venv/bin/python -m pytest` passed after the migration round-trip: 65 tests passed in 0.57s.
+- Status: `done`
 
 ### P4-T2 - broker_accounts
 
@@ -781,7 +794,21 @@ Status values:
   - `cd backend && alembic upgrade head`
 - Rollback notes:
   - Downgrade migration and remove broker account model/schema/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added provider-account mapping model `backend/app/models/broker_account.py`.
+  - Added migration `backend/alembic/versions/0009_create_broker_accounts.py`.
+  - Added `backend/app/schemas/broker_account.py` with broker connection ID, optional internal account ID, provider account ID, display name, account type, base currency, sync status, freshness status, last successful sync timestamp, and safe raw payload metadata.
+  - Enforced uniqueness on `(broker_connection_id, provider_account_id)`.
+  - Added indexes for broker connection lookup, mapped internal account lookup, and connection/freshness filtering.
+  - Added unit tests for broker account model registration, columns, constraints, indexes, and schema validation.
+  - Updated shared database test cleanup fixture to remove broker account rows before broker connections.
+  - Did not add broker sync runs, provider credentials metadata, broker sync interfaces, SnapTrade adapter code, endpoints, external API calls, frontend code, market data code, or TradingAgents integration.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed, applying `0009_create_broker_accounts`.
+  - `cd backend && ./.venv/bin/alembic downgrade 0008_create_broker_connections` passed.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed after downgrade.
+  - `cd backend && ./.venv/bin/alembic current` reported `0009_create_broker_accounts (head)`.
+  - `cd backend && ./.venv/bin/python -m pytest` passed after the migration round-trip: 71 tests passed in 0.58s.
+- Status: `done`
 
 ### P4-T3 - broker_sync_runs
 
@@ -806,7 +833,21 @@ Status values:
   - `cd backend && alembic upgrade head`
 - Rollback notes:
   - Downgrade migration and remove sync run model/schema/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added broker sync run metadata model `backend/app/models/broker_sync_run.py`.
+  - Added migration `backend/alembic/versions/0010_create_broker_sync_runs.py`.
+  - Added `backend/app/schemas/broker_sync_run.py` with broker connection/account links, trigger, status, started/completed timestamps, provider request ID, count fields, sanitized error JSONB, and summary JSONB.
+  - Linked sync runs to `broker_connections` and optionally to `broker_accounts`.
+  - Added schema validation for non-negative counts and completion timestamps after start timestamps.
+  - Added unit tests for broker sync run model registration, columns, indexes, defaults, metadata, count validation, and timestamp validation.
+  - Updated shared database test cleanup fixture to remove broker sync run rows before broker accounts and broker connections.
+  - Did not add provider credentials metadata, broker sync interfaces, SnapTrade adapter code, endpoints, external API calls, frontend code, market data code, or TradingAgents integration.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed, applying `0010_create_broker_sync_runs`.
+  - `cd backend && ./.venv/bin/alembic downgrade 0009_create_broker_accounts` passed.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed after downgrade.
+  - `cd backend && ./.venv/bin/alembic current` reported `0010_create_broker_sync_runs (head)`.
+  - `cd backend && ./.venv/bin/python -m pytest` passed after the migration round-trip: 78 tests passed in 0.59s.
+- Status: `done`
 
 ### P4-T4 - Provider Credentials Metadata
 
@@ -831,7 +872,22 @@ Status values:
   - `cd backend && alembic upgrade head`
 - Rollback notes:
   - Downgrade migration and remove credential metadata model/schema/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added provider credential metadata model `backend/app/models/provider_credentials_metadata.py`.
+  - Added migration `backend/alembic/versions/0011_create_provider_credentials_metadata.py` with revision ID `0011_provider_credentials`.
+  - Added `backend/app/schemas/provider_credentials_metadata.py` with provider, credential name, scopes, status, last tested timestamp, metadata, and exactly one of `secret_ref` or `encrypted_secret_ref`.
+  - Added public read schema that does not expose secret references by default, plus an explicit internal read schema for backend-only use.
+  - Added schema validation to reject obvious plaintext credential material in secret reference fields.
+  - Added unit tests for provider credential metadata model registration, columns, indexes, schema normalization, reference exclusivity, plaintext-secret rejection, and public/internal read schema separation.
+  - Updated shared database test cleanup fixture to remove provider credential metadata rows before users.
+  - Did not read `.env`, store real credentials, add provider HTTP calls, add frontend exposure, add SnapTrade adapter code, add endpoints, add market data code, or modify TradingAgents.
+  - `cd backend && ./.venv/bin/alembic upgrade head` initially exposed that the long Alembic revision ID exceeded Alembic's `version_num` column; the migration revision ID was shortened to `0011_provider_credentials`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed, applying `0011_provider_credentials`.
+  - `cd backend && ./.venv/bin/alembic downgrade 0010_create_broker_sync_runs` passed.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed after downgrade.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/python -m pytest` passed after the migration round-trip: 87 tests passed in 0.57s.
+- Status: `done`
 
 ### P4-T5 - Broker Sync Status Enums
 
@@ -854,7 +910,16 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove status modules and tests.
-- Status: `not_started`
+- Verification notes:
+  - Added centralized broker sync status constants and helpers in `backend/app/services/broker_import/statuses.py`.
+  - Added broker sync status schema aliases and catalog model in `backend/app/schemas/broker_sync_status.py`.
+  - Updated broker connection, broker account, and broker sync run schemas to use the centralized status type aliases.
+  - Kept sync run records from accepting `idle`; `idle` remains valid for connection/account sync state but not for individual sync run rows.
+  - Added unit tests for status constants, helper predicates, catalog output, schema acceptance, and sync-run rejection of `idle`.
+  - Did not add migrations, database constraints, endpoints, provider calls, SnapTrade adapter code, frontend code, market data code, or TradingAgents integration.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 92 tests passed in 0.71s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+- Status: `done`
 
 ### P4-T6 - Broker Sync Interfaces
 
@@ -877,7 +942,16 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove interface/model/test files.
-- Status: `not_started`
+- Verification notes:
+  - Added provider-neutral broker sync snapshot and request/result models in `backend/app/services/broker_import/models.py`.
+  - Added `BrokerSyncService` protocol in `backend/app/services/broker_import/interfaces.py`.
+  - Kept the interface app-owned and provider-neutral; the read-only `BrokerPortfolioProvider` and SnapTrade adapter remain Phase 5 work.
+  - Added service tests in `backend/tests/services/test_broker_sync_interfaces.py` using a synthetic fake broker sync service with no network, credentials, or provider SDK.
+  - Added validation tests for invalid triggers, invalid status values, and invalid sync result states.
+  - Did not add migrations, endpoints, provider credentials changes, SnapTrade adapter code, external API calls, frontend code, market data code, or TradingAgents integration.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 98 tests passed in 0.77s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+- Status: `done`
 
 ### P4-T7 - Broker Sync Foundation Tests
 
@@ -899,7 +973,16 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove broker sync foundation tests.
-- Status: `not_started`
+- Verification notes:
+  - Added broker sync foundation smoke tests in `backend/tests/api/test_broker_sync_foundation.py`.
+  - Added assertions that OpenAPI does not expose `secret_ref` or `encrypted_secret_ref`.
+  - Added synthetic fake secret-reference test using `secret://snaptrade/synthetic-user`.
+  - Reused `backend/tests/services/test_broker_sync_interfaces.py` to cover status and interface behavior.
+  - Confirmed all broker sync foundation tests are synthetic and require no network, real credentials, broker data, SnapTrade SDK, or TradingAgents import.
+  - Did not add routes, external API calls, frontend code, market data code, SnapTrade adapter code, or TradingAgents integration.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 98 tests passed in 0.77s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+- Status: `done`
 
 ## Phase 5 - SnapTrade Read-Only Adapter, Mock-First
 
@@ -924,7 +1007,18 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove provider interface files and tests.
-- Status: `not_started`
+- Verification notes:
+  - Added provider-facing read-only model contract in `backend/app/services/broker_import/providers/models.py`.
+  - Added `BrokerPortfolioProvider` protocol in `backend/app/services/broker_import/providers/base.py`.
+  - Added provider package marker `backend/app/services/broker_import/providers/__init__.py`.
+  - Covered account, balance, stock/ETF position, option position, transaction, and refresh operations.
+  - Included provider, sync timestamp, received timestamp, sync status, and data freshness status in provider models.
+  - Kept market data quotes/chains and trading/order methods out of the provider interface.
+  - Added adapter contract tests in `backend/tests/adapters/test_broker_portfolio_provider_interface.py` using a synthetic fake provider only.
+  - Did not add SnapTrade adapter code, config, credentials, endpoints, external API calls, frontend code, market data code, or TradingAgents integration.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 102 tests passed in 0.74s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+- Status: `done`
 
 ### P5-T2 - SnapTradeAdapter Skeleton
 
@@ -946,7 +1040,16 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove SnapTrade adapter skeleton and tests.
-- Status: `not_started`
+- Verification notes:
+  - Added read-only `SnapTradeAdapter` skeleton in `backend/app/services/broker_import/providers/snaptrade.py`.
+  - Added `SnapTradeAdapterNotConfiguredError` for clear failures until config and mocked/real integration tasks land.
+  - Implemented the `BrokerPortfolioProvider` protocol methods only: connections, accounts, balances, positions, option positions, transactions, and refresh.
+  - Added explicit tests that forbidden trading/order methods such as place/submit/cancel/execute trade are not exposed.
+  - Added tests that every read-only method raises the not-configured error instead of making network calls.
+  - Did not add config, credentials, SnapTrade SDK usage, HTTP calls, endpoints, frontend code, market data code, or TradingAgents integration.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 112 tests passed in 1.13s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+- Status: `done`
 
 ### P5-T3 - SnapTrade Config Names
 
@@ -969,7 +1072,17 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove SnapTrade config fields and placeholder docs.
-- Status: `not_started`
+- Verification notes:
+  - Added SnapTrade config field names to `backend/app/core/config.py`: `SNAPTRADE_CLIENT_ID`, `SNAPTRADE_CONSUMER_KEY`, and `SNAPTRADE_ENVIRONMENT`.
+  - Kept runtime defaults safe: SnapTrade credential values default to empty strings and environment defaults to `sandbox`.
+  - Added placeholder-only entries to `.env.example`.
+  - Updated config tests to use synthetic monkeypatched values only.
+  - Added test coverage that SnapTrade config defaults do not contain real-looking credentials.
+  - Did not read, print, or modify `.env` or any private config.
+  - Did not add real credentials, external API calls, SnapTrade SDK usage, endpoints, frontend code, market data code, or TradingAgents integration.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 113 tests passed in 0.78s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+- Status: `done`
 
 ### P5-T4 - SnapTrade Exceptions and Response Models
 
@@ -992,7 +1105,17 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove exceptions/models/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added app-owned broker provider exceptions for unavailable provider, auth failure, reauth required, rate limit, and stale data cases.
+  - Added typed SnapTrade response models for user registration, connection portal URL, connections, accounts, balances, positions, option positions, transactions, and refresh results.
+  - Added model-to-provider snapshot/result mapping helpers so the rest of the app can depend on provider-neutral broker sync types.
+  - Added validation that secret material must be represented by a safe secret reference, not plaintext SnapTrade secrets.
+  - Added adapter tests for exception mapping, response validation, status validation, and provider-neutral conversion.
+  - Did not add the SnapTrade SDK, make network calls, read `.env`, or add real credentials.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 127 tests passed, 1 deselected in 0.82s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ### P5-T5 - Mocked SnapTrade User and Account Tests
 
@@ -1014,7 +1137,16 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove mocked adapter tests and related adapter methods.
-- Status: `not_started`
+- Verification notes:
+  - Added a dependency-injected read-only SnapTrade client protocol to the adapter skeleton.
+  - Added mocked adapter methods for register user, create connection portal URL, list connections, and list accounts.
+  - Added synthetic mocked tests that verify safe secret-reference handling and no frontend exposure of SnapTrade user secrets.
+  - Kept adapter behavior read-only and confirmed trading/order methods remain absent.
+  - Did not add real HTTP calls, credentials, SDK usage, frontend code, or endpoint code.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 127 tests passed, 1 deselected in 0.82s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ### P5-T6 - Mocked SnapTrade Portfolio Data Tests
 
@@ -1037,7 +1169,15 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove mocked portfolio data tests and related adapter methods.
-- Status: `not_started`
+- Verification notes:
+  - Added mocked read-only adapter coverage for balances, stock/ETF positions, option positions, transactions, and account refresh status.
+  - Verified broker sync snapshots expose broker/account holdings fields only and do not become market quote objects with bid/ask/quote timestamps.
+  - Preserved raw provider payload as optional synthetic metadata for later normalization while keeping market data architecture separate.
+  - Did not add business normalization, database writes, external calls, market-data provider code, or SnapTrade trading/order behavior.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 127 tests passed, 1 deselected in 0.82s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ### P5-T7 - External Test Guardrails
 
@@ -1061,7 +1201,16 @@ Status values:
   - `cd backend && pytest -m external` only when explicitly configured later.
 - Rollback notes:
   - Remove external test placeholder/docs.
-- Status: `not_started`
+- Verification notes:
+  - Added a SnapTrade external-test placeholder marked `external` and skipped by default.
+  - Updated backend test docs to make real provider tests opt-in only, with no `.env`, broker credential, account data, or secret reads/prints.
+  - Documented that mocked SnapTrade tests are the default and real-provider coverage requires an approved external-test plan.
+  - Confirmed `backend/pytest.ini` excludes `external` and `slow` tests from the default suite.
+  - Did not run `pytest -m external` because real-provider testing has not been explicitly configured or approved.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 127 tests passed, 1 deselected in 0.82s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ## Phase 6 - SnapTrade Connection Flow Backend
 
@@ -1086,7 +1235,16 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove route/service/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added backend-only SnapTrade user registration endpoint at `POST /broker-sync/snaptrade/users`.
+  - Added `snaptrade_connection` service that stores SnapTrade user metadata in `provider_credentials_metadata` with a backend-only safe credential reference.
+  - API response returns only provider, SnapTrade user id, and credential metadata id; it does not return credential references or provider secrets.
+  - API tests mock the adapter and verify no provider secrets appear in responses.
+  - Did not add real SnapTrade SDK calls, external API calls, frontend code, or portfolio normalization.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 140 tests passed, 1 deselected in 1.12s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ### P6-T2 - Connection Portal URL Endpoint
 
@@ -1109,7 +1267,16 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove portal endpoint/service/test changes.
-- Status: `not_started`
+- Verification notes:
+  - Added backend-only connection portal endpoint at `POST /broker-sync/snaptrade/connection-portal`.
+  - Endpoint looks up the stored SnapTrade user metadata and credential reference server-side.
+  - Response returns only the portal URL and expiration metadata, never SnapTrade user secrets or credential references.
+  - Added mocked API tests for successful portal generation and missing-registration conflict behavior.
+  - Did not expose SnapTrade secrets to frontend or read `.env`.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 140 tests passed, 1 deselected in 1.12s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ### P6-T3 - List Broker Connections Endpoint
 
@@ -1132,7 +1299,15 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove list endpoint/service/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added `GET /users/{user_id}/broker-connections`.
+  - Added broker connection listing service scoped by user id and active/non-deleted connections.
+  - Response model excludes `secret_ref`, raw provider metadata, and private credential fields.
+  - Added API tests that prove connection listing omits secret references.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 140 tests passed, 1 deselected in 1.12s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ### P6-T4 - List Broker Accounts Endpoint
 
@@ -1155,7 +1330,15 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove broker account endpoint/service/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added `GET /broker-connections/{broker_connection_id}/accounts`.
+  - Added broker account listing service scoped by broker connection id.
+  - Response model includes provider account id, optional mapped internal account id, sync status, and freshness while excluding raw provider payloads.
+  - Added API tests with synthetic provider account data.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 140 tests passed, 1 deselected in 1.12s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ### P6-T5 - Sync Account Data Endpoint
 
@@ -1178,7 +1361,16 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove sync endpoint/service/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added `POST /broker-accounts/{broker_account_id}/sync`.
+  - Added read-only broker sync service that creates a traceable `broker_sync_runs` record.
+  - Mocked provider calls cover account refresh, balances, stock/ETF positions, and option positions, but do not normalize data into portfolio tables yet.
+  - Sync summary records counts and safe metadata only; no trading/order calls are implemented.
+  - Added API tests for successful sync and reauthorization failure as a failed sync run.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 140 tests passed, 1 deselected in 1.12s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ### P6-T6 - Broker Sync Run Status Endpoint
 
@@ -1201,7 +1393,14 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove sync run status endpoint/service/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added `GET /broker-sync-runs/{sync_run_id}`.
+  - Added sync run lookup service and safe public response model for sync status, counts, timestamps, sanitized error, and summary fields.
+  - Added API tests for existing and missing sync run lookups.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 140 tests passed, 1 deselected in 1.12s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ### P6-T7 - SnapTrade Connection Flow API Tests
 
@@ -1223,7 +1422,15 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove connection flow API tests.
-- Status: `not_started`
+- Verification notes:
+  - Added mocked API coverage across the Phase 6 SnapTrade connection and sync flow.
+  - Covered happy-path registration, portal URL generation, connection listing, account listing, sync creation, sync status lookup, missing resources, provider unavailable, and reauthorization-required scenarios.
+  - Assertions verify API responses do not expose credential references, provider secrets, raw provider payloads, or private account data.
+  - Default test suite still deselects external tests and makes no real SnapTrade calls.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 140 tests passed, 1 deselected in 1.12s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ## Phase 7 - SnapTrade Portfolio Normalization
 
@@ -1247,7 +1454,16 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove cash normalization module/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added SnapTrade balance normalization into internal `cash_balances` snapshots.
+  - Mapped provider total cash and available cash into total/free cash using conservative zero defaults for reserved collateral, premium income, and DCA cash.
+  - Preserved provider account reference, source, data freshness, and sync timestamp.
+  - Added synthetic service tests for available-cash and missing-available-cash cases.
+  - Did not add migrations, endpoints, real provider calls, or business strategy logic.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 152 tests passed, 1 deselected in 1.27s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ### P7-T2 - Stock/ETF Position Normalization
 
@@ -1269,7 +1485,16 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove stock normalization module/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added SnapTrade stock/ETF normalization into internal `stock_positions` snapshots.
+  - Mapped symbol, asset type, quantity, market value, source reference, freshness, and as-of timestamp.
+  - Preserved sanitized raw provider metadata and intentionally left `market_price` unset so broker holdings are not treated as live market quotes.
+  - Added synthetic service tests for stock normalization and quote-separation behavior.
+  - Did not add market-data provider logic or dashboard endpoints.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 152 tests passed, 1 deselected in 1.27s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ### P7-T3 - Option Position Normalization
 
@@ -1291,7 +1516,16 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove option normalization module/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added OCC option symbol parsing for synthetic SnapTrade option identifiers.
+  - Added option normalization into `option_contracts` and `option_positions` using existing contract get-or-create behavior.
+  - Mapped underlying, expiration, strike, option type, position side, quantity, market value, source reference, freshness, and as-of timestamp.
+  - Added synthetic tests for OCC parsing, option contract/position creation, and idempotent contract/position resolution.
+  - Did not add deterministic option strategy calculations or market quote logic.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 152 tests passed, 1 deselected in 1.27s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ### P7-T4 - Safe Raw Provider Payloads
 
@@ -1313,7 +1547,15 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove sanitization module/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added recursive provider payload sanitization for raw metadata that may be retained for audit/debugging.
+  - Redacts secret-like fields such as token, authorization, password, API key, credential, and secret keys.
+  - Added unit tests for nested dictionaries, lists, scalar values, and null payloads.
+  - Did not store real provider payloads or credentials.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 152 tests passed, 1 deselected in 1.27s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ### P7-T5 - Reconciliation and Duplicate Handling
 
@@ -1335,7 +1577,15 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove reconciliation module/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added application-level reconciliation helpers for provider snapshot source references and existing cash/stock/option snapshot lookup.
+  - Idempotency is based on account, source, provider account/symbol or contract reference, and as-of timestamp.
+  - Added synthetic tests proving repeated cash and stock snapshots update the existing row instead of duplicating holdings.
+  - Kept database uniqueness constraints and covering indexes deferred to a later hardening task as planned.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 152 tests passed, 1 deselected in 1.27s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ### P7-T6 - SnapTrade Normalization Tests
 
@@ -1356,7 +1606,14 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove end-to-end normalization tests.
-- Status: `not_started`
+- Verification notes:
+  - Added end-to-end synthetic normalization test from mocked SnapTrade balance, stock/ETF positions, and option positions into internal tables.
+  - Verified cash, stock, option contract, and option position records are created with SnapTrade source, freshness, and as-of metadata.
+  - Confirmed normalization remains internal service-layer behavior; no real provider calls, frontend code, market data, TradingAgents integration, or automatic trading was added.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 152 tests passed, 1 deselected in 1.27s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0011_provider_credentials (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
 
 ## Phase 8 - Portfolio Dashboard Backend from Synced Data
 

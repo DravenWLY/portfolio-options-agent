@@ -9,9 +9,13 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal, engine
 from app.main import app as fastapi_app
 from app.models.account import Account
+from app.models.broker_account import BrokerAccount
+from app.models.broker_connection import BrokerConnection
+from app.models.broker_sync_run import BrokerSyncRun
 from app.models.cash_balance import CashBalance
 from app.models.option_contract import OptionContract
 from app.models.option_position import OptionPosition
+from app.models.provider_credentials_metadata import ProviderCredentialsMetadata
 from app.models.stock_position import StockPosition
 from app.models.user import User
 
@@ -42,6 +46,10 @@ def db_session() -> Generator[Session, None, None]:
 
     db = SessionLocal()
     try:
+        db.execute(delete(ProviderCredentialsMetadata))
+        db.execute(delete(BrokerSyncRun))
+        db.execute(delete(BrokerAccount))
+        db.execute(delete(BrokerConnection))
         db.execute(delete(OptionPosition))
         db.execute(delete(OptionContract))
         db.execute(delete(StockPosition))
@@ -51,6 +59,10 @@ def db_session() -> Generator[Session, None, None]:
         db.commit()
         yield db
     finally:
+        db.execute(delete(ProviderCredentialsMetadata))
+        db.execute(delete(BrokerSyncRun))
+        db.execute(delete(BrokerAccount))
+        db.execute(delete(BrokerConnection))
         db.execute(delete(OptionPosition))
         db.execute(delete(OptionContract))
         db.execute(delete(StockPosition))

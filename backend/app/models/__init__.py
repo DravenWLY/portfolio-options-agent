@@ -1,8 +1,23 @@
 from app.models.account import Account
+from app.models.broker_account import BrokerAccount
+from app.models.broker_connection import BrokerConnection
+from app.models.broker_sync_run import BrokerSyncRun
 from app.models.cash_balance import CashBalance
 from app.models.option_contract import OptionContract
 from app.models.option_position import OptionPosition
+from app.models.provider_credentials_metadata import ProviderCredentialsMetadata
 from app.models.stock_position import StockPosition
 from app.models.user import User
 
-__all__ = ["Account", "CashBalance", "OptionContract", "OptionPosition", "StockPosition", "User"]
+__all__ = [
+    "Account",
+    "BrokerAccount",
+    "BrokerConnection",
+    "BrokerSyncRun",
+    "CashBalance",
+    "OptionContract",
+    "OptionPosition",
+    "ProviderCredentialsMetadata",
+    "StockPosition",
+    "User",
+]

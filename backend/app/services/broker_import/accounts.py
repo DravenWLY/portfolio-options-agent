@@ -1,0 +1,29 @@
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models.broker_account import BrokerAccount
+from app.services.broker_import.connections import get_broker_connection
+
+
+def list_connection_broker_accounts(db: Session, broker_connection_id: UUID) -> list[BrokerAccount] | None:
+    if get_broker_connection(db, broker_connection_id) is None:
+        return None
+
+    return list(
+        db.scalars(
+            select(BrokerAccount)
+            .where(BrokerAccount.broker_connection_id == broker_connection_id, BrokerAccount.deleted_at.is_(None))
+            .order_by(BrokerAccount.created_at.desc())
+        )
+    )
+
+
+def get_broker_account(db: Session, broker_account_id: UUID) -> BrokerAccount | None:
+    return db.scalar(
+        select(BrokerAccount).where(
+            BrokerAccount.id == broker_account_id,
+            BrokerAccount.deleted_at.is_(None),
+        )
+    )

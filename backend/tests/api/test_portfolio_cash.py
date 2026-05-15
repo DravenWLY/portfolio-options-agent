@@ -49,6 +49,9 @@ def test_create_and_get_latest_cash_balance(client: TestClient, db_session: Sess
             "free_cash": "7000.00",
             "premium_income_cash": "1000.00",
             "dca_cash": "1000.00",
+            "source": "snaptrade",
+            "source_ref": "sync_run_demo",
+            "data_freshness_status": "fresh",
             "as_of": "2026-05-14T15:00:00Z",
         },
     )
@@ -60,6 +63,9 @@ def test_create_and_get_latest_cash_balance(client: TestClient, db_session: Sess
     assert latest["account_id"] == account_id
     assert Decimal(latest["total_cash"]) == Decimal("12000.00")
     assert Decimal(latest["reserved_collateral_cash"]) == Decimal("3000.00")
+    assert latest["source"] == "snaptrade"
+    assert latest["source_ref"] == "sync_run_demo"
+    assert latest["data_freshness_status"] == "fresh"
 
 
 def test_create_cash_balance_for_missing_account_returns_404(client: TestClient, db_session: Session) -> None:

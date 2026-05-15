@@ -22,9 +22,15 @@ def test_cash_balance_model_columns() -> None:
         "free_cash",
         "premium_income_cash",
         "dca_cash",
+        "source",
+        "source_ref",
+        "data_freshness_status",
         "as_of",
         "created_at",
     }
     assert columns["account_id"].nullable is False
     assert columns["total_cash"].nullable is False
     assert columns["free_cash"].nullable is False
+    assert columns["source"].nullable is False
+    assert columns["source_ref"].nullable is True
+    assert columns["data_freshness_status"].nullable is False

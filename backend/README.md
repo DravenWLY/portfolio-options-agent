@@ -4,7 +4,16 @@ FastAPI backend for `portfolio-options-agent`.
 
 ## Current Status
 
-Only a minimal health check endpoint exists.
+The backend currently includes:
+
+- FastAPI health check endpoint.
+- PostgreSQL configuration through Docker Compose.
+- SQLAlchemy session setup.
+- Alembic migrations for users, accounts, cash balances, stock positions, option contracts, and option positions.
+- Basic users/accounts API routes.
+- Internal portfolio storage routes for cash, stock/ETF positions, option positions, and portfolio summary.
+
+Broker sync, market data providers, deterministic option/risk engines, TradingAgents integration, and frontend application code are not implemented yet.
 
 ## Run Locally
 
@@ -36,22 +45,21 @@ Remove the database container and local development volume:
 docker compose down -v
 ```
 
-The backend does not connect to PostgreSQL yet. SQLAlchemy and Alembic will be added in later implementation tasks.
+The backend uses PostgreSQL for local development. Keep `.env` private and use `.env.example` only for placeholder variable names.
 
 ## Database Migrations
-
-Alembic is configured, but no business tables exist yet.
 
 From the `backend/` directory:
 
 ```bash
-alembic upgrade head
+./.venv/bin/alembic upgrade head
+./.venv/bin/alembic current
 ```
 
-There are no migration revisions yet, so downgrade has nothing to apply until the first schema migration is created.
+Use downgrade commands only when intentionally testing or rolling back local development schema changes.
 
 ## Test
 
 ```bash
-pytest
+./.venv/bin/python -m pytest
 ```

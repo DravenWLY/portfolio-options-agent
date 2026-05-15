@@ -23,6 +23,9 @@ def create_cash_balance(db: Session, account_id: UUID, payload: CashBalanceCreat
         free_cash=payload.free_cash,
         premium_income_cash=payload.premium_income_cash,
         dca_cash=payload.dca_cash,
+        source=payload.source,
+        source_ref=payload.source_ref,
+        data_freshness_status=payload.data_freshness_status,
         as_of=payload.as_of,
     )
     db.add(cash_balance)

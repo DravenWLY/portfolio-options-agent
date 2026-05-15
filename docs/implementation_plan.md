@@ -425,6 +425,45 @@ Status values:
   - `cd backend && ./.venv/bin/python -m pytest` passed: 30 tests passed in 0.36s.
 - Status: `done`
 
+### P3-T1B - Cash Snapshot Provenance Alignment
+
+- Task id: `P3-T1B`
+- Title: cash snapshot provenance alignment
+- Objective: Align completed cash balance snapshots with the SnapTrade-first architecture by adding source and freshness metadata.
+- Files expected to change:
+  - `backend/app/models/cash_balance.py`
+  - `backend/app/schemas/cash_balance.py`
+  - `backend/app/services/portfolio/cash_balances.py`
+  - `backend/alembic/versions/*`
+  - `backend/tests/unit/test_cash_balance_model.py`
+  - `backend/tests/unit/test_cash_balance_schema.py`
+  - `backend/tests/api/test_portfolio_cash.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P3-T1`
+- Implementation steps:
+  1. Add source, source reference, and data freshness fields to cash snapshots.
+  2. Keep defaults compatible with manual entry.
+  3. Avoid adding broker sync foreign keys until `broker_sync_runs` exists.
+- Acceptance criteria:
+  - Cash snapshots can represent manual, CSV, or future SnapTrade-normalized balance sources.
+  - No SnapTrade credentials or broker secrets are stored.
+- Tests to run:
+  - `cd backend && pytest`
+  - `cd backend && alembic upgrade head`
+- Rollback notes:
+  - Downgrade migration and remove provenance fields/tests.
+- Verification notes:
+  - Added `source`, `source_ref`, and `data_freshness_status` to `backend/app/models/cash_balance.py`.
+  - Added migration `backend/alembic/versions/0004_add_cash_balance_provenance.py`.
+  - Updated `backend/app/schemas/cash_balance.py` to support `manual`, `csv`, and `snaptrade` sources with safe freshness statuses.
+  - Updated cash balance service and API tests to preserve provenance/freshness metadata.
+  - Did not add a `broker_sync_run_id` foreign key yet because `broker_sync_runs` belongs to Phase 4.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed, applying `0004_add_cash_balance_provenance`.
+  - `cd backend && ./.venv/bin/alembic downgrade 0003_create_cash_balances` passed.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 41 tests passed in 0.36s.
+- Status: `done`
+
 ### P3-T2 - Stock Positions
 
 - Task id: `P3-T2`
@@ -450,7 +489,19 @@ Status values:
   - `cd backend && alembic upgrade head`
 - Rollback notes:
   - Downgrade migration and remove stock position model/schema/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added normalized stock/ETF position model `backend/app/models/stock_position.py`.
+  - Added migration `backend/alembic/versions/0005_create_stock_positions.py`.
+  - Added `backend/app/schemas/stock_position.py` with symbol normalization, source, freshness, and safe raw provider payload support.
+  - Added `backend/app/services/portfolio/stock_positions.py`.
+  - Added `POST /accounts/{account_id}/stock-positions` and `GET /accounts/{account_id}/stock-positions` to portfolio routes.
+  - Added unit tests for model/schema behavior and API tests for create/list/missing-account/validation paths.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed, applying `0005_create_stock_positions`.
+  - `cd backend && ./.venv/bin/alembic downgrade 0003_create_cash_balances` passed.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed.
+  - `cd backend && ./.venv/bin/alembic current` reported `0005_create_stock_positions (head)`.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 41 tests passed in 0.36s.
+- Status: `done`
 
 ### P3-T3 - Option Contracts
 
@@ -475,7 +526,18 @@ Status values:
   - `cd backend && alembic upgrade head`
 - Rollback notes:
   - Downgrade migration and remove contract model/schema/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added normalized option contract model `backend/app/models/option_contract.py`.
+  - Added migration `backend/alembic/versions/0006_create_option_contracts.py`.
+  - Added `backend/app/schemas/option_contract.py` with OCC symbol normalization, option type, style, expiration, strike, and multiplier validation.
+  - Added `backend/app/services/portfolio/option_contracts.py` to resolve contracts idempotently by OCC symbol.
+  - Added unit tests for option contract model and schema behavior using synthetic contract data.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed, applying `0006_create_option_contracts`.
+  - `cd backend && ./.venv/bin/alembic downgrade 0005_create_stock_positions` passed as part of the Phase 3 migration round-trip.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed after downgrade.
+  - `cd backend && ./.venv/bin/alembic current` reported `0007_create_option_positions (head)`.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 56 tests passed in 0.52s after the migration round-trip.
+- Status: `done`
 
 ### P3-T4 - Option Positions
 
@@ -502,7 +564,19 @@ Status values:
   - `cd backend && alembic upgrade head`
 - Rollback notes:
   - Downgrade migration and remove option position model/schema/tests.
-- Status: `not_started`
+- Verification notes:
+  - Added normalized account-scoped option position model `backend/app/models/option_position.py`.
+  - Added migration `backend/alembic/versions/0007_create_option_positions.py`.
+  - Added `backend/app/schemas/option_position.py` with long/short position side, status, source, freshness, nested contract payload, and safe raw provider payload support.
+  - Added `backend/app/services/portfolio/option_positions.py` to create/list option positions and reuse option contracts by OCC symbol.
+  - Added `POST /accounts/{account_id}/option-positions` and `GET /accounts/{account_id}/option-positions` to portfolio routes.
+  - Added API tests for create/list flows, missing account handling, and idempotent contract reuse.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed, applying `0007_create_option_positions`.
+  - `cd backend && ./.venv/bin/alembic downgrade 0005_create_stock_positions` passed as part of the Phase 3 migration round-trip.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed after downgrade.
+  - `cd backend && ./.venv/bin/alembic current` reported `0007_create_option_positions (head)`.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 56 tests passed in 0.52s after the migration round-trip.
+- Status: `done`
 
 ### P3-T5 - Portfolio Summary
 
@@ -527,7 +601,16 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove summary service, route changes, and tests.
-- Status: `not_started`
+- Verification notes:
+  - Added deterministic portfolio summary schema `backend/app/schemas/portfolio.py`.
+  - Added portfolio summary service `backend/app/services/portfolio/summary.py`.
+  - Added `GET /accounts/{account_id}/portfolio` to portfolio routes.
+  - Summary currently aggregates latest cash, stock market value, option market value, position counts, data sources, and freshness statuses from internal normalized tables only.
+  - Summary remains independent of broker sync, market data providers, LLMs, and TradingAgents.
+  - Added service tests with synthetic cash, stock, and option records.
+  - Added API flow test that creates internal portfolio records and verifies the summary response.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 56 tests passed in 0.52s.
+- Status: `done`
 
 ### P3-T6 - Portfolio Storage Tests
 
@@ -549,6 +632,103 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove portfolio storage tests and fixtures.
+- Verification notes:
+  - Moved the reusable database cleanup fixture to `backend/tests/conftest.py` so API and service tests can share it.
+  - Added end-to-end internal portfolio API test `backend/tests/api/test_portfolio.py`.
+  - Added direct portfolio summary service test `backend/tests/services/test_portfolio_summary.py`.
+  - Added option contract and option position API/unit coverage.
+  - Confirmed all test data is synthetic and no external APIs, broker credentials, LLM calls, or TradingAgents imports are required.
+  - `cd backend && ./.venv/bin/python -m pytest` passed before the migration round-trip: 56 tests passed in 0.56s.
+  - `cd backend && ./.venv/bin/python -m pytest` passed after the migration round-trip: 56 tests passed in 0.52s.
+- Status: `done`
+
+### P3-T7 - Portfolio Summary Correctness Hardening
+
+- Task id: `P3-T7`
+- Title: portfolio summary correctness hardening
+- Objective: Fix Phase 3 portfolio summary semantics before broker sync foundation begins by preventing duplicate snapshot aggregation and applying correct option liability sign handling.
+- Files expected to change:
+  - `backend/app/services/portfolio/summary.py`
+  - `backend/tests/api/test_portfolio.py`
+  - `backend/tests/services/test_portfolio_summary.py`
+  - `backend/tests/regression/test_portfolio_summary_regressions.py`
+  - `backend/README.md`
+  - `docs/implementation_plan.md`
+- Dependencies: `P3-T6`
+- Implementation steps:
+  1. Keep cash balance logic unchanged; cash summary already uses the correct latest-snapshot pattern via `as_of DESC` and `created_at DESC`.
+  2. Treat stock and option position rows as immutable observations for the early MVP.
+  3. Update portfolio summary to use only the latest stock row per `(account_id, symbol)`. Do not add a stock `status` column in this task.
+  4. Update portfolio summary to use only the latest open option row per `(account_id, option_contract_id)`.
+  5. Use deterministic latest-row ordering, such as `as_of DESC`, `created_at DESC`, and `id DESC`, so ties resolve predictably.
+  6. Aggregate option market value with `position_side` semantics: long option market value adds to net value, short option market value subtracts as a liability.
+  7. Update existing API and service assertions from `Decimal("14710.00")` to `Decimal("14290.00")` for the synthetic account with `10000` cash, `4500` stock value, and `210` short option liability.
+  8. Add regression tests in `backend/tests/regression/test_portfolio_summary_regressions.py` for repeated stock snapshots, repeated option snapshots, long option value, and short option liability.
+  9. Mark the regression tests with `pytest.mark.regression` and `pytest.mark.db` when database fixtures are used.
+  10. Refresh `backend/README.md` to reflect the actual Phase 1-3 backend surface.
+  11. Do not add migrations, database constraints, new indexes, service-layer commit refactors, broker sync code, SnapTrade code, market data code, frontend code, or TradingAgents integration in this task.
+- Acceptance criteria:
+  - Repeated stock snapshots for the same account/symbol do not inflate portfolio summary.
+  - Repeated option snapshots for the same account/option contract do not inflate portfolio summary.
+  - Long option market value increases net option value.
+  - Short option market value reduces net option value and `total_internal_value`.
+  - Existing API/service tests reflect `10000 + 4500 - 210 = 14290`.
+  - The regression pytest marker is exercised by at least one test.
+  - Summary remains independent of broker sync, market data providers, LLMs, frontend code, and TradingAgents.
+  - No real broker data, credentials, API keys, reports, imports, exports, or private configs are used.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest`
+  - `cd backend && ./.venv/bin/alembic current`
+  - `cd backend && ./.venv/bin/alembic upgrade head`
+- Rollback notes:
+  - Revert summary service changes, remove the new regression tests, restore prior summary assertions, and revert the backend README refresh.
+- Deferrals:
+  - Insert-level idempotency and uniqueness for repeated provider sync payloads are deferred to Phase 7 SnapTrade portfolio normalization or a separate hardening task.
+  - Covering indexes such as `(account_id, symbol, as_of)` or `(account_id, option_contract_id, as_of)` are deferred to a schema/performance hardening task.
+  - Service-layer commit boundary refactors, migration round-trip pytest automation, CHECK constraints, snapshot uniqueness constraints, and broader pagination/latest-filter API design are out of scope for P3-T7.
+- Verification notes:
+  - Updated `backend/app/services/portfolio/summary.py` to summarize latest stock snapshots per `(account_id, symbol)` and latest open option snapshots per `(account_id, option_contract_id)`.
+  - Kept cash balance summary logic unchanged because it already uses the latest cash snapshot.
+  - Applied option sign semantics in the summary: long option market value adds to net value and short option market value subtracts as a liability.
+  - Updated existing API and service expectations from `14710.00` to `14290.00` for the synthetic short-put scenario.
+  - Added regression tests in `backend/tests/regression/test_portfolio_summary_regressions.py` covering repeated stock snapshots, repeated option snapshots, long option value, and short option liability.
+  - Refreshed `backend/README.md` to reflect the actual Phase 1-3 backend surface.
+  - Did not add migrations, constraints, indexes, broker sync code, SnapTrade code, market data code, frontend code, or TradingAgents integration.
+  - `cd backend && ./.venv/bin/python -m pytest` passed: 59 tests passed in 0.63s.
+  - `cd backend && ./.venv/bin/alembic current` reported `0007_create_option_positions (head)`.
+  - `cd backend && ./.venv/bin/alembic upgrade head` passed with no pending migrations.
+- Status: `done`
+
+### P3-T8 - Portfolio Storage and Migration Hardening
+
+- Task id: `P3-T8`
+- Title: portfolio storage and migration hardening
+- Objective: Track non-blocking storage, transaction-boundary, and migration-test hardening items discovered during Phase 3 review without expanding P3-T7.
+- Files expected to change:
+  - `backend/app/models/*`
+  - `backend/app/services/*`
+  - `backend/alembic/versions/*`
+  - `backend/tests/db/*`
+  - `backend/tests/regression/*`
+  - `docs/implementation_plan.md`
+- Dependencies: `P3-T7`
+- Implementation steps:
+  1. Evaluate service-layer commit boundary refactor or a future unit-of-work pattern before broker sync writes multiple rows atomically.
+  2. Evaluate database CHECK constraints for enum-like string columns.
+  3. Evaluate snapshot uniqueness constraints or provider-source idempotency keys after Phase 7 normalization requirements are clearer.
+  4. Evaluate covering indexes for latest-position summary queries after query shape and expected data volume are clearer.
+  5. Evaluate a dedicated migration round-trip pytest strategy using an isolated migration test database.
+- Acceptance criteria:
+  - Hardening scope is explicitly approved before implementation.
+  - No hardening change is mixed into feature work without a focused task and tests.
+- Phase-gate note:
+  - This is a tracked future hardening stub, not a blocker for starting Phase 4 after P3-T7 is complete.
+  - Do not implement this broad task without breaking it into smaller approved tasks.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest`
+  - Migration-specific commands to be defined when this task is approved.
+- Rollback notes:
+  - Revert any hardening migrations, service refactors, and associated tests from the focused hardening task.
 - Status: `not_started`
 
 ## Phase 4 - Broker Sync Foundation

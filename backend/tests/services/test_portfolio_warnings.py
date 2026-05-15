@@ -55,5 +55,5 @@ def test_missing_market_value_warning_is_explicit() -> None:
 
     assert warning.code == "broker_data_market_value_missing"
     assert warning.severity == "warning"
-    assert warning.freshness_status == "unknown"
+    assert warning.freshness_status == "not_applicable"
     assert "missing market value" in warning.message

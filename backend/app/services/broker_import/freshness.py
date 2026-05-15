@@ -69,5 +69,6 @@ def get_broker_account_freshness(
         latest_sync_run_status=latest_run.status if latest_run else None,
         latest_sync_run_completed_at=latest_run.completed_at if latest_run else None,
         requires_reauth=bool(statuses & REAUTH_STATUSES),
-        has_error=bool(statuses & ERROR_STATUSES or (latest_run and latest_run.status in ERROR_SYNC_RUN_STATUSES)),
+        has_error=bool(statuses & ERROR_STATUSES)
+        or (latest_run is not None and latest_run.status == "partially_succeeded"),
     )

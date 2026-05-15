@@ -6,6 +6,7 @@ from typing import Literal
 
 
 CsvImportType = Literal["positions", "transactions"]
+MAX_PARSE_ROWS = 10_000
 
 
 class FidelityCsvImportError(ValueError):
@@ -34,7 +35,7 @@ TRANSACTION_DECIMAL_COLUMNS = {"quantity", "amount"}
 
 
 def _normalize_header(value: str) -> str:
-    return value.strip().lower().replace(" ", "_")
+    return value.lstrip("\ufeff").strip().lower().replace(" ", "_")
 
 
 def _normalize_row(row: dict[str, str | None]) -> dict[str, str]:
@@ -58,7 +59,11 @@ def _parse_rows(csv_text: str) -> tuple[list[dict[str, str]], list[str]]:
     normalized_headers = [_normalize_header(header) for header in reader.fieldnames]
     if len(normalized_headers) != len(set(normalized_headers)):
         raise FidelityCsvImportError("CSV headers must be unique after normalization")
-    rows = [_normalize_row(row) for row in reader]
+    rows = []
+    for index, row in enumerate(reader, start=1):
+        if index > MAX_PARSE_ROWS:
+            raise FidelityCsvImportError(f"CSV exceeds maximum preview row count of {MAX_PARSE_ROWS}")
+        rows.append(_normalize_row(row))
     if not rows:
         warnings.append("CSV contains no data rows")
     return rows, warnings

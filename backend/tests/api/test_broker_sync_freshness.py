@@ -171,6 +171,31 @@ def test_broker_account_freshness_uses_latest_run_status_for_error_flag(
     assert payload["requires_reauth"] is False
 
 
+def test_broker_account_freshness_flags_latest_partial_success_as_error(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    owner, _, broker_account, _ = _create_broker_freshness_records(db_session)
+    partial_run = BrokerSyncRun(
+        broker_connection_id=broker_account.broker_connection_id,
+        broker_account_id=broker_account.id,
+        trigger="manual",
+        status="partially_succeeded",
+        error=None,
+        completed_at=datetime(2026, 5, 16, 15, 35, tzinfo=UTC),
+        created_at=datetime(2026, 5, 16, 15, 35, tzinfo=UTC),
+    )
+    db_session.add(partial_run)
+    db_session.commit()
+
+    response = client.get(f"/users/{owner.id}/broker-accounts/{broker_account.id}/freshness")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["latest_sync_run_status"] == "partially_succeeded"
+    assert payload["has_error"] is True
+
+
 def test_broker_account_freshness_returns_404_for_cross_user_access(
     client: TestClient,
     db_session: Session,

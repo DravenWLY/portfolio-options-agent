@@ -69,6 +69,10 @@ def test_portfolio_warning_freshness_statuses_match_broker_status_catalog() -> N
     assert NON_FRESH_BROKER_STATUSES == set(statuses.DATA_FRESHNESS_STATUSES) - {"fresh"}
 
 
+def test_warning_only_not_applicable_status_is_not_broker_data_freshness_status() -> None:
+    assert "not_applicable" not in statuses.DATA_FRESHNESS_STATUSES
+
+
 def test_broker_schemas_use_centralized_status_values() -> None:
     connection = BrokerConnectionCreate(
         broker_name="Demo Broker",

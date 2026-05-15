@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.services.broker_import.fidelity_csv import FidelityCsvImportError, preview_fidelity_csv
+from app.services.broker_import.fidelity_csv import MAX_PARSE_ROWS, FidelityCsvImportError, preview_fidelity_csv
 
 
 pytestmark = pytest.mark.unit
@@ -50,3 +50,44 @@ def test_preview_fidelity_csv_rejects_invalid_decimal_values() -> None:
             "symbol,asset_type,quantity,market_value\nDEMO,stock,not-a-number,500.00\n",
             "positions",
         )
+
+
+def test_preview_fidelity_csv_handles_utf8_bom_header() -> None:
+    preview = preview_fidelity_csv(
+        "\ufeffsymbol,asset_type,quantity,market_value\nDEMO,stock,10,500.00\n",
+        "positions",
+    )
+
+    assert preview.rows[0].data["symbol"] == "DEMO"
+    assert preview.rows[0].data["quantity"] == Decimal("10")
+
+
+def test_preview_fidelity_csv_handles_windows_line_endings() -> None:
+    preview = preview_fidelity_csv(
+        "symbol,asset_type,quantity,market_value\r\nDEMO,stock,10,500.00\r\n",
+        "positions",
+    )
+
+    assert len(preview.rows) == 1
+    assert preview.rows[0].data["market_value"] == Decimal("500.00")
+
+
+def test_preview_fidelity_csv_preserves_duplicate_symbol_rows() -> None:
+    preview = preview_fidelity_csv(
+        "symbol,asset_type,quantity,market_value\n"
+        "DEMO,stock,10,500.00\n"
+        "DEMO,stock,5,250.00\n",
+        "positions",
+    )
+
+    assert [row.data["symbol"] for row in preview.rows] == ["DEMO", "DEMO"]
+    assert [row.data["quantity"] for row in preview.rows] == [Decimal("10"), Decimal("5")]
+
+
+def test_preview_fidelity_csv_rejects_more_than_max_preview_rows() -> None:
+    csv_text = "symbol,asset_type,quantity,market_value\n" + "\n".join(
+        f"DEMO{i},stock,1,10.00" for i in range(MAX_PARSE_ROWS + 1)
+    )
+
+    with pytest.raises(FidelityCsvImportError, match="maximum preview row count"):
+        preview_fidelity_csv(csv_text, "positions")

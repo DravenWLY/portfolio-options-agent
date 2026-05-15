@@ -29,7 +29,7 @@ def test_csv_preview_fallback_does_not_require_snaptrade_connection(
     account_id = account_response.json()["id"]
 
     response = client.post(
-        f"/accounts/{account_id}/imports/fidelity-csv/preview",
+        f"/users/{user_id}/accounts/{account_id}/imports/fidelity-csv/preview",
         json={
             "import_type": "positions",
             "csv_text": (FIXTURES_DIR / "fidelity_positions_demo.csv").read_text(),
@@ -74,7 +74,7 @@ def test_manual_and_csv_fallback_routes_do_not_require_broker_provider_credentia
         },
     )
     csv_response = client.post(
-        f"/accounts/{account_id}/imports/fidelity-csv/preview",
+        f"/users/{user_id}/accounts/{account_id}/imports/fidelity-csv/preview",
         json={
             "import_type": "transactions",
             "csv_text": (FIXTURES_DIR / "fidelity_transactions_demo.csv").read_text(),
@@ -84,3 +84,64 @@ def test_manual_and_csv_fallback_routes_do_not_require_broker_provider_credentia
     assert cash_response.status_code == 201
     assert csv_response.status_code == 200
     assert csv_response.json()["rows"][0]["data"]["transaction_id"] == "demo-txn-001"
+
+
+def test_csv_preview_fallback_returns_404_for_wrong_user_account_access(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    owner_response = client.post("/users", json={"display_name": "CSV Owner"})
+    other_response = client.post("/users", json={"display_name": "CSV Other User"})
+    assert owner_response.status_code == 201
+    assert other_response.status_code == 201
+    owner_id = owner_response.json()["id"]
+    other_id = other_response.json()["id"]
+    account_response = client.post(
+        f"/users/{owner_id}/accounts",
+        json={
+            "broker_name": "Manual Demo Broker",
+            "account_type": "taxable_individual",
+            "display_name": "CSV Ownership Account",
+        },
+    )
+    assert account_response.status_code == 201
+    account_id = account_response.json()["id"]
+
+    response = client.post(
+        f"/users/{other_id}/accounts/{account_id}/imports/fidelity-csv/preview",
+        json={
+            "import_type": "positions",
+            "csv_text": (FIXTURES_DIR / "fidelity_positions_demo.csv").read_text(),
+        },
+    )
+
+    assert response.status_code == 404
+
+
+def test_csv_preview_fallback_rejects_oversized_payload_before_parsing(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user_response = client.post("/users", json={"display_name": "CSV Size Owner"})
+    assert user_response.status_code == 201
+    user_id = user_response.json()["id"]
+    account_response = client.post(
+        f"/users/{user_id}/accounts",
+        json={
+            "broker_name": "Manual Demo Broker",
+            "account_type": "taxable_individual",
+            "display_name": "CSV Size Account",
+        },
+    )
+    assert account_response.status_code == 201
+    account_id = account_response.json()["id"]
+
+    response = client.post(
+        f"/users/{user_id}/accounts/{account_id}/imports/fidelity-csv/preview",
+        json={
+            "import_type": "positions",
+            "csv_text": "x" * 1_000_001,
+        },
+    )
+
+    assert response.status_code == 422

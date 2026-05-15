@@ -79,4 +79,4 @@ def generate_broker_data_warnings(freshness_statuses: list[str]) -> list[Portfol
 
 
 def generate_missing_market_value_warning() -> PortfolioWarning:
-    return _build_warning("market_value_missing", "unknown")
+    return _build_warning("market_value_missing", "not_applicable")

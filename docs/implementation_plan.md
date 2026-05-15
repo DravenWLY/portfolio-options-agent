@@ -1743,7 +1743,13 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove summary endpoint/service changes/tests.
-- Status: `not_started`
+- Verification notes:
+  - Changed files: `backend/app/schemas/portfolio.py`, `backend/app/services/portfolio/summary.py`, `backend/tests/api/test_portfolio.py`, `backend/tests/api/test_portfolio_summary.py`, `backend/tests/services/test_portfolio_summary.py`, and `docs/implementation_plan.md`.
+  - Added dashboard-facing as-of metadata: `stock_positions_as_of`, `option_positions_as_of`, and `latest_snapshot_as_of`, while keeping `cash_as_of`, source list, and freshness list.
+  - Added API coverage proving `/accounts/{account_id}/portfolio` works after mocked SnapTrade sync normalization populates internal cash, stock, option contract, and option position tables.
+  - Focused test result: `cd backend && ./.venv/bin/python -m pytest tests/api/test_portfolio.py tests/api/test_portfolio_summary.py tests/services/test_portfolio_summary.py tests/regression/test_portfolio_summary_regressions.py` -> `6 passed in 0.37s`.
+  - Full test result: `cd backend && ./.venv/bin/python -m pytest` -> `167 passed, 1 deselected in 1.48s`.
+- Status: `done`
 
 ### P8-T2 - Broker Sync Freshness Endpoint
 
@@ -1767,7 +1773,14 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove freshness endpoint/service/tests.
-- Status: `not_started`
+- Verification notes:
+  - Changed files: `backend/app/api/routes/broker_sync.py`, `backend/app/schemas/broker_sync_api.py`, `backend/app/services/broker_import/freshness.py`, `backend/tests/api/test_broker_sync_freshness.py`, and `docs/implementation_plan.md`.
+  - Added `GET /users/{user_id}/broker-accounts/{broker_account_id}/freshness` for broker portfolio sync freshness only.
+  - Response includes broker connection/account status, data freshness, latest sync run metadata, last successful/attempted sync timestamps, and reauth/error flags.
+  - Response intentionally uses `freshness_scope="broker_portfolio"` and does not include market quote freshness or quote timestamps.
+  - Focused test result: `cd backend && ./.venv/bin/python -m pytest tests/api/test_broker_sync_freshness.py tests/api/test_broker_ownership.py tests/api/test_broker_sync.py tests/api/test_broker_accounts.py` -> `10 passed in 0.44s`.
+  - Full test result: `cd backend && ./.venv/bin/python -m pytest` -> `170 passed, 1 deselected in 1.35s`.
+- Status: `done`
 
 ### P8-T3 - Stale/Cached/Unknown Data Warnings
 
@@ -1790,7 +1803,14 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove warning service/schema/tests.
-- Status: `not_started`
+- Verification notes:
+  - Changed files: `backend/app/schemas/portfolio.py`, `backend/app/services/portfolio/summary.py`, `backend/app/services/portfolio/warnings.py`, `backend/tests/api/test_portfolio.py`, `backend/tests/api/test_portfolio_summary.py`, `backend/tests/services/test_portfolio_summary.py`, `backend/tests/services/test_portfolio_warnings.py`, and `docs/implementation_plan.md`.
+  - Added broker portfolio warning objects to portfolio summaries via `broker_data_warnings`.
+  - Warning generation covers `cached`, `delayed`, `stale`, `unknown`, `error`, and `reauth_required` broker data freshness statuses.
+  - Warning messages explicitly separate broker holdings/cash freshness from market price freshness.
+  - Focused test result: `cd backend && ./.venv/bin/python -m pytest tests/services/test_portfolio_warnings.py tests/services/test_portfolio_summary.py tests/api/test_portfolio.py tests/api/test_portfolio_summary.py` -> `11 passed in 0.23s`.
+  - Full test result: `cd backend && ./.venv/bin/python -m pytest` -> `178 passed, 1 deselected in 1.40s`.
+- Status: `done`
 
 ### P8-T4 - Dashboard Backend Tests
 
@@ -1812,7 +1832,89 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove dashboard backend tests.
-- Status: `not_started`
+- Verification notes:
+  - Changed files: `backend/tests/api/test_portfolio_dashboard_backend.py`, `backend/tests/services/test_portfolio_warnings.py`, and `docs/implementation_plan.md`.
+  - Added dashboard backend API coverage proving synced SnapTrade-style data can support portfolio summary, broker freshness, and broker-data warnings without any market data provider calls.
+  - Verified summary and freshness responses keep broker portfolio freshness separate from market quote freshness by excluding market quote fields.
+  - Focused test result: `cd backend && ./.venv/bin/python -m pytest tests/api/test_portfolio_dashboard_backend.py tests/api/test_portfolio_summary.py tests/api/test_broker_sync_freshness.py tests/services/test_portfolio_warnings.py` -> `13 passed in 0.31s`.
+  - Full test result: `cd backend && ./.venv/bin/python -m pytest` -> `179 passed, 1 deselected in 1.50s`.
+- Status: `done`
+
+### P8-T5 - Phase 8 Wording, Vocabulary, and Edge-Case Hardening
+
+- Task id: `P8-T5`
+- Title: phase 8 wording, vocabulary, and edge-case hardening
+- Objective: Tighten Phase 8 dashboard backend before manual fallback work starts in Phase 9 by fixing warning copy that over-promises capability, eliminating freshness vocabulary drift, defining explicit behavior for missing `market_value`, tightening the `has_error` predicate, and adding the missing regression / structural tests.
+- Migration impact: no new migrations required.
+- Files expected to change:
+  - `backend/app/services/portfolio/warnings.py`
+  - `backend/app/services/portfolio/summary.py`
+  - `backend/app/schemas/portfolio.py`
+  - `backend/app/services/broker_import/freshness.py`
+  - `backend/app/api/routes/broker_sync.py`
+  - `backend/tests/regression/test_portfolio_summary_regressions.py`
+  - `backend/tests/api/test_portfolio.py`
+  - `backend/tests/api/test_portfolio_summary.py`
+  - `backend/tests/api/test_portfolio_dashboard_backend.py`
+  - `backend/tests/api/test_broker_sync_freshness.py`
+  - `backend/tests/api/test_broker_sync_foundation.py`
+  - `backend/tests/api/test_manual_portfolio_summary.py`
+  - `backend/tests/services/test_portfolio_summary.py`
+  - `backend/tests/services/test_portfolio_warnings.py`
+  - `backend/tests/unit/test_broker_sync_statuses.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P8-T4`
+- Implementation steps:
+  1. (I1) Replace the `market prices may be current while account data is not` clause in `WARNING_DETAILS` with factual, scope-only copy: `Broker portfolio holdings and cash are <state>. Review the latest snapshot timestamp and verify in your broker before manual action.` Apply the same pattern to cached, delayed, stale, error, and reauth-required entries.
+  2. (I2) Replace the literal `NON_FRESH_BROKER_STATUSES` set with `set(DATA_FRESHNESS_STATUSES) - {"fresh"}` imported from `app.services.broker_import.statuses`.
+  3. (L1) Rename the `broker_reauth_required` warning code to `broker_data_reauth_required` and update tests.
+  4. (I3) Add a `broker_data_market_value_missing` warning at severity `warning`. In `summary.py`, after selecting latest stock and option snapshots, detect any latest position with `market_value is None` and emit this warning. Document the response contract on `PortfolioSummaryRead`: market value totals sum latest snapshots that supplied market value; positions without market value still count toward position counts and surface this warning.
+  5. (M3) In `freshness.py:get_broker_account_freshness`, compute `has_error` from connection/account error statuses plus `latest_run.status in {"failed", "partially_succeeded"}`. Stop checking `latest_run.error` directly.
+  6. (P1/M5) In `broker_sync.py`, drop the unused `exc` parameter from `_provider_unavailable` and keep the HTTP detail generic.
+  7. (T1) Add a multi-snapshot regression in `test_portfolio_summary_regressions.py` covering latest `*_as_of` values, latest-only counts, and `latest_snapshot_as_of`.
+  8. (T2) Add a `market_value is None` regression in `test_portfolio_summary_regressions.py`.
+  9. (T3) Add `test_manual_portfolio_summary.py` for the manual-only path using only existing manual POST endpoints. Do not call SnapTrade registration, broker sync, or `/broker-accounts/{id}/sync`.
+  10. (T4) Add latest-success-after-failed-run freshness coverage in `test_broker_sync_freshness.py`.
+  11. (T5) Add a structural OpenAPI check for `BrokerSyncFreshnessRead` and `PortfolioSummaryRead` in `test_broker_sync_foundation.py`; use exact snapshot-style allowlists for both response schemas and a precise forbidden-token list for market quote fields. Broker-sync snapshot timestamps such as `last_successful_sync_at` and `last_attempted_sync_at` are allowed; market quote fields are not. Keep the existing secret-field structural test.
+  12. (T6) Add freshness vocabulary parity coverage in `test_broker_sync_statuses.py`.
+  13. Update existing wording assertions in `test_portfolio.py`, `test_portfolio_summary.py`, `test_portfolio_dashboard_backend.py`, and service-level `test_portfolio_summary.py`; verify no backend test/source text still contains `market prices may be current`.
+- Acceptance criteria:
+  - No warning `message` in `WARNING_DETAILS` contains `market prices may be current` or any other reference to market prices.
+  - `NON_FRESH_BROKER_STATUSES` is derived from `statuses.DATA_FRESHNESS_STATUSES`; `test_broker_sync_statuses.py` confirms parity.
+  - `broker_data_reauth_required` is the canonical reauth code; the old `broker_reauth_required` code is no longer emitted or asserted.
+  - When any latest stock or option position has `market_value is None`, `broker_data_warnings` contains `broker_data_market_value_missing`; regression coverage confirms this.
+  - `has_error` returns false when the latest sync run succeeds after an older failed run; `test_broker_sync_freshness.py` confirms this.
+  - `/openapi.json` resolved schemas for `BrokerSyncFreshnessRead` and `PortfolioSummaryRead` match explicit allowlists and contain no market quote fields such as `quote_timestamp`, `market_quote_freshness`, `bid`, `ask`, or provider quote fields. Broker-sync `last_*` timestamps remain allowed.
+  - `/accounts/{account_id}/portfolio` works for a manual-only account with no broker connection.
+  - Default `pytest` continues to exclude `external` and `slow`.
+  - No new migrations.
+  - No real SnapTrade calls, no `.env` reads, and no `../TradingAgents` modifications.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest`
+  - `cd backend && ./.venv/bin/alembic current`
+  - `cd backend && ./.venv/bin/alembic upgrade head`
+- Rollback notes:
+  - Revert warning copy, vocabulary unification, reauth code rename, missing-market-value warning, freshness predicate tightening, route wrapper cleanup, and the new tests.
+- Deferrals:
+  - Per-source freshness rollups remain deferred.
+  - Granularity beyond freshness statuses, such as clearer connection vs. account vs. run freshness fields in the freshness response, remains deferred.
+  - Synthesized human age / staleness duration strings remain deferred.
+  - Surfacing `summary.warnings` / `summary.partial_failures` counts on the freshness response remains deferred.
+  - Hard-coded message string updates in dashboard backend tests are handled inside this task.
+- Verification notes:
+  - Changed files: `backend/app/api/routes/broker_sync.py`, `backend/app/services/broker_import/freshness.py`, `backend/app/services/portfolio/warnings.py`, `backend/app/services/portfolio/summary.py`, `backend/app/schemas/portfolio.py`, `backend/tests/regression/test_portfolio_summary_regressions.py`, `backend/tests/api/test_broker_sync_freshness.py`, `backend/tests/api/test_broker_sync_foundation.py`, `backend/tests/api/test_manual_portfolio_summary.py`, `backend/tests/api/test_portfolio.py`, `backend/tests/api/test_portfolio_dashboard_backend.py`, `backend/tests/services/test_portfolio_summary.py`, `backend/tests/services/test_portfolio_warnings.py`, `backend/tests/unit/test_broker_sync_statuses.py`, and `docs/implementation_plan.md`.
+  - Warning copy evidence: `backend/app/services/portfolio/warnings.py` uses factual broker-snapshot wording; `rg -n "market prices may be current|broker_reauth_required" backend --glob '!backend/.venv/**'` returned no matches.
+  - Vocabulary evidence: `backend/tests/unit/test_broker_sync_statuses.py::test_portfolio_warning_freshness_statuses_match_broker_status_catalog` verifies `NON_FRESH_BROKER_STATUSES == set(DATA_FRESHNESS_STATUSES) - {"fresh"}`.
+  - Missing market value evidence: `backend/tests/regression/test_portfolio_summary_regressions.py::test_missing_market_values_count_positions_and_emit_warning` verifies positions still count, market values sum to zero, and `broker_data_market_value_missing` is emitted.
+  - Freshness predicate evidence: `backend/tests/api/test_broker_sync_freshness.py::test_broker_account_freshness_uses_latest_run_status_for_error_flag` verifies a latest successful sync after an older failed sync reports `has_error is False`.
+  - OpenAPI evidence: `backend/tests/api/test_broker_sync_foundation.py::test_openapi_dashboard_schemas_expose_broker_snapshots_not_market_quotes` verifies allowlisted broker freshness / portfolio summary fields and no market quote fields while preserving broker-sync `last_*` timestamps.
+  - Manual-only evidence: `backend/tests/api/test_manual_portfolio_summary.py` verifies manual-only portfolio summary works without broker sync, SnapTrade registration, or broker account sync.
+  - Focused test result: `cd backend && ./.venv/bin/python -m pytest tests/regression/test_portfolio_summary_regressions.py tests/api/test_manual_portfolio_summary.py tests/api/test_broker_sync_freshness.py tests/api/test_broker_sync_foundation.py tests/services/test_portfolio_warnings.py tests/unit/test_broker_sync_statuses.py tests/api/test_portfolio.py tests/api/test_portfolio_summary.py tests/api/test_portfolio_dashboard_backend.py tests/services/test_portfolio_summary.py` -> `33 passed in 0.75s`.
+  - Full test result: `cd backend && ./.venv/bin/python -m pytest` -> `186 passed, 1 deselected in 1.60s`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic current` -> `0011_provider_credentials (head)`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+  - Residual risk: per-source freshness rollups, freshness response granularity, human age strings, and sync summary warning counts remain deliberately deferred.
+- Status: `done`
 
 ## Phase 9 - Manual Input and CSV Fallback
 
@@ -1836,7 +1938,12 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove manual fallback route/test changes.
-- Status: `not_started`
+- Verification notes:
+  - Changed files: `backend/tests/api/test_manual_portfolio_entry.py` and `docs/implementation_plan.md`.
+  - `backend/app/api/routes/portfolio.py` was listed as a possible route touchpoint for symmetry with manual entry routes, but the existing route implementation already used the internal storage primitives and required no edits.
+  - Verified manual cash, stock, and option entry use the same internal storage and summary path without any broker connection/account rows or provider credentials.
+  - Focused test result: `cd backend && ./.venv/bin/python -m pytest tests/api/test_manual_portfolio_entry.py tests/api/test_manual_portfolio_summary.py` -> `2 passed in 0.27s`.
+- Status: `done`
 
 ### P9-T2 - Fidelity CSV Import Backup
 
@@ -1846,6 +1953,7 @@ Status values:
 - Files expected to change:
   - `backend/app/services/broker_import/fidelity_csv.py`
   - `backend/app/api/routes/imports.py`
+  - `backend/app/main.py`
   - `backend/tests/services/test_fidelity_csv_import.py`
   - `docs/implementation_plan.md`
 - Dependencies: `P9-T1`
@@ -1859,7 +1967,11 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove CSV parser/routes/tests.
-- Status: `not_started`
+- Verification notes:
+  - Changed files: `backend/app/services/broker_import/fidelity_csv.py`, `backend/app/api/routes/imports.py`, `backend/app/main.py`, `backend/tests/services/test_fidelity_csv_import.py`, and `docs/implementation_plan.md`.
+  - Added preview-only Fidelity CSV parsing for synthetic positions and transactions CSV content. The route returns parsed rows and validation warnings without storing broker files or credentials.
+  - Focused test result: `cd backend && ./.venv/bin/python -m pytest tests/services/test_fidelity_csv_import.py` -> `4 passed in 0.01s`.
+- Status: `done`
 
 ### P9-T3 - Synthetic CSV Fixtures
 
@@ -1882,7 +1994,11 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove synthetic fixtures and docs.
-- Status: `not_started`
+- Verification notes:
+  - Changed files: `backend/tests/fixtures/fidelity_positions_demo.csv`, `backend/tests/fixtures/fidelity_transactions_demo.csv`, `backend/tests/README.md`, and `docs/implementation_plan.md`.
+  - Added small synthetic CSV samples using demo symbols only and documented that real broker CSVs must never be committed.
+  - Focused test result: `cd backend && ./.venv/bin/python -m pytest tests/services/test_fidelity_csv_import.py` -> `4 passed in 0.01s`.
+- Status: `done`
 
 ### P9-T4 - Fallback Tests
 
@@ -1904,7 +2020,101 @@ Status values:
   - `cd backend && pytest`
 - Rollback notes:
   - Remove fallback tests.
-- Status: `not_started`
+- Verification notes:
+  - Changed files: `backend/tests/api/test_portfolio_fallbacks.py`, `backend/tests/services/test_import_fallbacks.py`, and `docs/implementation_plan.md`.
+  - Verified manual fallback and CSV preview fallback work without SnapTrade registration, broker sync, provider credentials, scraping, or real broker files.
+  - Focused Phase 9 test result: `cd backend && ./.venv/bin/python -m pytest tests/api/test_manual_portfolio_entry.py tests/api/test_manual_portfolio_summary.py tests/services/test_fidelity_csv_import.py tests/api/test_portfolio_fallbacks.py tests/services/test_import_fallbacks.py` -> `10 passed in 0.27s`.
+  - Full test result: `cd backend && ./.venv/bin/python -m pytest` -> `195 passed, 1 deselected in 1.44s`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic current` -> `0011_provider_credentials (head)`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+- Status: `done`
+
+### P9-T5 - Pre-Phase-10 Fallback and Freshness Hygiene
+
+- Task id: `P9-T5`
+- Title: pre-Phase-10 fallback and freshness hygiene
+- Objective: Tighten Phase 8/9 backend surfaces before market data work starts by fixing CSV preview ownership, CSV preview limits, warning metadata semantics, freshness error predicates, import schema clarity, synthetic fixture tracking, and fallback edge-case tests.
+- Migration impact: no new migrations required.
+- Files expected to change:
+  - `.gitignore`
+  - `backend/app/api/routes/imports.py`
+  - `backend/app/services/broker_import/fidelity_csv.py`
+  - `backend/app/services/broker_import/freshness.py`
+  - `backend/app/services/portfolio/warnings.py`
+  - `backend/tests/api/test_broker_sync_foundation.py`
+  - `backend/tests/api/test_broker_sync_freshness.py`
+  - `backend/tests/api/test_manual_portfolio_summary.py`
+  - `backend/tests/api/test_portfolio_fallbacks.py`
+  - `backend/tests/api/test_snaptrade_import_smoke.py`
+  - `backend/tests/services/test_fidelity_csv_import.py`
+  - `backend/tests/services/test_portfolio_warnings.py`
+  - `backend/tests/unit/test_broker_sync_statuses.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P9-T4`
+- Implementation steps:
+  1. (I1, T1) Change CSV preview route to `POST /users/{user_id}/accounts/{account_id}/imports/fidelity-csv/preview` and verify the account exists, is not deleted, and belongs to `user_id`; wrong-user access returns 404.
+  2. (I2, T7) Change the missing-market-value warning to `freshness_status="not_applicable"` and add a test that combined unknown freshness plus missing market value emits two warnings: one with `freshness_status="unknown"` and one with `freshness_status="not_applicable"`.
+  3. (I3, T5) Add CSV preview size guards with `max_length=1_000_000` and `MAX_PARSE_ROWS = 10_000`. Apply the char-length guard at the request schema (`csv_text: str = Field(min_length=1, max_length=1_000_000)`) so oversize payloads are rejected before any parsing. Apply the row-count guard inside `_parse_rows` after `csv.DictReader` consumes the header but before any per-row decimal parsing. The char guard is the primary defense; the row guard is the backup against pathological huge-cell rows.
+  4. (I4) Add a P9-T1 verification note clarifying that `backend/app/api/routes/portfolio.py` was listed as a possible route touchpoint for symmetry but required no edit.
+  5. (P1, T4) Simplify `has_error` to use connection/account error statuses plus explicit latest-run `partially_succeeded` handling.
+  6. (P2, P3, P8) Preserve the existing substring `MARKET_DATA_FIELD_TOKENS = ("quote", "bid", "ask", "market_quote")` policy for `BrokerSyncFreshnessRead` and `PortfolioSummaryRead`. Apply the same substring check plus an exact-set field allowlist to the new `FidelityCsvPreviewRead` and `FidelityCsvPreviewRowRead` structural tests. The substring policy is broader than the original P8-T5 prefix-only wording on purpose: the exact-set allowlist is the primary safety net, the substring check is defense-in-depth, and broker-sync `last_*` timestamps remain allowed because the exact-set allowlist permits them by name.
+  7. (P4) Make `FidelityCsvPreviewRowRead.data` match the wire shape as `dict[str, str]` and convert parsed row values to strings at response construction time.
+  8. (T2) Add a manual-only fresh-path portfolio summary test that creates manual cash, stock, and option rows with `source="manual"` and `data_freshness_status="fresh"`, every position supplies `market_value`, and `GET /accounts/{account_id}/portfolio` returns `broker_data_warnings == []` (no freshness warning and no `broker_data_market_value_missing` warning). Place in `backend/tests/api/test_manual_portfolio_summary.py`.
+  9. (T3) Add an empty-account portfolio summary test that creates a user + manual `Account` with zero cash, stock, and option rows, then `GET /accounts/{account_id}/portfolio`. Assert: `total_cash == "0"`, `stock_position_count == 0`, `stock_market_value == "0"`, `option_position_count == 0`, `long_option_position_count == 0`, `short_option_position_count == 0`, `option_market_value == "0"`, `total_internal_value == "0"`, `data_sources == []`, `data_freshness_statuses == []`, `broker_data_warnings == []`, `cash_as_of is None`, `stock_positions_as_of is None`, `option_positions_as_of is None`, `latest_snapshot_as_of is None`. Place in `backend/tests/api/test_manual_portfolio_summary.py`.
+  10. (T4) Add CSV parser edge-case tests in `backend/tests/services/test_fidelity_csv_import.py` using inline strings for BOM headers, Windows `\r\n` line endings, and duplicate symbols. Duplicate symbols must remain as separate preview rows because preview is a parse layer, not a dedup layer.
+  11. (T6) Add `backend/tests/api/test_snaptrade_import_smoke.py` with `pytest.mark.smoke`; import `SnapTradeAdapter`, `refresh_snaptrade_connections`, and `sync_broker_account` without real HTTP or DB writes.
+  12. (Missed fixture hygiene) Add a `.gitignore` exception for `backend/tests/fixtures/*.csv` so synthetic CSV fixtures can be committed while general `*.csv` remains ignored.
+  13. (I2 boundary) Add a negative assertion in `backend/tests/unit/test_broker_sync_statuses.py` that `not_applicable` is not in `DATA_FRESHNESS_STATUSES`, codifying that the sentinel lives only on warnings.
+- Acceptance criteria:
+  - CSV preview route is user-scoped and returns 404 for wrong-user account access.
+  - CSV preview rejects payloads larger than `1_000_000` characters and CSVs over `10_000` rows.
+  - Missing-market-value warning uses `freshness_status="not_applicable"`, and combined unknown freshness plus missing market value emits two distinct warnings.
+  - Latest successful sync after an older failed run still reports `has_error is False`.
+  - Import preview response schema matches the string-only wire shape.
+  - OpenAPI tests cover `BrokerSyncFreshnessRead`, `PortfolioSummaryRead`, `FidelityCsvPreviewRead`, and `FidelityCsvPreviewRowRead`.
+  - Manual-only fresh and empty-account portfolio summary contracts are pinned.
+  - CSV parser handles BOM, Windows line endings, and preserves duplicate symbol rows.
+  - SnapTrade import smoke test proves fallback changes do not break primary sync imports.
+  - Synthetic CSV fixtures are no longer ignored, while general `*.csv` remains ignored.
+  - `git check-ignore backend/tests/fixtures/fidelity_positions_demo.csv` exits non-zero (the synthetic fixture is no longer ignored). `git check-ignore reports/example.csv` (any other location) still exits zero (general `*.csv` remains ignored).
+  - All new test files declare `pytestmark` using markers registered in `pytest.ini` (one or more of `unit`, `api`, `db`, `integration`, `regression`, `adapter`, `smoke`, `external`, `slow`). `test_snaptrade_import_smoke.py` declares at minimum `pytest.mark.smoke`.
+  - No migrations, no real SnapTrade calls, no `.env` reads, no `../TradingAgents` modifications.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest`
+  - `cd backend && ./.venv/bin/alembic current`
+  - `cd backend && ./.venv/bin/alembic upgrade head`
+  - `cd /Users/wulingyun/Desktop/Trading_Agents_Projects/portfolio-options-agent && git check-ignore backend/tests/fixtures/fidelity_positions_demo.csv; echo $?`
+  - `cd /Users/wulingyun/Desktop/Trading_Agents_Projects/portfolio-options-agent && git check-ignore reports/example.csv; echo $?`
+- Rollback notes:
+  - Revert route path/ownership changes, CSV size/row limits, warning sentinel change, freshness predicate cleanup, OpenAPI/import schema tests, fallback edge-case tests, SnapTrade import smoke test, and `.gitignore` fixture exception.
+- Deferrals:
+  - P5: project-specific CSV exception base deferred until import error hierarchy grows.
+  - P6: accounting-style negative parsing deferred until real CSV import hardening.
+  - P7: no action; `is_manual` is flipped to `false` by `backend/app/services/accounts.py:find_or_create_synced_account`, which is called by `backend/app/services/broker_import/refresh_connections.py`.
+  - P10 market-data import boundary and `freshness_scope="market_quote"` tests deferred until `P10-T1`.
+  - P10 precautions: when P10-T1 starts, the three Phase 8/9 review precautions (no `app.services.market_data.*` imports from `app.services.broker_import.*`, exact-set OpenAPI test for `MarketQuoteFreshnessRead` using `freshness_scope: Literal["market_quote"]`, and a top-of-module docstring citing the Phase 8 broker-vs-quote vocabulary) must be folded into the P10-T1 spec before any code lands. Do not fold them into P9-T5.
+- Verification notes:
+  - Changed files: `.gitignore`, `backend/app/api/routes/imports.py`, `backend/app/services/broker_import/fidelity_csv.py`, `backend/app/services/broker_import/freshness.py`, `backend/app/services/portfolio/warnings.py`, `backend/tests/api/test_broker_sync_foundation.py`, `backend/tests/api/test_broker_sync_freshness.py`, `backend/tests/api/test_manual_portfolio_summary.py`, `backend/tests/api/test_portfolio_fallbacks.py`, `backend/tests/api/test_snaptrade_import_smoke.py`, `backend/tests/services/test_fidelity_csv_import.py`, `backend/tests/services/test_portfolio_warnings.py`, `backend/tests/unit/test_broker_sync_statuses.py`, and `docs/implementation_plan.md`.
+  - CSV ownership evidence: `backend/tests/api/test_portfolio_fallbacks.py::test_csv_preview_fallback_returns_404_for_wrong_user_account_access` verifies the user-scoped route returns 404 for wrong-user account access. The ownership test remains in `backend/tests/api/test_portfolio_fallbacks.py`.
+  - CSV size evidence: `backend/tests/api/test_portfolio_fallbacks.py::test_csv_preview_fallback_rejects_oversized_payload_before_parsing` verifies the `1_000_000` character request guard; `backend/tests/services/test_fidelity_csv_import.py::test_preview_fidelity_csv_rejects_more_than_max_preview_rows` verifies the `MAX_PARSE_ROWS = 10_000` parser guard.
+  - Warning sentinel evidence: `backend/tests/services/test_portfolio_warnings.py::test_missing_market_value_warning_is_explicit` verifies `freshness_status == "not_applicable"`; `backend/tests/api/test_manual_portfolio_summary.py::test_unknown_freshness_and_missing_market_value_emit_distinct_warning_statuses` verifies the combined unknown freshness plus missing market value case.
+  - Freshness predicate evidence: `backend/tests/api/test_broker_sync_freshness.py::test_broker_account_freshness_uses_latest_run_status_for_error_flag` verifies latest success after older failure reports `has_error is False`; `backend/tests/api/test_broker_sync_freshness.py::test_broker_account_freshness_flags_latest_partial_success_as_error` verifies latest partial success reports `has_error is True`.
+  - OpenAPI evidence: `backend/tests/api/test_broker_sync_foundation.py::test_openapi_dashboard_schemas_expose_broker_snapshots_not_market_quotes` and `backend/tests/api/test_broker_sync_foundation.py::test_openapi_fidelity_csv_preview_schemas_are_explicit_and_not_market_quotes` verify structural allowlists for broker freshness, portfolio summary, and CSV preview schemas.
+  - Manual summary evidence: `backend/tests/api/test_manual_portfolio_summary.py::test_manual_only_fresh_portfolio_summary_has_no_broker_data_warnings` and `backend/tests/api/test_manual_portfolio_summary.py::test_empty_manual_account_portfolio_summary_has_stable_zero_shape` pin the fresh and empty-account contracts.
+  - CSV parser evidence: `backend/tests/services/test_fidelity_csv_import.py::test_preview_fidelity_csv_handles_utf8_bom_header`, `test_preview_fidelity_csv_handles_windows_line_endings`, and `test_preview_fidelity_csv_preserves_duplicate_symbol_rows` verify BOM, CRLF, and duplicate-symbol behavior.
+  - SnapTrade smoke evidence: `backend/tests/api/test_snaptrade_import_smoke.py::test_snaptrade_primary_sync_modules_import_without_real_provider_calls` verifies primary SnapTrade sync modules import without real provider calls.
+  - Boundary evidence: `backend/tests/unit/test_broker_sync_statuses.py::test_warning_only_not_applicable_status_is_not_broker_data_freshness_status` verifies `not_applicable` remains warning-only and is not a broker freshness status.
+  - P9-T1 drift note: `backend/app/api/routes/portfolio.py` was listed in P9-T1 as a possible route touchpoint but required no edits because existing manual routes already used internal storage primitives.
+  - P7 deferral citation: `backend/app/services/accounts.py:find_or_create_synced_account` flips `is_manual` to `false`, and `backend/app/services/broker_import/refresh_connections.py` calls that helper during broker account ingestion.
+  - Focused test result: `cd backend && ./.venv/bin/python -m pytest tests/api/test_portfolio_fallbacks.py tests/api/test_manual_portfolio_summary.py tests/services/test_fidelity_csv_import.py tests/services/test_portfolio_warnings.py tests/api/test_broker_sync_foundation.py tests/api/test_broker_sync_freshness.py tests/unit/test_broker_sync_statuses.py tests/api/test_snaptrade_import_smoke.py` -> `43 passed in 0.58s`.
+  - Full test result: `cd backend && ./.venv/bin/python -m pytest` -> `208 passed, 1 deselected in 1.60s`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic current` -> `0011_provider_credentials (head)`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+  - Gitignore result: `git check-ignore backend/tests/fixtures/fidelity_positions_demo.csv; echo $?` -> `1`.
+  - Gitignore result: `git check-ignore reports/example.csv; echo $?` -> `reports/example.csv` and `0`.
+  - Diff hygiene result: `git diff --check` completed with no output.
+  - Residual risk: project-specific CSV exception hierarchy, accounting-style negative parsing, and Phase 10 market-data boundary tests remain deliberately deferred.
+- Status: `done`
 
 ## Phase 10 - Market Data Layer
 

@@ -46,6 +46,20 @@ PORTFOLIO_SUMMARY_FIELDS = {
     "data_freshness_statuses",
     "broker_data_warnings",
 }
+FIDELITY_CSV_PREVIEW_FIELDS = {
+    "account_id",
+    "provider",
+    "mode",
+    "import_type",
+    "rows",
+    "warnings",
+}
+FIDELITY_CSV_PREVIEW_ROW_FIELDS = {
+    "row_number",
+    "row_type",
+    "data",
+    "warnings",
+}
 MARKET_DATA_FIELD_TOKENS = ("quote", "bid", "ask", "market_quote")
 
 
@@ -102,4 +116,19 @@ def test_openapi_dashboard_schemas_expose_broker_snapshots_not_market_quotes(cli
     assert broker_freshness_fields == BROKER_SYNC_FRESHNESS_FIELDS
     assert portfolio_summary_fields == PORTFOLIO_SUMMARY_FIELDS
     for field_name in broker_freshness_fields | portfolio_summary_fields:
+        assert not any(token in field_name for token in MARKET_DATA_FIELD_TOKENS)
+
+
+def test_openapi_fidelity_csv_preview_schemas_are_explicit_and_not_market_quotes(client: TestClient) -> None:
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    schemas = response.json()["components"]["schemas"]
+
+    preview_fields = set(schemas["FidelityCsvPreviewRead"]["properties"])
+    preview_row_fields = set(schemas["FidelityCsvPreviewRowRead"]["properties"])
+
+    assert preview_fields == FIDELITY_CSV_PREVIEW_FIELDS
+    assert preview_row_fields == FIDELITY_CSV_PREVIEW_ROW_FIELDS
+    for field_name in preview_fields | preview_row_fields:
         assert not any(token in field_name for token in MARKET_DATA_FIELD_TOKENS)

@@ -10,12 +10,14 @@ from app.schemas.broker_sync_api import (
     BrokerAccountPublicRead,
     BrokerAccountSyncRequest,
     BrokerConnectionPublicRead,
+    BrokerSyncFreshnessRead,
     BrokerSyncRunPublicRead,
     SnapTradeConnectionPortalRead,
     SnapTradeUserRegistrationRead,
 )
 from app.services.broker_import import accounts as broker_account_service
 from app.services.broker_import import connections as broker_connection_service
+from app.services.broker_import import freshness as broker_freshness_service
 from app.services.broker_import import refresh_connections as refresh_connection_service
 from app.services.broker_import import snaptrade_connection as snaptrade_connection_service
 from app.services.broker_import import sync as broker_sync_service
@@ -34,7 +36,7 @@ def get_app_settings() -> Settings:
     return get_settings()
 
 
-def _provider_unavailable(exc: Exception) -> HTTPException:
+def _provider_unavailable() -> HTTPException:
     return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Broker provider request failed")
 
 
@@ -59,9 +61,9 @@ def register_snaptrade_user(
     except snaptrade_connection_service.SnapTradeUserNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except BrokerProviderError as exc:
-        raise _provider_unavailable(exc) from exc
+        raise _provider_unavailable() from exc
     except RuntimeError as exc:
-        raise _provider_unavailable(exc) from exc
+        raise _provider_unavailable() from exc
 
     snaptrade_user_id = (credential.raw_metadata or {}).get("snaptrade_user_id", "")
     return SnapTradeUserRegistrationRead(
@@ -89,9 +91,9 @@ def create_snaptrade_connection_portal_url(
     except snaptrade_connection_service.SnapTradeUserRegistrationMissingError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except BrokerProviderError as exc:
-        raise _provider_unavailable(exc) from exc
+        raise _provider_unavailable() from exc
     except RuntimeError as exc:
-        raise _provider_unavailable(exc) from exc
+        raise _provider_unavailable() from exc
 
     return SnapTradeConnectionPortalRead(portal_url=portal.portal_url, expires_at=portal.expires_at)
 
@@ -107,7 +109,7 @@ def refresh_snaptrade_connections(
     except refresh_connection_service.BrokerConnectionRefreshUserNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except RuntimeError as exc:
-        raise _provider_unavailable(exc) from exc
+        raise _provider_unavailable() from exc
 
 
 @router.get("/users/{user_id}/broker-connections", response_model=list[BrokerConnectionPublicRead])
@@ -161,7 +163,7 @@ def sync_broker_account(
     except broker_sync_service.BrokerSyncAccountNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except RuntimeError as exc:
-        raise _provider_unavailable(exc) from exc
+        raise _provider_unavailable() from exc
 
 
 @router.get("/users/{user_id}/broker-sync-runs/{sync_run_id}", response_model=BrokerSyncRunPublicRead)
@@ -170,3 +172,18 @@ def get_broker_sync_run(user_id: UUID, sync_run_id: UUID, db: Session = Depends(
     if sync_run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Broker sync run not found")
     return sync_run
+
+
+@router.get(
+    "/users/{user_id}/broker-accounts/{broker_account_id}/freshness",
+    response_model=BrokerSyncFreshnessRead,
+)
+def get_broker_account_freshness(
+    user_id: UUID,
+    broker_account_id: UUID,
+    db: Session = Depends(get_db),
+) -> BrokerSyncFreshnessRead:
+    freshness = broker_freshness_service.get_broker_account_freshness(db, user_id, broker_account_id)
+    if freshness is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Broker account not found")
+    return freshness

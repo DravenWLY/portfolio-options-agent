@@ -110,3 +110,23 @@ class BrokerProviderErrorRead(BaseModel):
 class BrokerSyncConflictRead(BaseModel):
     sync_run_id: str
     status: str
+
+
+class BrokerSyncFreshnessRead(BaseModel):
+    user_id: UUID
+    broker_connection_id: UUID
+    broker_account_id: UUID
+    account_id: UUID | None
+    provider: str
+    broker_name: str
+    freshness_scope: Literal["broker_portfolio"] = "broker_portfolio"
+    connection_status: str
+    sync_status: str
+    data_freshness_status: str
+    last_successful_sync_at: datetime | None
+    last_attempted_sync_at: datetime | None
+    latest_sync_run_id: UUID | None
+    latest_sync_run_status: str | None
+    latest_sync_run_completed_at: datetime | None
+    requires_reauth: bool
+    has_error: bool

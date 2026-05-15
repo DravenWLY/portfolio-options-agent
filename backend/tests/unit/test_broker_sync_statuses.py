@@ -8,6 +8,7 @@ from app.schemas.broker_sync_status import (
 from app.schemas.broker_connection import BrokerConnectionCreate
 from app.schemas.broker_sync_run import BrokerSyncRunCreate
 from app.services.broker_import import statuses
+from app.services.portfolio.warnings import NON_FRESH_BROKER_STATUSES
 
 
 pytestmark = pytest.mark.unit
@@ -62,6 +63,10 @@ def test_broker_sync_status_catalog_exposes_values() -> None:
     assert catalog.sync_run_statuses == statuses.SYNC_RUN_STATUSES
     assert catalog.data_freshness_statuses == statuses.DATA_FRESHNESS_STATUSES
     assert catalog.terminal_sync_statuses == statuses.TERMINAL_SYNC_STATUSES
+
+
+def test_portfolio_warning_freshness_statuses_match_broker_status_catalog() -> None:
+    assert NON_FRESH_BROKER_STATUSES == set(statuses.DATA_FRESHNESS_STATUSES) - {"fresh"}
 
 
 def test_broker_schemas_use_centralized_status_values() -> None:

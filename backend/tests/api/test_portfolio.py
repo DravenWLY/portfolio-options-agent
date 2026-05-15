@@ -76,6 +76,10 @@ def test_internal_portfolio_storage_flow(client: TestClient, db_session: Session
     summary_response = client.get(f"/accounts/{account_id}/portfolio")
     assert summary_response.status_code == 200
     summary = summary_response.json()
+    assert summary["cash_as_of"] == "2026-05-14T15:00:00Z"
+    assert summary["stock_positions_as_of"] == "2026-05-14T15:00:00Z"
+    assert summary["option_positions_as_of"] == "2026-05-14T15:00:00Z"
+    assert summary["latest_snapshot_as_of"] == "2026-05-14T15:00:00Z"
     assert Decimal(summary["total_cash"]) == Decimal("10000.00")
     assert summary["stock_position_count"] == 1
     assert Decimal(summary["stock_market_value"]) == Decimal("4500.00")
@@ -85,3 +89,5 @@ def test_internal_portfolio_storage_flow(client: TestClient, db_session: Session
     assert Decimal(summary["total_internal_value"]) == Decimal("14290.00")
     assert summary["data_sources"] == ["snaptrade"]
     assert summary["data_freshness_statuses"] == ["cached", "fresh"]
+    assert summary["broker_data_warnings"][0]["code"] == "broker_data_cached"
+    assert "verify in your broker before manual action" in summary["broker_data_warnings"][0]["message"]

@@ -86,6 +86,10 @@ def test_portfolio_summary_uses_internal_tables(db_session: Session) -> None:
     summary = get_portfolio_summary(db_session, account.id)
 
     assert summary is not None
+    assert summary.cash_as_of == datetime(2026, 5, 14, 15, 0, tzinfo=UTC)
+    assert summary.stock_positions_as_of == datetime(2026, 5, 14, 15, 0, tzinfo=UTC)
+    assert summary.option_positions_as_of == datetime(2026, 5, 14, 15, 0, tzinfo=UTC)
+    assert summary.latest_snapshot_as_of == datetime(2026, 5, 14, 15, 0, tzinfo=UTC)
     assert summary.total_cash == Decimal("10000.00")
     assert summary.stock_position_count == 1
     assert summary.stock_market_value == Decimal("4500.00")
@@ -96,3 +100,6 @@ def test_portfolio_summary_uses_internal_tables(db_session: Session) -> None:
     assert summary.total_internal_value == Decimal("14290.00")
     assert summary.data_sources == ["snaptrade"]
     assert summary.data_freshness_statuses == ["cached", "fresh"]
+    assert len(summary.broker_data_warnings) == 1
+    assert summary.broker_data_warnings[0].code == "broker_data_cached"
+    assert "verify in your broker before manual action" in summary.broker_data_warnings[0].message

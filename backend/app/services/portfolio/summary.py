@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy import select
@@ -10,9 +11,14 @@ from app.models.cash_balance import CashBalance
 from app.models.option_position import OptionPosition
 from app.models.stock_position import StockPosition
 from app.schemas.portfolio import PortfolioSummaryRead
+from app.services.portfolio.warnings import generate_broker_data_warnings, generate_missing_market_value_warning
 
 
 ZERO = Decimal("0")
+
+
+class _PositionSnapshot(Protocol):
+    as_of: datetime
 
 
 def _money_or_zero(value: Decimal | None) -> Decimal:
@@ -28,6 +34,23 @@ def _signed_option_market_value(position: OptionPosition) -> Decimal:
     if position.position_side == "short":
         return -market_value
     return market_value
+
+
+def _latest_as_of(positions: list[_PositionSnapshot]) -> datetime | None:
+    if not positions:
+        return None
+    return max(position.as_of for position in positions)
+
+
+def _latest_available_as_of(*values: datetime | None) -> datetime | None:
+    populated_values = [value for value in values if value is not None]
+    if not populated_values:
+        return None
+    return max(populated_values)
+
+
+def _has_missing_market_value(positions: list[StockPosition] | list[OptionPosition]) -> bool:
+    return any(position.market_value is None for position in positions)
 
 
 def get_portfolio_summary(db: Session, account_id: UUID) -> PortfolioSummaryRead | None:
@@ -77,6 +100,8 @@ def get_portfolio_summary(db: Session, account_id: UUID) -> PortfolioSummaryRead
     option_market_value = sum((_signed_option_market_value(position) for position in option_positions), ZERO)
     long_option_count = sum(1 for position in option_positions if position.position_side == "long")
     short_option_count = sum(1 for position in option_positions if position.position_side == "short")
+    stock_positions_as_of = _latest_as_of(stock_positions)
+    option_positions_as_of = _latest_as_of(option_positions)
 
     data_sources = []
     freshness_statuses = []
@@ -88,10 +113,22 @@ def get_portfolio_summary(db: Session, account_id: UUID) -> PortfolioSummaryRead
     freshness_statuses.extend(position.data_freshness_status for position in stock_positions)
     freshness_statuses.extend(position.data_freshness_status for position in option_positions)
 
+    data_freshness_statuses = _unique_sorted(freshness_statuses)
+    broker_data_warnings = generate_broker_data_warnings(data_freshness_statuses)
+    if _has_missing_market_value(stock_positions) or _has_missing_market_value(option_positions):
+        broker_data_warnings.append(generate_missing_market_value_warning())
+
     return PortfolioSummaryRead(
         account_id=account_id,
         as_of=datetime.now(UTC),
         cash_as_of=latest_cash.as_of if latest_cash else None,
+        stock_positions_as_of=stock_positions_as_of,
+        option_positions_as_of=option_positions_as_of,
+        latest_snapshot_as_of=_latest_available_as_of(
+            latest_cash.as_of if latest_cash else None,
+            stock_positions_as_of,
+            option_positions_as_of,
+        ),
         total_cash=total_cash,
         stock_position_count=len(stock_positions),
         stock_market_value=stock_market_value,
@@ -101,5 +138,6 @@ def get_portfolio_summary(db: Session, account_id: UUID) -> PortfolioSummaryRead
         option_market_value=option_market_value,
         total_internal_value=total_cash + stock_market_value + option_market_value,
         data_sources=_unique_sorted(data_sources),
-        data_freshness_statuses=_unique_sorted(freshness_statuses),
+        data_freshness_statuses=data_freshness_statuses,
+        broker_data_warnings=broker_data_warnings,
     )

@@ -174,3 +174,107 @@ def test_long_and_short_options_use_position_side_signs(db_session: Session) -> 
     assert summary.short_option_position_count == 1
     assert summary.option_market_value == Decimal("-85.00")
     assert summary.total_internal_value == Decimal("9915.00")
+
+
+def test_latest_snapshot_as_of_fields_use_latest_per_position_key(db_session: Session) -> None:
+    account = _create_account(db_session)
+    contract = _create_contract(db_session, "VOO260116P00400000")
+    earlier = datetime(2026, 5, 14, 14, 0, tzinfo=UTC)
+    later = datetime(2026, 5, 14, 16, 0, tzinfo=UTC)
+    db_session.add_all(
+        [
+            StockPosition(
+                account_id=account.id,
+                symbol="VOO",
+                asset_type="etf",
+                quantity=Decimal("10"),
+                market_value=Decimal("4400.00"),
+                source="snaptrade",
+                data_freshness_status="cached",
+                as_of=earlier,
+            ),
+            StockPosition(
+                account_id=account.id,
+                symbol="VOO",
+                asset_type="etf",
+                quantity=Decimal("10"),
+                market_value=Decimal("4600.00"),
+                source="snaptrade",
+                data_freshness_status="fresh",
+                as_of=later,
+            ),
+            OptionPosition(
+                account_id=account.id,
+                option_contract_id=contract.id,
+                position_side="short",
+                quantity=Decimal("1"),
+                market_value=Decimal("300.00"),
+                source="snaptrade",
+                data_freshness_status="cached",
+                as_of=earlier,
+            ),
+            OptionPosition(
+                account_id=account.id,
+                option_contract_id=contract.id,
+                position_side="short",
+                quantity=Decimal("1"),
+                market_value=Decimal("200.00"),
+                source="snaptrade",
+                data_freshness_status="fresh",
+                as_of=later,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    summary = get_portfolio_summary(db_session, account.id)
+
+    assert summary is not None
+    assert summary.cash_as_of == datetime(2026, 5, 14, 15, 0, tzinfo=UTC)
+    assert summary.stock_positions_as_of == later
+    assert summary.option_positions_as_of == later
+    assert summary.latest_snapshot_as_of == later
+    assert summary.stock_position_count == 1
+    assert summary.option_position_count == 1
+    assert summary.stock_market_value == Decimal("4600.00")
+    assert summary.option_market_value == Decimal("-200.00")
+
+
+def test_missing_market_values_count_positions_and_emit_warning(db_session: Session) -> None:
+    account = _create_account(db_session)
+    contract = _create_contract(db_session, "VOO260116P00400000")
+    db_session.add_all(
+        [
+            StockPosition(
+                account_id=account.id,
+                symbol="VOO",
+                asset_type="etf",
+                quantity=Decimal("10"),
+                market_value=None,
+                source="snaptrade",
+                data_freshness_status="fresh",
+                as_of=datetime(2026, 5, 14, 15, 0, tzinfo=UTC),
+            ),
+            OptionPosition(
+                account_id=account.id,
+                option_contract_id=contract.id,
+                position_side="short",
+                quantity=Decimal("1"),
+                market_value=None,
+                source="snaptrade",
+                data_freshness_status="fresh",
+                as_of=datetime(2026, 5, 14, 15, 0, tzinfo=UTC),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    summary = get_portfolio_summary(db_session, account.id)
+
+    assert summary is not None
+    assert summary.stock_position_count == 1
+    assert summary.stock_market_value == Decimal("0")
+    assert summary.option_position_count == 1
+    assert summary.short_option_position_count == 1
+    assert summary.option_market_value == Decimal("0")
+    assert [warning.code for warning in summary.broker_data_warnings] == ["broker_data_market_value_missing"]

@@ -5,10 +5,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.broker_sync_status import DataFreshnessStatus
+
 
 MoneyAmount = Annotated[Decimal, Field(ge=Decimal("0"), max_digits=18, decimal_places=2)]
 CashBalanceSource = Annotated[str, Field(pattern=r"^(manual|csv|snaptrade)$")]
-DataFreshnessStatus = Annotated[str, Field(pattern=r"^(fresh|cached|stale|unknown|error|reauth_required)$")]
 
 
 class CashBalanceCreate(BaseModel):

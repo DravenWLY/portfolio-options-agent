@@ -2,7 +2,9 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+
+from app.services.broker_import.secrets import validate_secret_reference
 
 ProviderName = Literal["snaptrade", "akoya", "plaid", "tradier", "alpaca", "polygon", "openai", "anthropic", "gemini", "other"]
 CredentialStatus = Literal["active", "inactive", "testing_failed", "unknown", "revoked"]
@@ -45,12 +47,14 @@ class ProviderCredentialsMetadataCreate(BaseModel):
 
     @field_validator("secret_ref", "encrypted_secret_ref")
     @classmethod
-    def validate_secret_reference(cls, value: str | None) -> str | None:
+    def validate_secret_reference(cls, value: str | None, info: ValidationInfo) -> str | None:
         if value is None:
             return None
         stripped = value.strip()
         if _looks_like_plaintext_secret(stripped):
             raise ValueError("credential metadata must store a reference, not plaintext credential material")
+        if info.field_name == "secret_ref":
+            return validate_secret_reference(stripped)
         return stripped
 
     @model_validator(mode="after")

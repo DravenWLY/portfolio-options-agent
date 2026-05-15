@@ -16,12 +16,12 @@ class FakeSnapTradeReadOnlyClient:
         self.calls.append(f"register_user:{user_ref}")
         return {
             "snaptrade_user_id": "demo-snaptrade-user",
-            "user_secret_ref": "secret://snaptrade/demo-snaptrade-user",
+            "user_secret": "11111111-1111-4111-8111-111111111111",
             "raw_payload": {"synthetic": True},
         }
 
-    def create_connection_portal_url(self, snaptrade_user_id: str, user_secret_ref: str) -> dict:
-        self.calls.append(f"create_connection_portal_url:{snaptrade_user_id}:{user_secret_ref}")
+    def create_connection_portal_url(self, snaptrade_user_id: str, user_secret: str) -> dict:
+        self.calls.append(f"create_connection_portal_url:{snaptrade_user_id}:{user_secret}")
         return {
             "portal_url": "https://example.test/snaptrade/connect/demo",
             "expires_at": datetime(2026, 5, 14, 16, 0, tzinfo=UTC),
@@ -68,8 +68,8 @@ def test_snaptrade_adapter_registers_user_with_secret_reference_only() -> None:
     response = adapter.register_user("demo-user")
 
     assert response.snaptrade_user_id == "demo-snaptrade-user"
-    assert response.user_secret_ref == "secret://snaptrade/demo-snaptrade-user"
-    assert not hasattr(response, "user_secret")
+    assert response.user_secret == "11111111-1111-4111-8111-111111111111"
+    assert not hasattr(response, "user_secret_ref")
     assert client.calls == ["register_user:demo-user"]
 
 
@@ -79,13 +79,13 @@ def test_snaptrade_adapter_creates_connection_portal_url_without_frontend_secret
 
     response = adapter.create_connection_portal_url(
         "demo-snaptrade-user",
-        "secret://snaptrade/demo-snaptrade-user",
+        "11111111-1111-4111-8111-111111111111",
     )
 
     assert response.portal_url == "https://example.test/snaptrade/connect/demo"
     assert "secret" not in response.portal_url
     assert client.calls == [
-        "create_connection_portal_url:demo-snaptrade-user:secret://snaptrade/demo-snaptrade-user"
+        "create_connection_portal_url:demo-snaptrade-user:11111111-1111-4111-8111-111111111111"
     ]
 
 

@@ -32,7 +32,6 @@ class BrokerConnectionPublicRead(BaseModel):
     user_id: UUID
     provider: str
     broker_name: str
-    provider_connection_id: str
     connection_status: str
     sync_status: str
     data_freshness_status: str
@@ -65,6 +64,25 @@ class BrokerAccountSyncRequest(BaseModel):
     trigger: Literal["manual", "scheduled", "webhook", "retry", "system"] = "manual"
 
 
+class BrokerSyncErrorRead(BaseModel):
+    type: str
+    message: str
+
+
+class BrokerSyncPartialFailureRead(BaseModel):
+    occ_symbol: str | None = None
+    reason: str
+
+
+class BrokerSyncSummaryRead(BaseModel):
+    balance_currency: str | None = None
+    stock_positions_count: int | None = None
+    option_positions_count: int | None = None
+    partial_failures: list[BrokerSyncPartialFailureRead] = []
+    warnings: list[str] = []
+    provider_request_id: str | None = None
+
+
 class BrokerSyncRunPublicRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -79,11 +97,16 @@ class BrokerSyncRunPublicRead(BaseModel):
     accounts_count: int
     positions_count: int
     transactions_count: int
-    error: dict | None
-    summary: dict | None
+    error: BrokerSyncErrorRead | None
+    summary: BrokerSyncSummaryRead | None
     created_at: datetime
     updated_at: datetime
 
 
 class BrokerProviderErrorRead(BaseModel):
     detail: str = Field(min_length=1)
+
+
+class BrokerSyncConflictRead(BaseModel):
+    sync_run_id: str
+    status: str

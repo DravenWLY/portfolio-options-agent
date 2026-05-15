@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.schemas.provider_credentials_metadata import ProviderCredentialsMetadataCreate
 
@@ -11,9 +12,20 @@ def test_openapi_does_not_expose_secret_reference_fields(client: TestClient) -> 
     response = client.get("/openapi.json")
 
     assert response.status_code == 200
-    openapi_text = response.text
-    assert "secret_ref" not in openapi_text
-    assert "encrypted_secret_ref" not in openapi_text
+    forbidden = {"secret_ref", "encrypted_secret_ref", "secretRef", "encryptedSecretRef", "user_secret", "userSecret"}
+
+    def walk(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                assert key not in forbidden
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+        elif isinstance(value, str):
+            assert value not in forbidden
+
+    walk(response.json())
 
 
 def test_broker_sync_foundation_uses_fake_secret_references_only() -> None:
@@ -25,5 +37,13 @@ def test_broker_sync_foundation_uses_fake_secret_references_only() -> None:
     )
 
     assert payload.secret_ref == "secret://snaptrade/synthetic-user"
-    assert "real" not in payload.secret_ref.lower()
-    assert "token=" not in payload.secret_ref.lower()
+
+
+def test_broker_sync_foundation_rejects_uuid_shaped_secret_ref() -> None:
+    with pytest.raises(ValidationError):
+        ProviderCredentialsMetadataCreate(
+            provider="snaptrade",
+            credential_name="Synthetic SnapTrade User Secret",
+            secret_ref="11111111-1111-4111-8111-111111111111",
+            scopes=["read_accounts", "read_holdings"],
+        )

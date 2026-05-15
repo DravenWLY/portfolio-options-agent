@@ -25,6 +25,12 @@ class ParsedOccSymbol:
     strike: Decimal
 
 
+@dataclass(frozen=True)
+class OptionNormalizationResult:
+    positions: list[OptionPosition]
+    partial_failures: list[dict[str, str]]
+
+
 def parse_occ_symbol(occ_symbol: str) -> ParsedOccSymbol:
     normalized = occ_symbol.strip().upper().replace(" ", "")
     match = OCC_SYMBOL_PATTERN.match(normalized)
@@ -102,3 +108,31 @@ def normalize_option_positions(
     positions: list[ProviderOptionPositionSnapshot],
 ) -> list[OptionPosition]:
     return [normalize_option_position(db, account_id, position) for position in positions]
+
+
+def normalize_option_positions_safely(
+    db: Session,
+    account_id: UUID,
+    positions: list[ProviderOptionPositionSnapshot],
+) -> OptionNormalizationResult:
+    normalized: list[OptionPosition] = []
+    failures: list[dict[str, str]] = []
+    for position in positions:
+        try:
+            parsed = parse_occ_symbol(position.occ_symbol)
+            if position.underlying_symbol and position.underlying_symbol.strip().upper() != parsed.underlying_symbol:
+                failures.append(
+                    {
+                        "occ_symbol": position.occ_symbol,
+                        "reason": "underlying_mismatch",
+                    }
+                )
+            normalized.append(normalize_option_position(db, account_id, position))
+        except ValueError:
+            failures.append(
+                {
+                    "occ_symbol": position.occ_symbol,
+                    "reason": "unsupported_occ_symbol",
+                }
+            )
+    return OptionNormalizationResult(positions=normalized, partial_failures=failures)

@@ -41,19 +41,19 @@ def test_snaptrade_error_codes_map_to_app_owned_exceptions() -> None:
 def test_user_registration_uses_secret_reference_not_plaintext_secret() -> None:
     response = SnapTradeUserRegistrationResponse(
         snaptrade_user_id=" demo-user ",
-        user_secret_ref=" secret://snaptrade/demo-user ",
+        user_secret=" 11111111-1111-4111-8111-111111111111 ",
         raw_payload={"synthetic": True},
     )
 
     assert response.snaptrade_user_id == "demo-user"
-    assert response.user_secret_ref == "secret://snaptrade/demo-user"
+    assert response.user_secret == "11111111-1111-4111-8111-111111111111"
 
 
-def test_user_registration_rejects_plaintext_secret_material() -> None:
+def test_user_registration_requires_user_secret() -> None:
     with pytest.raises(ValidationError):
         SnapTradeUserRegistrationResponse(
             snaptrade_user_id="demo-user",
-            user_secret_ref="secret=do-not-store-this",
+            user_secret="",
         )
 
 

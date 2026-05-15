@@ -13,8 +13,9 @@ pytestmark = [pytest.mark.api, pytest.mark.db]
 def test_get_broker_sync_run_status(client: TestClient, db_session: Session) -> None:
     user_response = client.post("/users", json={"display_name": "Sync Run Owner"})
     assert user_response.status_code == 201
+    user_id = user_response.json()["id"]
     connection = BrokerConnection(
-        user_id=user_response.json()["id"],
+        user_id=user_id,
         provider="snaptrade",
         broker_name="Fidelity Demo",
         provider_connection_id="demo-connection",
@@ -37,22 +38,25 @@ def test_get_broker_sync_run_status(client: TestClient, db_session: Session) -> 
         accounts_count=1,
         positions_count=2,
         transactions_count=0,
-        summary={"synthetic": True},
+        summary={"warnings": ["synthetic warning"], "partial_failures": []},
     )
     db_session.add(sync_run)
     db_session.commit()
 
-    response = client.get(f"/broker-sync-runs/{sync_run.id}")
+    response = client.get(f"/users/{user_id}/broker-sync-runs/{sync_run.id}")
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["id"] == str(sync_run.id)
     assert payload["status"] == "succeeded"
     assert payload["provider_request_id"] == "demo-request"
-    assert payload["summary"] == {"synthetic": True}
+    assert payload["summary"]["warnings"] == ["synthetic warning"]
 
 
 def test_get_missing_broker_sync_run_returns_404(client: TestClient, db_session: Session) -> None:
-    response = client.get("/broker-sync-runs/00000000-0000-0000-0000-000000000001")
+    response = client.get(
+        "/users/00000000-0000-0000-0000-000000000001/"
+        "broker-sync-runs/00000000-0000-0000-0000-000000000001"
+    )
 
     assert response.status_code == 404

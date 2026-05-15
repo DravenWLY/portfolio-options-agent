@@ -38,8 +38,8 @@ def test_list_broker_connections_excludes_secret_references(
     assert response.status_code == 200
     payload = response.json()
     assert len(payload) == 1
-    assert payload[0]["provider_connection_id"] == "demo-connection"
     assert payload[0]["connection_status"] == "connected"
+    assert "provider_connection_id" not in payload[0]
     assert "secret_ref" not in response.text.lower()
     assert "secret://" not in response.text.lower()
 

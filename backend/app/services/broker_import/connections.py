@@ -31,3 +31,13 @@ def get_broker_connection(db: Session, broker_connection_id: UUID) -> BrokerConn
             BrokerConnection.deleted_at.is_(None),
         )
     )
+
+
+def get_user_broker_connection(db: Session, user_id: UUID, broker_connection_id: UUID) -> BrokerConnection | None:
+    return db.scalar(
+        select(BrokerConnection).where(
+            BrokerConnection.id == broker_connection_id,
+            BrokerConnection.user_id == user_id,
+            BrokerConnection.deleted_at.is_(None),
+        )
+    )

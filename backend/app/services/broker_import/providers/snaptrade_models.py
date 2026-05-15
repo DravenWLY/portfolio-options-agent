@@ -15,33 +15,19 @@ from app.services.broker_import.providers.models import (
 )
 
 
-def _reject_plaintext_secret_reference(value: str) -> str:
-    stripped = value.strip()
-    lowered = stripped.lower()
-    forbidden_fragments = ("password", "token=", "apikey", "api_key", "secret=", "sk-")
-    if any(fragment in lowered for fragment in forbidden_fragments):
-        raise ValueError("SnapTrade response models must use secret references, not plaintext secrets")
-    return stripped
-
-
 class SnapTradeBaseModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
 class SnapTradeUserRegistrationResponse(SnapTradeBaseModel):
     snaptrade_user_id: str = Field(min_length=1)
-    user_secret_ref: str = Field(min_length=1)
+    user_secret: str = Field(min_length=1)
     raw_payload: dict | None = None
 
-    @field_validator("snaptrade_user_id", "user_secret_ref")
+    @field_validator("snaptrade_user_id", "user_secret")
     @classmethod
     def strip_strings(cls, value: str) -> str:
         return value.strip()
-
-    @field_validator("user_secret_ref")
-    @classmethod
-    def validate_user_secret_ref(cls, value: str) -> str:
-        return _reject_plaintext_secret_reference(value)
 
 
 class SnapTradeConnectionPortalUrlResponse(SnapTradeBaseModel):

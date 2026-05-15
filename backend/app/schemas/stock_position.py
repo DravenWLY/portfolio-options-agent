@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.broker_sync_status import DataFreshnessStatus
+
 
 Quantity = Annotated[Decimal, Field(gt=Decimal("0"), max_digits=20, decimal_places=6)]
 MoneyAmount = Annotated[Decimal, Field(ge=Decimal("0"), max_digits=18, decimal_places=2)]
@@ -12,7 +14,6 @@ PriceAmount = Annotated[Decimal, Field(ge=Decimal("0"), max_digits=18, decimal_p
 
 AssetType = Literal["stock", "etf", "mutual_fund", "cash_equivalent", "other"]
 PositionSource = Literal["manual", "csv", "snaptrade"]
-DataFreshnessStatus = Literal["fresh", "cached", "stale", "unknown", "error", "reauth_required"]
 
 
 class StockPositionCreate(BaseModel):

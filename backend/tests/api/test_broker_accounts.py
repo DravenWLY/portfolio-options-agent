@@ -46,7 +46,7 @@ def test_list_broker_accounts_for_connection(
     db_session.add(broker_account)
     db_session.commit()
 
-    response = client.get(f"/broker-connections/{connection.id}/accounts")
+    response = client.get(f"/users/{connection.user_id}/broker-connections/{connection.id}/accounts")
 
     assert response.status_code == 200
     payload = response.json()
@@ -61,6 +61,9 @@ def test_list_broker_accounts_for_missing_connection_returns_404(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    response = client.get("/broker-connections/00000000-0000-0000-0000-000000000001/accounts")
+    response = client.get(
+        "/users/00000000-0000-0000-0000-000000000001/"
+        "broker-connections/00000000-0000-0000-0000-000000000001/accounts"
+    )
 
     assert response.status_code == 404

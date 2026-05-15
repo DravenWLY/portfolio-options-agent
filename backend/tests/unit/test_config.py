@@ -13,6 +13,7 @@ def test_get_settings_uses_safe_defaults(monkeypatch) -> None:
     monkeypatch.delenv("SNAPTRADE_CLIENT_ID", raising=False)
     monkeypatch.delenv("SNAPTRADE_CONSUMER_KEY", raising=False)
     monkeypatch.delenv("SNAPTRADE_ENVIRONMENT", raising=False)
+    monkeypatch.delenv("SNAPTRADE_SECRET_ENCRYPTION_KEY", raising=False)
 
     settings = get_settings()
 
@@ -23,6 +24,7 @@ def test_get_settings_uses_safe_defaults(monkeypatch) -> None:
         snaptrade_client_id="",
         snaptrade_consumer_key="",
         snaptrade_environment="sandbox",
+        snaptrade_secret_encryption_key="",
     )
 
 
@@ -33,6 +35,7 @@ def test_get_settings_reads_environment_overrides(monkeypatch) -> None:
     monkeypatch.setenv("SNAPTRADE_CLIENT_ID", "test_snaptrade_client_id")
     monkeypatch.setenv("SNAPTRADE_CONSUMER_KEY", "test_snaptrade_consumer_key")
     monkeypatch.setenv("SNAPTRADE_ENVIRONMENT", "sandbox")
+    monkeypatch.setenv("SNAPTRADE_SECRET_ENCRYPTION_KEY", "test_snaptrade_secret_encryption_key_32_chars")
 
     settings = get_settings()
 
@@ -42,11 +45,13 @@ def test_get_settings_reads_environment_overrides(monkeypatch) -> None:
     assert settings.snaptrade_client_id == "test_snaptrade_client_id"
     assert settings.snaptrade_consumer_key == "test_snaptrade_consumer_key"
     assert settings.snaptrade_environment == "sandbox"
+    assert settings.snaptrade_secret_encryption_key == "test_snaptrade_secret_encryption_key_32_chars"
 
 
 def test_snaptrade_settings_default_to_no_real_credentials(monkeypatch) -> None:
     monkeypatch.delenv("SNAPTRADE_CLIENT_ID", raising=False)
     monkeypatch.delenv("SNAPTRADE_CONSUMER_KEY", raising=False)
+    monkeypatch.delenv("SNAPTRADE_SECRET_ENCRYPTION_KEY", raising=False)
 
     settings = get_settings()
 
@@ -54,3 +59,11 @@ def test_snaptrade_settings_default_to_no_real_credentials(monkeypatch) -> None:
     assert settings.snaptrade_consumer_key == ""
     assert not settings.snaptrade_client_id.startswith("sk-")
     assert not settings.snaptrade_consumer_key.startswith("sk-")
+
+
+def test_snaptrade_config_requires_encryption_key_when_configured(monkeypatch) -> None:
+    monkeypatch.setenv("SNAPTRADE_CLIENT_ID", "test_snaptrade_client_id")
+    monkeypatch.delenv("SNAPTRADE_SECRET_ENCRYPTION_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="SNAPTRADE_SECRET_ENCRYPTION_KEY"):
+        get_settings()

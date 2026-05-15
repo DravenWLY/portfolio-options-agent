@@ -47,6 +47,52 @@ def get_account(db: Session, account_id: UUID) -> Account | None:
     return db.scalar(select(Account).where(Account.id == account_id, Account.deleted_at.is_(None)))
 
 
+def find_or_create_synced_account(
+    db: Session,
+    user_id: UUID,
+    broker_name: str,
+    account_type: str,
+    display_name: str,
+    base_currency: str,
+) -> Account:
+    from app.models.broker_account import BrokerAccount
+
+    candidates = list(
+        db.scalars(
+            select(Account)
+            .where(
+                Account.user_id == user_id,
+                Account.broker_name == broker_name,
+                Account.account_type == account_type,
+                Account.deleted_at.is_(None),
+            )
+            .order_by(Account.created_at.asc())
+        )
+    )
+    for account in candidates:
+        linked = db.scalar(
+            select(BrokerAccount.id).where(
+                BrokerAccount.account_id == account.id,
+                BrokerAccount.deleted_at.is_(None),
+            )
+        )
+        if linked is None:
+            account.is_manual = False
+            return account
+
+    account = Account(
+        user_id=user_id,
+        broker_name=broker_name,
+        account_type=account_type,
+        display_name=display_name,
+        base_currency=base_currency,
+        is_manual=False,
+    )
+    db.add(account)
+    db.flush()
+    return account
+
+
 def update_account(db: Session, account_id: UUID, payload: AccountUpdate) -> Account | None:
     account = get_account(db, account_id)
     if account is None:

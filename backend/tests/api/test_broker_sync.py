@@ -6,8 +6,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.api.routes import broker_sync as broker_sync_routes
+from app.models.account import Account
 from app.models.broker_account import BrokerAccount
 from app.models.broker_connection import BrokerConnection
+from app.models.broker_sync_run import BrokerSyncRun
+from app.models.cash_balance import CashBalance
+from app.models.option_contract import OptionContract
+from app.models.option_position import OptionPosition
+from app.models.stock_position import StockPosition
 from app.services.broker_import.providers.exceptions import BrokerProviderReauthRequiredError
 from app.services.broker_import.providers.models import (
     ProviderBalanceSnapshot,
@@ -98,11 +104,21 @@ class FailingSnapTradeSyncAdapter(FakeSnapTradeSyncAdapter):
         raise BrokerProviderReauthRequiredError("Broker connection requires reauthorization")
 
 
-def _create_broker_account(client: TestClient, db_session: Session) -> BrokerAccount:
+def _create_broker_account(client: TestClient, db_session: Session) -> tuple[str, BrokerAccount]:
     user_response = client.post("/users", json={"display_name": "Sync Owner"})
     assert user_response.status_code == 201
+    user_id = user_response.json()["id"]
+    account = Account(
+        user_id=user_id,
+        broker_name="Fidelity Demo",
+        account_type="taxable_individual",
+        display_name="Demo Taxable Account",
+        is_manual=False,
+    )
+    db_session.add(account)
+    db_session.flush()
     connection = BrokerConnection(
-        user_id=user_response.json()["id"],
+        user_id=user_id,
         provider="snaptrade",
         broker_name="Fidelity Demo",
         provider_connection_id="demo-connection",
@@ -114,6 +130,7 @@ def _create_broker_account(client: TestClient, db_session: Session) -> BrokerAcc
     db_session.flush()
     broker_account = BrokerAccount(
         broker_connection_id=connection.id,
+        account_id=account.id,
         provider_account_id="demo-provider-account",
         display_name="Demo Taxable Account",
         account_type="taxable_individual",
@@ -124,19 +141,19 @@ def _create_broker_account(client: TestClient, db_session: Session) -> BrokerAcc
     db_session.add(broker_account)
     db_session.commit()
     db_session.refresh(broker_account)
-    return broker_account
+    return user_id, broker_account
 
 
 def test_sync_broker_account_creates_traceable_sync_run(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    broker_account = _create_broker_account(client, db_session)
+    user_id, broker_account = _create_broker_account(client, db_session)
     adapter = FakeSnapTradeSyncAdapter()
     client.app.dependency_overrides[broker_sync_routes.get_snaptrade_adapter] = lambda: adapter
 
     try:
-        response = client.post(f"/broker-accounts/{broker_account.id}/sync", json={"trigger": "manual"})
+        response = client.post(f"/users/{user_id}/broker-accounts/{broker_account.id}/sync", json={"trigger": "manual"})
     finally:
         client.app.dependency_overrides.clear()
 
@@ -149,6 +166,9 @@ def test_sync_broker_account_creates_traceable_sync_run(
         "balance_currency": "USD",
         "stock_positions_count": 1,
         "option_positions_count": 1,
+        "partial_failures": [],
+        "warnings": [],
+        "provider_request_id": "demo-refresh",
     }
     assert adapter.calls == [
         "refresh_account:demo-provider-account",
@@ -156,18 +176,22 @@ def test_sync_broker_account_creates_traceable_sync_run(
         "get_positions:demo-provider-account",
         "get_option_positions:demo-provider-account",
     ]
+    assert db_session.query(CashBalance).filter_by(account_id=broker_account.account_id).count() == 1
+    assert db_session.query(StockPosition).filter_by(account_id=broker_account.account_id).count() == 1
+    assert db_session.query(OptionContract).count() == 1
+    assert db_session.query(OptionPosition).filter_by(account_id=broker_account.account_id).count() == 1
 
 
 def test_sync_broker_account_reauth_error_returns_failed_sync_run(
     client: TestClient,
     db_session: Session,
 ) -> None:
-    broker_account = _create_broker_account(client, db_session)
+    user_id, broker_account = _create_broker_account(client, db_session)
     adapter = FailingSnapTradeSyncAdapter()
     client.app.dependency_overrides[broker_sync_routes.get_snaptrade_adapter] = lambda: adapter
 
     try:
-        response = client.post(f"/broker-accounts/{broker_account.id}/sync", json={"trigger": "manual"})
+        response = client.post(f"/users/{user_id}/broker-accounts/{broker_account.id}/sync", json={"trigger": "manual"})
     finally:
         client.app.dependency_overrides.clear()
 
@@ -175,10 +199,33 @@ def test_sync_broker_account_reauth_error_returns_failed_sync_run(
     payload = response.json()
     assert payload["status"] == "failed"
     assert payload["error"]["type"] == "BrokerProviderReauthRequiredError"
-    assert "reauthorization" in payload["error"]["message"]
+    assert payload["error"]["message"] == "Broker provider request failed"
 
 
 def test_sync_missing_broker_account_returns_404(client: TestClient, db_session: Session) -> None:
-    response = client.post("/broker-accounts/00000000-0000-0000-0000-000000000001/sync")
+    response = client.post(
+        "/users/00000000-0000-0000-0000-000000000001/"
+        "broker-accounts/00000000-0000-0000-0000-000000000001/sync"
+    )
 
     assert response.status_code == 404
+
+
+def test_sync_active_run_returns_409_with_in_flight_sync_run_id(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user_id, broker_account = _create_broker_account(client, db_session)
+    active_run = BrokerSyncRun(
+        broker_connection_id=broker_account.broker_connection_id,
+        broker_account_id=broker_account.id,
+        trigger="manual",
+        status="running",
+    )
+    db_session.add(active_run)
+    db_session.commit()
+
+    response = client.post(f"/users/{user_id}/broker-accounts/{broker_account.id}/sync", json={"trigger": "manual"})
+
+    assert response.status_code == 409
+    assert response.json() == {"sync_run_id": str(active_run.id), "status": "running"}

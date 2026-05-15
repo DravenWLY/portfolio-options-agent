@@ -1615,6 +1615,111 @@ Status values:
   - `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
 - Status: `done`
 
+### P7-T7 - Pre-Real SnapTrade Integration Hardening
+
+- Task id: `P7-T7`
+- Title: pre-real SnapTrade / Fidelity integration hardening
+- Objective: Close the security, ownership, ingestion, and normalization gaps required before a real read-only SnapTrade/Fidelity integration spike.
+- Migration impact:
+  - No new migrations required; uses the existing `encrypted_secret_ref` column, a JSON encryption envelope with `key_id`, and existing `String(40)` freshness columns.
+- Files expected to change:
+  - `.env.example`
+  - `backend/app/core/config.py`
+  - `backend/app/api/routes/broker_sync.py`
+  - `backend/app/schemas/broker_sync_api.py`
+  - `backend/app/schemas/cash_balance.py`
+  - `backend/app/schemas/stock_position.py`
+  - `backend/app/schemas/option_position.py`
+  - `backend/app/schemas/provider_credentials_metadata.py`
+  - `backend/app/services/broker_import/secrets.py`
+  - `backend/app/services/broker_import/snaptrade_connection.py`
+  - `backend/app/services/broker_import/connections.py`
+  - `backend/app/services/broker_import/accounts.py`
+  - `backend/app/services/broker_import/sync.py`
+  - `backend/app/services/broker_import/sync_runs.py`
+  - `backend/app/services/broker_import/refresh_connections.py`
+  - `backend/app/services/broker_import/providers/snaptrade_models.py`
+  - `backend/app/services/broker_import/providers/snaptrade.py`
+  - `backend/app/services/broker_import/statuses.py`
+  - `backend/app/services/broker_import/normalization/options.py`
+  - `backend/app/services/broker_import/normalization/sanitization.py`
+  - `backend/app/services/accounts.py`
+  - `backend/tests/api/test_broker_sync.py`
+  - `backend/tests/api/test_snaptrade_connection_flow.py`
+  - `backend/tests/api/test_broker_connections.py`
+  - `backend/tests/api/test_broker_accounts.py`
+  - `backend/tests/api/test_broker_sync_runs.py`
+  - `backend/tests/api/test_broker_sync_foundation.py`
+  - `backend/tests/api/test_broker_ownership.py`
+  - `backend/tests/services/test_secret_encryption.py`
+  - `backend/tests/services/test_sync_to_normalization_integration.py`
+  - `backend/tests/services/test_snaptrade_refresh_connections.py`
+  - `backend/tests/services/test_provider_payload_sanitization.py`
+  - `docs/implementation_plan.md`
+- Dependencies: `P7-T6`
+- Implementation steps:
+  1. (F1, F7, F19) Add `SNAPTRADE_SECRET_ENCRYPTION_KEY` placeholder/config and encrypt SnapTrade `userSecret` into `encrypted_secret_ref`; never persist it in `secret_ref`, raw metadata, logs, API responses, fixtures, or reports. Include a JSON encryption envelope with `key_id`/`KeyVersion` alongside ciphertext so future key rotation does not require a schema change.
+  2. (F11) Make SnapTrade registration idempotent: return the existing active credential without re-calling `adapter.register_user`.
+  3. (F6, F7, F8, F21) Sanitize and allowlist provider-origin metadata before writing credential metadata, broker connections, broker accounts, sync errors, sync summaries, and raw provider payloads.
+  4. (F3, B1) Add a user-scoped `POST /users/{user_id}/broker-sync/snaptrade/refresh-connections` endpoint that persists mocked SnapTrade connections/accounts. For each provider account, look up an internal `Account` by `(user_id, broker_name, account_type)`; if a matching `Account` exists with no current `BrokerAccount.account_id` pointing at it, reuse it and flip `is_manual` to `false`; otherwise create a new internal `Account` with `is_manual=false`. Record provider request ID and sanitized warnings, where supplied, on the resulting `BrokerSyncRun.summary` for auditability.
+  5. (F5, F13) Convert broker-sync routes/services to user-scoped ownership checks through `BrokerConnection.user_id`, using shared service helpers rather than route-local duplicated joins. Path-scoped route changes:
+     - `POST /broker-sync/snaptrade/users` -> `POST /users/{user_id}/broker-sync/snaptrade/register`
+     - `POST /broker-sync/snaptrade/connection-portal` -> `POST /users/{user_id}/broker-sync/snaptrade/connection-portal`
+     - `GET /broker-connections/{id}/accounts` -> `GET /users/{user_id}/broker-connections/{id}/accounts`
+     - `POST /broker-accounts/{id}/sync` -> `POST /users/{user_id}/broker-accounts/{id}/sync`
+     - `GET /broker-sync-runs/{id}` -> `GET /users/{user_id}/broker-sync-runs/{id}`
+     - `GET /users/{user_id}/broker-connections` remains unchanged.
+     Every path-scoped route must JOIN-validate that the resource belongs to `user_id`; path scoping alone is not sufficient.
+  6. (F2) Wire sync to normalize balances, stock/ETF positions, and option positions into internal tables. Provider HTTP calls happen before the sync-run / normalization DB transaction begins, so a slow SnapTrade response never holds locks open.
+  7a. (F10) Compute `sync_run.status` from the union of refresh result, balance fetch, position fetch, option fetch, and normalization outcomes. `succeeded` requires every step to complete cleanly; `partially_succeeded` applies when any step produced empty/skipped results or any per-row normalization failure; `failed` applies when any required step raises.
+  7b. (F15, F16, F17) Make unsupported OCC symbols resilient: catch parse failures per option row, append a sanitized entry to `partial_failures` in `BrokerSyncRun.summary`, and continue. Detect and warn on underlying mismatch. Document the current OCC year window.
+  8. (F12) Add active sync-run guard: before inserting a new sync run, look for an existing `(broker_account_id, status in ("queued", "running"))`; if found, return HTTP 409 with the in-flight `sync_run_id` in the response body.
+  9. (F4, F22) Unify freshness vocabulary across broker and portfolio schemas. Add a comment explaining that `delayed` on a position/cash snapshot means the broker/provider holdings or balances are not confirmed live, independent of market quote freshness.
+  10. (F24, F25) Strengthen broker sync foundation tests with a structural OpenAPI walk and a UUID-shaped negative secret test.
+- Acceptance criteria:
+  - A UUID-shaped fake secret is rejected from any `secret_ref` write path, accepted into the in-memory `user_secret` field, and persisted only as ciphertext in `encrypted_secret_ref`.
+  - The application refuses to start when the SnapTrade adapter is configured (`SNAPTRADE_CLIENT_ID` non-empty) but `SNAPTRADE_SECRET_ENCRYPTION_KEY` is missing or empty.
+  - The Pydantic field name `user_secret_ref` is replaced with `user_secret` in `SnapTradeUserRegistrationResponse`; the field is never persisted in its raw shape.
+  - OpenAPI and API responses expose no secret reference, ciphertext, provider raw payload, or provider secret fields.
+  - Refresh-connections persists synthetic connections/accounts and maps them to internal accounts.
+  - Refresh-connections never creates a duplicate internal `Account` when a matching manual `Account` exists.
+  - A mocked sync populates `cash_balances`, `stock_positions`, `option_contracts`, and `option_positions`.
+  - Delayed/cached/stale/reauth freshness values validate consistently across broker and portfolio schemas.
+  - Every broker-sync route returns 404 when the path `user_id` does not own the resource.
+  - Concurrent active sync attempts return 409 with the in-flight `sync_run_id` in the response body.
+  - Unsupported option symbols do not fail the whole sync.
+  - Default `pytest` continues to exclude `external` and `slow` markers and makes zero real SnapTrade calls; any real-integration smoke is opt-in via `pytest -m external` and an explicit `SNAPTRADE_*` configuration.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest`
+  - `cd backend && ./.venv/bin/alembic current`
+  - `cd backend && ./.venv/bin/alembic upgrade head`
+- Rollback notes:
+  - Remove P7-T7 hardening service/routes/tests and restore Phase 7 mock-only behavior.
+- Deferrals:
+  - F18 cost-basis provider mapping.
+  - F8 value-heuristic sanitizer.
+  - F9 DB-level snapshot uniqueness and covering indexes (`P3-T8`).
+  - F14 global Unit of Work refactor (`P3-T8`).
+  - F23 DB CHECK constraint on exactly one of `secret_ref` / `encrypted_secret_ref` (`P3-T8`).
+  - Key rotation strategy beyond the JSON envelope `key_id`.
+  - External secret manager backend.
+  - Webhook ingestion.
+  - Explicit account remap/edit UI.
+  - OCC year window beyond 2099.
+  - F11 explicit secret rotation path.
+- Verification notes:
+  - Phase 4-7 baseline was committed before this task as `8f54f7c Add SnapTrade broker sync foundation (Phase 4-7, mock-first)`.
+  - Changed files: `.env.example`, `backend/app/core/config.py`, `backend/app/api/routes/broker_sync.py`, `backend/app/schemas/broker_sync_api.py`, `backend/app/schemas/cash_balance.py`, `backend/app/schemas/stock_position.py`, `backend/app/schemas/option_position.py`, `backend/app/schemas/provider_credentials_metadata.py`, `backend/app/services/accounts.py`, `backend/app/services/broker_import/accounts.py`, `backend/app/services/broker_import/connections.py`, `backend/app/services/broker_import/refresh_connections.py`, `backend/app/services/broker_import/secrets.py`, `backend/app/services/broker_import/snaptrade_connection.py`, `backend/app/services/broker_import/statuses.py`, `backend/app/services/broker_import/sync.py`, `backend/app/services/broker_import/sync_runs.py`, `backend/app/services/broker_import/normalization/options.py`, `backend/app/services/broker_import/normalization/sanitization.py`, `backend/app/services/broker_import/providers/snaptrade.py`, `backend/app/services/broker_import/providers/snaptrade_models.py`, adapter/API/service/unit tests listed in this task, and this plan.
+  - Secret handling evidence: `backend/tests/services/test_secret_encryption.py`, `backend/tests/api/test_snaptrade_connection_flow.py`, `backend/tests/api/test_broker_sync_foundation.py`, and `backend/tests/unit/test_config.py` verify UUID-shaped secret rejection, encrypted persistence, no raw secret in `provider_credentials_metadata`, in-memory `user_secret`, OpenAPI hiding, and startup failure when SnapTrade is configured without `SNAPTRADE_SECRET_ENCRYPTION_KEY`.
+  - Refresh and ownership evidence: `backend/tests/services/test_snaptrade_refresh_connections.py`, `backend/tests/api/test_snaptrade_connection_flow.py`, `backend/tests/api/test_broker_ownership.py`, `backend/tests/api/test_broker_accounts.py`, `backend/tests/api/test_broker_connections.py`, and `backend/tests/api/test_broker_sync_runs.py` verify connection/account ingestion, manual-account dedup, path-scoped routes, removed `provider_connection_id`, and cross-user 404 behavior.
+  - Sync and normalization evidence: `backend/tests/api/test_broker_sync.py` and `backend/tests/services/test_sync_to_normalization_integration.py` verify sync populates internal cash/stock/option tables, active sync conflicts return 409 with `sync_run_id`, unsupported OCC rows produce sanitized partial failures, and summaries/errors use typed sanitized payloads.
+  - Freshness vocabulary evidence: portfolio schemas now share the broker freshness literal vocabulary including `delayed`, with broker-vs-market freshness documented in `backend/app/services/broker_import/statuses.py`.
+  - Test result: `cd backend && ./.venv/bin/python -m pytest` -> `166 passed, 1 deselected in 1.20s`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic current` -> `0011_provider_credentials (head)`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic upgrade head` completed successfully at head.
+  - Residual risk: local envelope encryption is a development bridge until an external secret manager and explicit key rotation strategy are added; DB-level uniqueness/check constraints and a global Unit of Work refactor remain deferred; no real SnapTrade/Fidelity calls were made.
+- Status: `done`
+
 ## Phase 8 - Portfolio Dashboard Backend from Synced Data
 
 ### P8-T1 - Portfolio Summary from Internal Tables
@@ -1655,6 +1760,7 @@ Status values:
   1. Add endpoint for account broker sync freshness.
   2. Include last successful sync, current status, data freshness status, and reauth/error flags.
   3. Do not include market quote freshness here.
+  4. Response contract must keep broker-sync freshness separate from market-quote freshness; do not collapse them into a single timestamp.
 - Acceptance criteria:
   - UI can display broker sync freshness independently.
 - Tests to run:

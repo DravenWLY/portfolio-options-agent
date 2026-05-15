@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.broker_sync_status import DataFreshnessStatus
 from app.schemas.option_contract import OptionContractCreate
 
 
@@ -15,7 +16,6 @@ MoneyAmount = Annotated[Decimal, Field(ge=Decimal("0"), max_digits=18, decimal_p
 PositionSide = Literal["long", "short"]
 OptionPositionStatus = Literal["open", "closed", "assigned", "expired", "called_away"]
 PositionSource = Literal["manual", "csv", "snaptrade"]
-DataFreshnessStatus = Literal["fresh", "cached", "stale", "unknown", "error", "reauth_required"]
 
 
 class OptionPositionCreate(BaseModel):

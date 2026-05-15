@@ -1,8 +1,10 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings, get_settings
 from app.db.session import get_db
 from app.schemas.broker_sync_api import (
     BrokerAccountPublicRead,
@@ -10,12 +12,11 @@ from app.schemas.broker_sync_api import (
     BrokerConnectionPublicRead,
     BrokerSyncRunPublicRead,
     SnapTradeConnectionPortalRead,
-    SnapTradeConnectionPortalRequest,
     SnapTradeUserRegistrationRead,
-    SnapTradeUserRegistrationRequest,
 )
 from app.services.broker_import import accounts as broker_account_service
 from app.services.broker_import import connections as broker_connection_service
+from app.services.broker_import import refresh_connections as refresh_connection_service
 from app.services.broker_import import snaptrade_connection as snaptrade_connection_service
 from app.services.broker_import import sync as broker_sync_service
 from app.services.broker_import import sync_runs as broker_sync_run_service
@@ -29,22 +30,32 @@ def get_snaptrade_adapter() -> SnapTradeAdapter:
     return SnapTradeAdapter()
 
 
+def get_app_settings() -> Settings:
+    return get_settings()
+
+
 def _provider_unavailable(exc: Exception) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Broker provider request failed")
 
 
 @router.post(
-    "/broker-sync/snaptrade/users",
+    "/users/{user_id}/broker-sync/snaptrade/register",
     response_model=SnapTradeUserRegistrationRead,
     status_code=status.HTTP_201_CREATED,
 )
 def register_snaptrade_user(
-    payload: SnapTradeUserRegistrationRequest,
+    user_id: UUID,
     db: Session = Depends(get_db),
     adapter: SnapTradeAdapter = Depends(get_snaptrade_adapter),
+    settings: Settings = Depends(get_app_settings),
 ) -> SnapTradeUserRegistrationRead:
     try:
-        credential = snaptrade_connection_service.register_snaptrade_user(db, payload.user_id, adapter)
+        credential = snaptrade_connection_service.register_snaptrade_user(
+            db,
+            user_id,
+            adapter,
+            settings.snaptrade_secret_encryption_key,
+        )
     except snaptrade_connection_service.SnapTradeUserNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except BrokerProviderError as exc:
@@ -59,14 +70,20 @@ def register_snaptrade_user(
     )
 
 
-@router.post("/broker-sync/snaptrade/connection-portal", response_model=SnapTradeConnectionPortalRead)
+@router.post("/users/{user_id}/broker-sync/snaptrade/connection-portal", response_model=SnapTradeConnectionPortalRead)
 def create_snaptrade_connection_portal_url(
-    payload: SnapTradeConnectionPortalRequest,
+    user_id: UUID,
     db: Session = Depends(get_db),
     adapter: SnapTradeAdapter = Depends(get_snaptrade_adapter),
+    settings: Settings = Depends(get_app_settings),
 ) -> SnapTradeConnectionPortalRead:
     try:
-        portal = snaptrade_connection_service.create_connection_portal_url(db, payload.user_id, adapter)
+        portal = snaptrade_connection_service.create_connection_portal_url(
+            db,
+            user_id,
+            adapter,
+            settings.snaptrade_secret_encryption_key,
+        )
     except snaptrade_connection_service.SnapTradeUserNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except snaptrade_connection_service.SnapTradeUserRegistrationMissingError as exc:
@@ -79,6 +96,20 @@ def create_snaptrade_connection_portal_url(
     return SnapTradeConnectionPortalRead(portal_url=portal.portal_url, expires_at=portal.expires_at)
 
 
+@router.post("/users/{user_id}/broker-sync/snaptrade/refresh-connections", response_model=BrokerSyncRunPublicRead)
+def refresh_snaptrade_connections(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    adapter: SnapTradeAdapter = Depends(get_snaptrade_adapter),
+) -> BrokerSyncRunPublicRead:
+    try:
+        return refresh_connection_service.refresh_snaptrade_connections(db, user_id, adapter)
+    except refresh_connection_service.BrokerConnectionRefreshUserNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise _provider_unavailable(exc) from exc
+
+
 @router.get("/users/{user_id}/broker-connections", response_model=list[BrokerConnectionPublicRead])
 def list_user_broker_connections(user_id: UUID, db: Session = Depends(get_db)) -> list[BrokerConnectionPublicRead]:
     connections = broker_connection_service.list_user_broker_connections(db, user_id)
@@ -88,25 +119,27 @@ def list_user_broker_connections(user_id: UUID, db: Session = Depends(get_db)) -
 
 
 @router.get(
-    "/broker-connections/{broker_connection_id}/accounts",
+    "/users/{user_id}/broker-connections/{broker_connection_id}/accounts",
     response_model=list[BrokerAccountPublicRead],
 )
 def list_broker_connection_accounts(
+    user_id: UUID,
     broker_connection_id: UUID,
     db: Session = Depends(get_db),
 ) -> list[BrokerAccountPublicRead]:
-    accounts = broker_account_service.list_connection_broker_accounts(db, broker_connection_id)
+    accounts = broker_account_service.list_user_connection_broker_accounts(db, user_id, broker_connection_id)
     if accounts is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Broker connection not found")
     return accounts
 
 
 @router.post(
-    "/broker-accounts/{broker_account_id}/sync",
+    "/users/{user_id}/broker-accounts/{broker_account_id}/sync",
     response_model=BrokerSyncRunPublicRead,
     status_code=status.HTTP_201_CREATED,
 )
 def sync_broker_account(
+    user_id: UUID,
     broker_account_id: UUID,
     payload: BrokerAccountSyncRequest | None = None,
     db: Session = Depends(get_db),
@@ -115,9 +148,15 @@ def sync_broker_account(
     try:
         return broker_sync_service.sync_broker_account(
             db,
+            user_id,
             broker_account_id,
             adapter,
             trigger=payload.trigger if payload else "manual",
+        )
+    except broker_sync_service.ActiveBrokerSyncRunError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"sync_run_id": str(exc.sync_run.id), "status": exc.sync_run.status},
         )
     except broker_sync_service.BrokerSyncAccountNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
@@ -125,9 +164,9 @@ def sync_broker_account(
         raise _provider_unavailable(exc) from exc
 
 
-@router.get("/broker-sync-runs/{sync_run_id}", response_model=BrokerSyncRunPublicRead)
-def get_broker_sync_run(sync_run_id: UUID, db: Session = Depends(get_db)) -> BrokerSyncRunPublicRead:
-    sync_run = broker_sync_run_service.get_broker_sync_run(db, sync_run_id)
+@router.get("/users/{user_id}/broker-sync-runs/{sync_run_id}", response_model=BrokerSyncRunPublicRead)
+def get_broker_sync_run(user_id: UUID, sync_run_id: UUID, db: Session = Depends(get_db)) -> BrokerSyncRunPublicRead:
+    sync_run = broker_sync_run_service.get_user_broker_sync_run(db, user_id, sync_run_id)
     if sync_run is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Broker sync run not found")
     return sync_run

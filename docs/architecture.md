@@ -2,9 +2,27 @@
 
 Status: design document only. No business logic, database code, frontend code, or TradingAgents changes are authorized by this document.
 
-This repository is intended to become a professional full-stack portfolio-aware options income and risk management platform for manual traders. It should integrate with TradingAgents through an optional adapter layer, while keeping deterministic portfolio, options, risk, market-data, broker-import, and report-history features independent from TradingAgents.
+This repository is intended to become a professional full-stack portfolio-aware options income and risk copilot for manual traders. It should combine portfolio data, market context, deterministic risk calculations, custom portfolio-aware agents, optional TradingAgents stock/company research, and durable report history into manual decision support. The dashboard is the cockpit, not the whole product. SnapTrade, market data providers, and TradingAgents are inputs/components, not the center of the system.
 
 This is not financial advice. This project must not execute trades, store broker login credentials, scrape Fidelity, bypass MFA, promise returns, or present generated output as guaranteed investment guidance.
+
+## Product North Star
+
+The product north star is an agentic portfolio and options decision-support workflow:
+
+```text
+portfolio system of record
++ market data context
++ deterministic options/risk calculations
++ custom portfolio-aware agents
++ optional TradingAgents stock/company research
++ durable report and agent history
+= manual trading decision support
+```
+
+The system should help a human trader reason through account cash, option collateral, assignment exposure, allocation drift, concentration risk, data freshness, and stock/company research. It must not become only a SnapTrade dashboard, market data viewer, option-chain browser, or thin TradingAgents wrapper.
+
+The core boundary remains: Python calculates financial metrics; LLMs explain structured results, compare tradeoffs, and compose reports.
 
 ## Executive Recommendations
 
@@ -17,41 +35,54 @@ This is not financial advice. This project must not execute trades, store broker
 | Local dev | Docker Compose Postgres + backend venv + frontend dev server | Professional, reproducible, and resume-friendly. |
 | Background jobs | Simple database job table first; RQ/Celery later | The MVP needs resumable runs and visible state more than distributed scale. |
 | Streaming | Server-Sent Events for agent progress first; WebSocket later if bidirectional market streaming is needed | SSE is simpler, works well for progress timelines, and avoids overbuilding. |
-| Market data layer | Provider-agnostic interfaces, ManualProvider, YFinanceProvider for cheap fallback, one options-capable provider adapter behind config after the broker sync foundation | Do not couple Fidelity account management to quote data. Every quote must carry provider, timestamp, and freshness. |
+| Report and agent foundation | Build durable `report_threads`, `report_messages`, `agent_runs`, and `agent_steps` before TradingAgents integration | All future deterministic reports, custom agents, and TradingAgents outputs need a traceable home. |
+| Market data layer | Provider-agnostic interfaces and a manual/mock provider before real provider integration | Do not couple Fidelity account management to quote data. Every quote must carry provider, timestamp, and freshness. |
 | Broker portfolio sync | SnapTrade read-only as the primary broker portfolio sync path; manual input and Fidelity CSV import remain backup/fallback paths; long-term Akoya/Fidelity Access style permissioned data; Plaid Investments as fallback where coverage fits | Fidelity does not provide a simple public retail API. Broker holdings/cash freshness must be tracked separately from market quote freshness. No scraping, broker passwords, MFA bypass, or trading/order endpoints. |
-| TradingAgents integration | Optional dependency + adapter fallback. Local editable install for development; pinned Git/package extra for public users; no source copy, no submodule. | Keeps upstream updates possible, public install clean, deterministic app features usable without TradingAgents. |
-| MVP | Multi-user/multi-account SnapTrade-first portfolio sync + normalized portfolio storage + broker freshness + manual/CSV fallback + deterministic analytics | Small enough to build, strong enough to demonstrate backend, fintech, data modeling, and AI app engineering skill. |
+| TradingAgents integration | Optional dependency + adapter fallback after report/agent persistence exists. Local editable install for development; pinned Git/package extra for public users; no source copy, no submodule. | TradingAgents is a stock/company research evidence stream, not the account-level decision engine. |
+| MVP | Multi-user/multi-account portfolio system of record + broker freshness + manual/CSV fallback + report/agent history + deterministic options/risk analytics + thin agent workspace | Small enough to build, strong enough to demonstrate backend, fintech, data modeling, AI app engineering, and product judgment. |
 
 ## System Overview
 
 ```mermaid
 flowchart TD
-  UI["Frontend Dashboard"]
+  UI["Dashboard / Agent Workspace"]
   API["FastAPI Backend"]
-  Jobs["Background Job Runner / Agent Orchestrator"]
+  Reports["Report / Agent History"]
+  Agents["Custom Portfolio-Aware Agents"]
   Core["Deterministic Portfolio / Options / Risk Engine"]
   MD["Provider-Agnostic Market Data Layer"]
   Broker["SnapTrade-First Read-Only Broker Sync Layer / Manual CSV Fallback"]
-  TA["Optional TradingAgents Adapter"]
+  TA["Optional TradingAgents Adapter (Stock Research)"]
   DB["PostgreSQL"]
   Cache["Redis or DB-backed Cache"]
   Files["Private Local Artifacts"]
 
   UI --> API
+  UI --> Reports
   API --> Core
   API --> MD
   API --> Broker
-  API --> Jobs
-  Jobs --> Core
-  Jobs --> MD
-  Jobs --> TA
-  Jobs --> DB
+  API --> Reports
+  Reports --> Agents
+  Agents --> Core
+  Agents --> MD
+  Agents --> TA
+  Reports --> DB
   Core --> DB
   MD --> Cache
   Broker --> DB
   API --> DB
   API --> Files
 ```
+
+## Layered Architecture
+
+1. **Portfolio System of Record** - users, accounts, SnapTrade/manual/CSV input, cash balances, stock positions, option contracts, option positions, broker connections, broker accounts, broker sync runs, and broker freshness.
+2. **Market Data Layer** - stock quotes, option quotes, option chains, IV, Greeks, provider metadata, quote timestamps, and quote freshness. This stays separate from broker portfolio sync.
+3. **Deterministic Options/Risk Engine** - formulas, collateral, free cash, assignment scenarios, covered call eligibility, CSP evaluation, allocation/concentration risk, deterministic risk reports, and `risk_rule_violations`.
+4. **Custom Portfolio-Aware Agents** - Portfolio Context Agent, Options Income Agent, Collateral & Assignment Risk Agent, Allocation Risk Agent, Freshness/Guardrail Agent, and Report Composer Agent. These agents consume structured deterministic outputs.
+5. **TradingAgents Adapter** - optional stock/company research evidence stream for news, sentiment, fundamentals, and bull/bear debate. It does not own account-level risk decisions.
+6. **Dashboard and Report History** - frontend cockpit, report threads, report messages, agent runs, agent steps, markdown reports, and later agent run monitor/report detail pages.
 
 ## Deterministic vs LLM Boundary
 
@@ -268,6 +299,27 @@ TradingAgents loads API keys from environment variables and `.env`. It may promp
 - Provider abstraction ideas.
 - Token/tool stats callback pattern.
 - Report section names as one possible mapping.
+
+### TradingAgents Responsibility Boundary
+
+TradingAgents should handle stock/company research narrative only:
+
+- market, news, sentiment, and fundamentals research
+- bull/bear stock research debate
+- stock-level risk debate
+- company/underlying research narrative that can be attached to an app-owned report
+
+TradingAgents should not handle:
+
+- multi-user or multi-account portfolio context
+- SnapTrade, Fidelity CSV, manual input, or broker sync state
+- account cash, free cash, option collateral, or assignment exposure
+- covered call eligibility, CSP filtering, wheel lifecycle, or option strategy decisions
+- allocation drift, sector concentration, or account-level risk limits
+- broker sync freshness or market quote freshness
+- final portfolio-aware conclusions
+
+TradingAgents output is an evidence stream with a source such as `tradingagents_stock_research`. The app-owned custom agents and deterministic services decide how that evidence fits the account, cash, collateral, allocation, option exposure, and risk rules.
 
 ### What Is Too Generic or Expensive for This Use Case
 
@@ -550,9 +602,9 @@ Global conventions:
 | `portfolio_snapshots` | Traceable account summary snapshots | `id`; `account_id`; `as_of`; `input_hash`; `summary JSONB`; `calculation_version`; timestamps | Index `(account_id, as_of DESC)`; unique `(account_id, input_hash)` | Store deterministic calculation outputs used by reports. |
 | `assignment_scenarios` | Projected assignment outcomes | `id`; `account_id`; `portfolio_snapshot_id`; `scenario_name`; `inputs JSONB`; `results JSONB`; timestamps; soft delete | Index account/snapshot | Keep full input snapshot for reproducibility. |
 | `premium_income_records` | Premium received/realized tracking | `id`; `account_id`; `option_position_id`; `trade_id`; `amount`; `realized_at`; `status`; `cycle_id`; timestamps | Index `(account_id, realized_at DESC)`; index cycle | Wheel lifecycle can use `cycle_id` before a formal cycles table exists. |
-| `agent_runs` | Background analysis runs | `id`; `user_id`; `account_id NULL`; `report_thread_id NULL`; `run_type`; `status`; `provider`; `model`; `token_budget`; `cost_budget`; `started_at`; `completed_at`; `error JSONB`; timestamps | Index status; index user/account; index report thread | Status: queued, running, waiting_retry, failed, cancelled, completed, partially_completed. |
-| `agent_steps` | Step-by-step run trace | `id`; `agent_run_id`; `step_order`; `step_key`; `step_type`; `status`; `started_at`; `completed_at`; `input_snapshot JSONB`; `output_snapshot JSONB`; `error JSONB`; `tokens_in`; `tokens_out`; `estimated_cost`; timestamps | Unique `(agent_run_id, step_order)`; index run/status | Store enough to debug without leaking into public artifacts. |
-| `report_threads` | Chat-like report container | `id`; `user_id`; `account_id NULL`; `agent_run_id NULL`; `title`; `status`; `tags TEXT[]`; `deleted_at`; timestamps | Index user/account/status; GIN tags later | Soft delete by default, hard delete for sensitive purge. |
+| `agent_runs` | Background analysis runs | `id`; `user_id`; `account_id NULL`; `report_thread_id NULL`; `run_type`; `status`; `provider`; `model`; `token_budget`; `cost_budget`; `input_snapshot_json JSONB`; `output_snapshot_json JSONB`; `calculation_version`; `data_freshness_snapshot JSONB`; `started_at`; `completed_at`; `error JSONB`; timestamps | Index status; index user/account; index report thread | Status: queued, running, waiting_retry, failed, cancelled, completed, partially_completed. Snapshots make every run traceable. |
+| `agent_steps` | Step-by-step run trace | `id`; `agent_run_id`; `step_order`; `step_key`; `step_type`; `status`; `started_at`; `completed_at`; `input_snapshot_json JSONB`; `output_snapshot_json JSONB`; `calculation_version`; `data_freshness_snapshot JSONB`; `error JSONB`; `tokens_in`; `tokens_out`; `estimated_cost`; timestamps | Unique `(agent_run_id, step_order)`; index run/status | Store enough to debug without leaking into public artifacts. |
+| `report_threads` | Chat-like report container | `id`; `user_id`; `account_id NULL`; `agent_run_id NULL`; `title`; `status`; `tags TEXT[]`; `deleted_at`; timestamps | Index user/account/status; GIN tags later | Minimal soft-delete placeholder starts with `deleted_at`; restore/permanent delete behavior is deferred. |
 | `report_messages` | Chat/report timeline messages | `id`; `thread_id`; `sender_type`; `message_type`; `content_markdown`; `content_json JSONB`; `sequence`; `visibility`; timestamps; soft delete | Unique `(thread_id, sequence)`; index message type | Message types include user_input, system_event, agent_output, tool_output, error, retry_notice, final_report, markdown_report. |
 | `report_artifacts` | Exported files and generated artifacts | `id`; `thread_id`; `artifact_type`; `file_name`; `storage_uri`; `mime_type`; `sha256`; `metadata JSONB`; timestamps; soft delete | Index thread/type; unique sha per thread optional | Delete artifacts with thread purge; soft delete metadata for trash restore. |
 | `api_usage_logs` | Provider usage and cost trace | `id`; `user_id`; `account_id NULL`; `agent_run_id NULL`; `provider`; `model`; `operation`; `tokens_in`; `tokens_out`; `request_count`; `estimated_cost`; `status`; timestamps | Index provider/time; index run | Do not store raw prompts here; link to step if needed. |
@@ -569,17 +621,18 @@ Each analysis run should create or append to a `report_thread`. For MVP, create 
 
 Core entities:
 
-- `report_threads`: title, account, status, tags, deletion state.
+- `report_threads`: title, account, status, tags, and `deleted_at` for minimal soft delete.
 - `report_messages`: user input, system events, agent outputs, tool outputs, errors, retry notices, final markdown.
-- `agent_runs`: execution status, budgets, provider/model summary.
-- `agent_steps`: checkpointable step outputs, token usage, cost, errors.
+- `agent_runs`: execution status, budgets, provider/model summary, `input_snapshot_json`, `output_snapshot_json`, `calculation_version`, and `data_freshness_snapshot`.
+- `agent_steps`: checkpointable step outputs, token usage, cost, errors, `input_snapshot_json`, `output_snapshot_json`, `calculation_version`, and `data_freshness_snapshot`.
 - `report_artifacts`: markdown export now, PDF later.
 
 Deletion behavior:
 
-- Soft delete `report_threads` and messages for normal delete/trash.
-- Restore clears `deleted_at` on thread/messages/artifacts.
-- Permanent delete removes message content, step payloads linked only to that report, and artifact files.
+- Phase 10 should add only the minimal `report_threads.deleted_at` soft-delete placeholder.
+- Full restore and permanent-delete behavior is deferred until the report workspace matures.
+- Later restore clears `deleted_at` on thread/messages/artifacts.
+- Later permanent delete removes message content, step payloads linked only to that report, and artifact files.
 - Preserve aggregate `api_usage_logs` if content is scrubbed, unless user requests full account purge.
 - Avoid orphan records with FK constraints and application-level purge jobs.
 
@@ -669,6 +722,7 @@ Core outputs:
 - projected allocation after assignment
 - projected cash after assignment
 - rule violations
+- `risk_rule_violations` with severity `info`, `warning`, `violation`, or `blocker`
 
 Target allocation model:
 
@@ -1085,14 +1139,16 @@ Import workflow:
 
 The app should work when LLMs are disabled. Agent workflows enrich deterministic analytics; they do not replace them.
 
+Report and agent persistence should exist before TradingAgents integration. Durable `report_threads`, `report_messages`, `agent_runs`, and `agent_steps` prevent agent output from becoming another ephemeral CLI-style run. The first implementation should support deterministic/template markdown reports without LLM calls, TradingAgents calls, or external APIs.
+
 | Step | Type | External API | LLM | Cacheable | Checkpointable | MVP |
 | --- | --- | --- | --- | --- | --- | --- |
 | Load user/account context | DB query | No | No | Yes | Yes | Yes |
 | Load portfolio/open positions | DB query | No | No | Yes | Yes | Yes |
 | Load target/risk rules | DB query | No | No | Yes | Yes | Yes |
 | Load broker portfolio sync data | SnapTrade/mock/cache | Yes | No | Yes | Yes | Yes |
-| Load market data | Provider call/cache | Yes | No | Yes | Yes | Phase 10 |
-| Load option chain | Provider call/cache | Yes | No | Yes | Yes | Phase 10 |
+| Load market data | Provider call/cache | Yes | No | Yes | Yes | Phase 12 |
+| Load option chain | Provider call/cache | Yes | No | Yes | Yes | Phase 12 |
 | Portfolio analytics | Pure Python | No | No | Yes by input hash | Yes | Yes |
 | Option screener | Pure Python | No | No | Yes by chain hash | Yes | Yes |
 | Risk checks | Pure Python | No | No | Yes | Yes | Yes |
@@ -1100,7 +1156,7 @@ The app should work when LLMs are disabled. Agent workflows enrich deterministic
 | Technical analyst | Python/LLM optional | Maybe | Optional | Yes | Yes | Later |
 | Options analyst narrative | LLM over structured data | No | Yes | Yes by input hash | Yes | Later |
 | Portfolio risk manager narrative | LLM over deterministic results | No | Yes | Yes | Yes | Later |
-| TradingAgents stock research | TradingAgents adapter | Yes | Yes | Partly | Yes | Later |
+| TradingAgents stock research | TradingAgents adapter | Yes | Yes | Partly | Yes | Phase 15 |
 | Final markdown report | Template + optional LLM | No | Optional | Yes | Yes | Yes |
 | Persist outputs | DB write | No | No | N/A | Yes | Yes |
 | Stream progress | SSE | No | No | N/A | N/A | Yes |
@@ -1215,7 +1271,7 @@ Market data UI:
 - stale warning
 - selected option-chain snapshot metadata
 
-MVP should focus on accounts, SnapTrade-backed broker portfolio sync, internal positions, option positions, broker sync freshness, portfolio summary, and clear fallback paths. Market quote freshness remains separate and comes after the SnapTrade sync foundation.
+Phase 11 should be a thin implementation phase for the first dashboard shell, not a planning-only milestone. It can start before the full market data layer because it should render only the existing portfolio system of record: user/account selector, portfolio summary, cash/stock/option positions, broker freshness, broker warnings, and report history placeholders. Market quote UI should be limited to a clear "not available yet" state until Phase 12, and Phase 11 should not include option screener UI, TradingAgents UI, or trade execution UI.
 
 ## Section O - Backend API Design
 
@@ -1478,9 +1534,10 @@ Smallest professional MVP:
 - Quote freshness status after the broker sync foundation.
 - Simple market data provider interface after the broker sync foundation.
 - ManualProvider plus one low-cost market data provider adapter after the broker sync foundation.
-- Report history after the SnapTrade-first portfolio MVP.
-- Agent run history after the SnapTrade-first portfolio MVP.
-- Delete/restore/permanent delete report behavior after report history.
+- Thin report history before TradingAgents integration.
+- Agent run history before TradingAgents integration.
+- Minimal report thread soft delete with `deleted_at`.
+- Delete/restore/permanent delete report behavior after the report workspace matures.
 - Markdown report output after report history.
 - No automatic trading.
 
@@ -1779,15 +1836,79 @@ Tests:
 
 - Synthetic fallback API/parser tests.
 
-### Phase 10 - Market Data Layer
+### Phase 10 - Thin Agent/Report Foundation
 
 Goals:
 
-- MarketDataProvider.
-- OptionDataProvider.
-- Quote freshness.
-- Manual provider.
-- Low-cost fallback provider.
+- Add durable report and agent history before TradingAgents integration.
+- Add `report_threads`, `report_messages`, `agent_runs`, and `agent_steps`.
+- Support deterministic/template markdown reports without LLM calls.
+- Include `input_snapshot_json`, `output_snapshot_json`, `calculation_version`, and `data_freshness_snapshot` on `agent_runs` and `agent_steps`.
+- Add `report_threads.deleted_at` as a minimal soft-delete placeholder.
+
+Files:
+
+- `backend/app/models/report_thread.py`
+- `backend/app/models/report_message.py`
+- `backend/app/models/agent_run.py`
+- `backend/app/models/agent_step.py`
+- `backend/app/schemas/reports.py`
+- `backend/app/schemas/agent_runs.py`
+- `backend/app/api/routes/reports.py`
+- `backend/app/services/reports/*`
+- `backend/alembic/versions/*`
+- `backend/tests/api/test_reports*.py`
+- `backend/tests/unit/test_report*.py`
+
+Risks:
+
+- Overbuilding restore/permanent delete before report UX exists.
+- Accidentally adding LLM or TradingAgents calls too early.
+
+Acceptance:
+
+- Reports, messages, runs, and steps can be created and read with synthetic data.
+- Basic markdown report output persists in report history.
+- No LLM calls, TradingAgents calls, frontend code, or external APIs.
+
+Tests:
+
+- Migration/model/schema/API tests with synthetic data.
+
+### Phase 11 - Frontend Dashboard Shell A
+
+Goals:
+
+- Build a thin React/Vite dashboard shell.
+- Add local user/account selector.
+- Show portfolio summary, cash positions, stock positions, option positions, broker freshness, broker warnings, and report history placeholder.
+
+Files:
+
+- `frontend/*`
+
+Risks:
+
+- Building a market data or option screener UI before contracts exist.
+- UI language drifting toward trade execution or guaranteed returns.
+
+Acceptance:
+
+- Dashboard shell renders existing portfolio/broker data and report placeholders.
+- Market quote UI is limited to explicit "not available yet" placeholders.
+- No option screener UI, TradingAgents UI, trade execution UI, or guaranteed-return language.
+
+Tests:
+
+- Frontend build/type checks and UI smoke tests once frontend tooling exists.
+
+### Phase 12 - Market Data Contracts and Manual Provider
+
+Goals:
+
+- Define `MarketDataProvider` and `OptionDataProvider` interfaces.
+- Define stock quote, option quote, option chain, IV/Greeks, and quote freshness models.
+- Add a manual/mock provider for synthetic tests.
 
 Files:
 
@@ -1797,31 +1918,166 @@ Files:
 Risks:
 
 - Confusing broker sync freshness with quote freshness.
+- Accidentally adding real provider calls before mocked contracts are stable.
 
 Acceptance:
 
-- Stock quotes, option quotes, option chains, IV, Greeks, and quote freshness remain separate from broker holdings/cash sync.
+- Market data interfaces are separate from broker sync.
+- Market freshness response uses `freshness_scope="market_quote"`.
+- `app.services.market_data.*` does not import from `app.services.broker_import.*`.
+- Top-of-module docs explain broker-vs-quote freshness separation.
+- No real provider calls by default.
 
 Tests:
 
-- Mock provider tests, quote freshness tests, stale quote tests.
+- Mock provider tests, quote freshness tests, stale quote tests, and module-boundary tests.
 
-## Section U - First 10 Concrete Implementation Tasks
+### Phase 13 - Deterministic Options/Risk Engine MVP
 
-Do not start these until this design is reviewed.
+Goals:
+
+- Implement option formulas.
+- Calculate collateral, free cash, assignment scenarios, covered call eligibility, CSP candidate evaluation, allocation/concentration risk, and deterministic risk reports.
+- Emit `risk_rule_violations` with severity `info`, `warning`, `violation`, or `blocker`.
+
+Files:
+
+- `backend/app/services/options/*`
+- `backend/app/services/risk/*`
+- `backend/tests/services/options/*`
+- `backend/tests/services/risk/*`
+
+Risks:
+
+- Letting LLMs compute or invent financial metrics.
+- Hiding risk-rule severity in prose instead of structured deterministic output.
+
+Acceptance:
+
+- Python calculates all metrics.
+- Risk rule violations are structured deterministic outputs.
+- Manual/mock market inputs are sufficient for tests.
+
+Tests:
+
+- Unit tests for formulas, collateral, assignment, eligibility, concentration, and rule violations.
+
+### Phase 14 - Custom Portfolio-Aware Agent Orchestrator
+
+Goals:
+
+- Add workflow-first, deterministic-first custom agents.
+- Include Portfolio Context Agent, Options Income Agent, Collateral & Assignment Risk Agent, Allocation Risk Agent, Freshness/Guardrail Agent, and Report Composer Agent.
+- Mock LLM provider boundaries by default.
+
+Files:
+
+- `backend/app/services/agents/*`
+- `backend/tests/services/agents/*`
+
+Risks:
+
+- Agents inventing metrics or bypassing deterministic outputs.
+
+Acceptance:
+
+- Agents consume structured deterministic inputs.
+- Outputs persist to report/agent history.
+- LLM calls are mocked by default.
+
+Tests:
+
+- Workflow tests, mocked LLM tests, and report persistence tests.
+
+### Phase 15 - TradingAgents Adapter
+
+Goals:
+
+- Add optional TradingAgents dependency detection.
+- Add adapter interface, missing dependency fallback, mocked output parser, and report-message/agent-step mapping.
+
+Files:
+
+- `backend/app/services/tradingagents_adapter/*`
+- `backend/tests/services/test_tradingagents_adapter.py`
+
+Risks:
+
+- Becoming a thin TradingAgents wrapper.
+- Importing TradingAgents in global FastAPI startup.
+
+Acceptance:
+
+- Adapter is stock/company research only.
+- No source copy, submodule, or TradingAgents core edits.
+- Deterministic app features work without TradingAgents installed.
+
+Tests:
+
+- Missing dependency tests and mocked TradingAgents output parser tests.
+
+### Phase 16 - Frontend Agent Workspace B
+
+Goals:
+
+- Add report detail, agent run monitor, risk review workspace, TradingAgents research section, and agent disagreement/guardrail display.
+
+Files:
+
+- `frontend/*`
+
+Risks:
+
+- Blurring deterministic calculations and LLM-generated text.
+- Collapsing broker freshness and market quote freshness.
+
+Acceptance:
+
+- UI distinguishes deterministic calculations from LLM-generated text.
+- UI shows broker freshness and market quote freshness separately.
+- No trade execution UI.
+
+Tests:
+
+- Frontend tests and accessibility-focused UI review.
+
+### Future Documentation Cleanup
+
+Goals:
+
+- Update `README.md` after architecture and roadmap realignment.
+- Reflect current backend progress, the revised agentic product direction, and updated roadmap/quickstart language.
+
+Files:
+
+- `README.md`
+
+Risks:
+
+- Public project description becoming stale or understating completed backend work.
+
+Acceptance:
+
+- README accurately describes current status and future agentic direction.
+
+Tests:
+
+- Documentation review only.
+
+## Section U - Next 10 Concrete Implementation Tasks
 
 | # | Task | Why it matters | Files | Expected result | Test |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Finish internal stock position storage | SnapTrade/manual/CSV need normalized holdings storage | `backend/app/models/stock_position.py`, schemas, migration | Account-scoped stock/ETF positions | Model/API tests |
-| 2 | Add option contract storage | SnapTrade option positions need normalized contract identity | `backend/app/models/option_contract.py`, schemas, migration | OCC-style contracts resolved idempotently | Model/schema tests |
-| 3 | Add option position storage | Broker sync must preserve short/long option holdings | `backend/app/models/option_position.py`, schemas, migration | Account option positions linked to contracts | Model/API tests |
-| 4 | Add broker connection metadata | SnapTrade needs safe connection tracking | `broker_connections` model/schema/migration | Connection/status/freshness metadata without secrets | Migration/model tests |
-| 5 | Add broker account mapping | Provider accounts must map to internal accounts | `broker_accounts` model/schema/migration | Provider account IDs mapped safely | Migration/model tests |
-| 6 | Add broker sync run tracking | Sync attempts need observability and retry history | `broker_sync_runs` model/schema/migration | Sync status, timestamps, counts, sanitized errors | Migration/model tests |
-| 7 | Add secret reference metadata | SnapTrade `userSecret` must not be stored plaintext | `provider_credentials_metadata` or secret-ref model | Database stores only `secret_ref` / `encrypted_secret_ref` | Secret safety tests |
-| 8 | Add BrokerPortfolioProvider interface | Keep broker sync separate from market data | provider interface/models | Accounts, balances, positions, option positions, freshness | Mocked contract tests |
-| 9 | Add SnapTradeAdapter skeleton | Primary broker sync path starts read-only and mock-first | SnapTrade provider module | Read-only methods only, no trading/order endpoints | Mocked adapter tests |
-| 10 | Add SnapTrade connection flow API | Backend owns registration and connection portal generation | broker sync routes/services | Mocked register user and portal URL flow | Mocked API tests |
+| 1 | Add `report_threads` | Agent/report history should exist before TradingAgents integration | `backend/app/models/report_thread.py`, migration | Report thread records with `deleted_at` soft-delete placeholder | Migration/model tests |
+| 2 | Add `report_messages` | Reports should behave like durable AI-style history | `backend/app/models/report_message.py`, migration | Thread-scoped user/system/agent/final-report messages | Migration/model tests |
+| 3 | Add `agent_runs` | Agent workflows need traceable run records | `backend/app/models/agent_run.py`, migration | Runs with `input_snapshot_json`, `output_snapshot_json`, `calculation_version`, and `data_freshness_snapshot` | Migration/model tests |
+| 4 | Add `agent_steps` | Intermediate outputs need checkpointing and review | `backend/app/models/agent_step.py`, migration | Step records with input/output snapshots, calculation version, freshness snapshot, and status | Migration/model tests |
+| 5 | Add report/agent schemas | APIs need typed contracts before frontend/agents | `backend/app/schemas/reports.py`, `backend/app/schemas/agent_runs.py` | Pydantic models for threads, messages, runs, and steps | Schema tests |
+| 6 | Add report list/create/detail APIs | Dashboard shell needs report history placeholders | `backend/app/api/routes/reports.py` | Create/list/read report threads with synthetic data | API tests |
+| 7 | Add deterministic markdown report output | Report foundation should work without LLMs | `backend/app/services/reports/*` | Template-based markdown final report persisted to messages/artifacts | Service/API tests |
+| 8 | Add agent/report tests | Prevent early regressions in history semantics | `backend/tests/api/test_reports*.py`, `backend/tests/unit/test_report*.py` | Phase 10 covered without external APIs | Pytest |
+| 9 | Scaffold Frontend Dashboard Shell A | Make the product visible as a cockpit, not only APIs | `frontend/*` | React/Vite shell with user/account selector and portfolio views | Frontend build/typecheck |
+| 10 | Add dashboard report/freshness placeholders | Keep UI aligned with agentic product direction | `frontend/*` | Broker freshness, warnings, and report history placeholder; no market quote/screener/trading UI | UI smoke/accessibility review |
 
 ## License and Third-Party Notices
 

@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal, engine
 from app.main import app as fastapi_app
 from app.models.account import Account
+from app.models.agent_run import AgentRun
+from app.models.agent_step import AgentStep
 from app.models.broker_account import BrokerAccount
 from app.models.broker_connection import BrokerConnection
 from app.models.broker_sync_run import BrokerSyncRun
@@ -16,6 +18,8 @@ from app.models.cash_balance import CashBalance
 from app.models.option_contract import OptionContract
 from app.models.option_position import OptionPosition
 from app.models.provider_credentials_metadata import ProviderCredentialsMetadata
+from app.models.report_message import ReportMessage
+from app.models.report_thread import ReportThread
 from app.models.stock_position import StockPosition
 from app.models.user import User
 
@@ -47,6 +51,10 @@ def db_session() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         db.execute(delete(ProviderCredentialsMetadata))
+        db.execute(delete(AgentStep))
+        db.execute(delete(AgentRun))
+        db.execute(delete(ReportMessage))
+        db.execute(delete(ReportThread))
         db.execute(delete(BrokerSyncRun))
         db.execute(delete(BrokerAccount))
         db.execute(delete(BrokerConnection))
@@ -60,6 +68,10 @@ def db_session() -> Generator[Session, None, None]:
         yield db
     finally:
         db.execute(delete(ProviderCredentialsMetadata))
+        db.execute(delete(AgentStep))
+        db.execute(delete(AgentRun))
+        db.execute(delete(ReportMessage))
+        db.execute(delete(ReportThread))
         db.execute(delete(BrokerSyncRun))
         db.execute(delete(BrokerAccount))
         db.execute(delete(BrokerConnection))

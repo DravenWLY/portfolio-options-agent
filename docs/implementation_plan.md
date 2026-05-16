@@ -2146,7 +2146,19 @@ Phase goal: create durable report and agent history before TradingAgents integra
   - `cd backend && ./.venv/bin/alembic upgrade head`
 - Rollback notes:
   - Revert the model, migration, tests, and plan notes.
-- Status: `not_started`
+- Verification notes:
+  - Implemented `ReportThread` SQLAlchemy model with user ownership, optional account link, title, report type, status, timestamps, and `deleted_at` soft-delete placeholder.
+  - Added Alembic migration `0012_create_report_threads` with indexes for account lookup, deleted state, user/status, and user/created ordering.
+  - Registered `ReportThread` in model metadata and added test cleanup ordering in `backend/tests/conftest.py`.
+  - Added synthetic DB tests confirming create/query behavior, default `report_type="portfolio_report"`, default `status="draft"`, nullable `account_id`, timestamps, and `deleted_at is None`.
+  - Changed files: `backend/app/models/report_thread.py`, `backend/app/models/__init__.py`, `backend/alembic/versions/0012_create_report_threads.py`, `backend/tests/conftest.py`, `backend/tests/db/test_report_threads.py`, and `docs/implementation_plan.md`.
+  - Migration prep result: `cd backend && ./.venv/bin/alembic upgrade head` -> upgraded `0011_provider_credentials` to `0012_create_report_threads`.
+  - Full test result: `cd backend && ./.venv/bin/python -m pytest` -> `210 passed, 1 deselected in 2.71s`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic current` -> `0012_create_report_threads (head)`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+  - Diff hygiene result: `git diff --check` completed with no output.
+  - Residual risk: full report restore/permanent delete behavior is intentionally deferred; this task only adds the `deleted_at` placeholder.
+- Status: `done`
 
 ### P10-T2 - report_messages table
 
@@ -2174,7 +2186,19 @@ Phase goal: create durable report and agent history before TradingAgents integra
   - `cd backend && ./.venv/bin/alembic upgrade head`
 - Rollback notes:
   - Revert the model, migration, tests, and plan notes.
-- Status: `not_started`
+- Verification notes:
+  - Implemented `ReportMessage` SQLAlchemy model linked to `ReportThread` with sender type, message type, markdown content, JSON content, deterministic sequence, visibility, timestamps, and `deleted_at` soft-delete placeholder.
+  - Added Alembic migration `0013_create_report_messages` with `thread_id` foreign key, unique `(thread_id, sequence)` ordering constraint, and indexes for thread lookup, message type, and deleted state.
+  - Registered `ReportMessage` in model metadata and added test cleanup ordering in `backend/tests/conftest.py`.
+  - Added synthetic DB tests confirming thread ownership, deterministic sequence ordering, supported message types such as `user_input` and `markdown_report`, JSON content persistence, default `visibility="private"`, timestamps, and `deleted_at is None`.
+  - Changed files: `backend/app/models/report_message.py`, `backend/app/models/__init__.py`, `backend/alembic/versions/0013_create_report_messages.py`, `backend/tests/conftest.py`, `backend/tests/db/test_report_messages.py`, and `docs/implementation_plan.md`.
+  - Migration prep result: `cd backend && ./.venv/bin/alembic upgrade head` -> upgraded `0012_create_report_threads` to `0013_create_report_messages`.
+  - Full test result: `cd backend && ./.venv/bin/python -m pytest` -> `212 passed, 1 deselected in 2.39s`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic current` -> `0013_create_report_messages (head)`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+  - Diff hygiene result: `git diff --check` completed with no output.
+  - Residual risk: report APIs and message schemas are intentionally deferred to later Phase 10 tasks; this task only adds the persistence primitive.
+- Status: `done`
 
 ### P10-T3 - agent_runs table
 
@@ -2203,7 +2227,20 @@ Phase goal: create durable report and agent history before TradingAgents integra
   - `cd backend && ./.venv/bin/alembic upgrade head`
 - Rollback notes:
   - Revert the model, migration, tests, and plan notes.
-- Status: `not_started`
+- Verification notes:
+  - Implemented `AgentRun` SQLAlchemy model linked to user, optional account, and optional report thread.
+  - Added traceability fields `input_snapshot_json`, `output_snapshot_json`, `calculation_version`, and `data_freshness_snapshot`, plus run type, status, provider/model placeholders, token/cost budgets, run timestamps, error JSON, and timestamps.
+  - Added Alembic migration `0014_create_agent_runs` with nullable account/report-thread foreign keys, user foreign key, JSONB snapshot fields, and indexes for status, user/account, report thread, and user/created ordering.
+  - Registered `AgentRun` in model metadata and added test cleanup ordering in `backend/tests/conftest.py`.
+  - Added synthetic DB tests confirming report-thread linkage, account linkage, snapshot persistence, calculation version persistence, freshness snapshot persistence, default `run_type="portfolio_analysis"`, and default `status="queued"`.
+  - Changed files: `backend/app/models/agent_run.py`, `backend/app/models/__init__.py`, `backend/alembic/versions/0014_create_agent_runs.py`, `backend/tests/conftest.py`, `backend/tests/db/test_agent_runs.py`, and `docs/implementation_plan.md`.
+  - Migration prep result: `cd backend && ./.venv/bin/alembic upgrade head` -> upgraded `0013_create_report_messages` to `0014_create_agent_runs`.
+  - Full test result: `cd backend && ./.venv/bin/python -m pytest` -> `214 passed, 1 deselected in 2.05s`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic current` -> `0014_create_agent_runs (head)`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+  - Diff hygiene result: `git diff --check` completed with no output.
+  - Residual risk: agent step persistence, schemas, services, APIs, and any LLM/TradingAgents execution remain intentionally deferred to later Phase 10 tasks.
+- Status: `done`
 
 ### P10-T4 - agent_steps table
 
@@ -2232,7 +2269,14 @@ Phase goal: create durable report and agent history before TradingAgents integra
   - `cd backend && ./.venv/bin/alembic upgrade head`
 - Rollback notes:
   - Revert the model, migration, tests, and plan notes.
-- Status: `not_started`
+- Verification notes:
+  - Implemented `AgentStep` SQLAlchemy model linked to `AgentRun`.
+  - Added ordered step fields `step_order`, `step_key`, `step_type`, and `status`, plus `input_snapshot_json`, `output_snapshot_json`, `calculation_version`, and `data_freshness_snapshot`.
+  - Added nullable future LLM/cost placeholders `tokens_in`, `tokens_out`, and `estimated_cost`, without adding any LLM provider calls.
+  - Added Alembic migration `0015_create_agent_steps` with unique `(agent_run_id, step_order)` and indexes for run lookup, run/status, and step key.
+  - Added synthetic DB tests confirming step ordering, traceability fields, defaults, and cost placeholders.
+  - Verification shared with P10-T8: `cd backend && ./.venv/bin/python -m pytest` -> `228 passed, 1 deselected in 2.53s`; Alembic current -> `0015_create_agent_steps (head)`; Alembic upgrade head completed successfully; `git diff --check` completed with no output.
+- Status: `done`
 
 ### P10-T5 - report and agent schemas
 
@@ -2256,7 +2300,13 @@ Phase goal: create durable report and agent history before TradingAgents integra
   - `cd backend && ./.venv/bin/python -m pytest`
 - Rollback notes:
   - Revert schema and tests.
-- Status: `not_started`
+- Verification notes:
+  - Added `backend/app/schemas/reports.py` with create/read/detail schemas for report threads and report messages.
+  - Added `backend/app/schemas/agent_runs.py` with create/read schemas for agent runs and agent steps.
+  - Schemas expose snapshot/version/freshness fields and `deleted_at` where appropriate.
+  - Added unit tests confirming report schemas, agent traceability schemas, completion-time validation, and absence of secret fields such as `secret_ref`, `encrypted_secret_ref`, `api_key`, and `access_token`.
+  - Verification shared with P10-T8: `cd backend && ./.venv/bin/python -m pytest` -> `228 passed, 1 deselected in 2.53s`; `git diff --check` completed with no output.
+- Status: `done`
 
 ### P10-T6 - report APIs: list, create, detail
 
@@ -2282,7 +2332,14 @@ Phase goal: create durable report and agent history before TradingAgents integra
   - `cd backend && ./.venv/bin/python -m pytest`
 - Rollback notes:
   - Revert report routes, services, tests, and route registration.
-- Status: `not_started`
+- Verification notes:
+  - Added `backend/app/services/reports/crud.py` for report-thread create/list/detail helpers, message listing, next-sequence calculation, and message persistence.
+  - Added `backend/app/api/routes/reports.py` with `POST /users/{user_id}/reports`, `GET /users/{user_id}/reports`, and `GET /users/{user_id}/reports/{thread_id}`.
+  - Registered report routes in `backend/app/main.py`.
+  - Added API tests confirming create/list/detail behavior, message inclusion in detail responses, missing-user 404s, account ownership checks, and wrong-user 404s.
+  - No restore or permanent-delete behavior was added.
+  - Verification shared with P10-T8: `cd backend && ./.venv/bin/python -m pytest` -> `228 passed, 1 deselected in 2.53s`; `git diff --check` completed with no output.
+- Status: `done`
 
 ### P10-T7 - basic markdown report output
 
@@ -2305,7 +2362,13 @@ Phase goal: create durable report and agent history before TradingAgents integra
   - `cd backend && ./.venv/bin/python -m pytest`
 - Rollback notes:
   - Revert markdown report service and tests.
-- Status: `not_started`
+- Verification notes:
+  - Added `backend/app/services/reports/markdown.py` with deterministic/template markdown rendering for structured portfolio summary and broker freshness inputs.
+  - Added persistence helper that stores the rendered output as a `markdown_report` report message with `content_json.generator="deterministic_template"`.
+  - Markdown copy explicitly states that it does not include LLM output, TradingAgents research, market data API calls, or trade execution.
+  - Added service tests confirming deterministic output content, safety boundary language, and persisted markdown report message shape.
+  - Verification shared with P10-T8: `cd backend && ./.venv/bin/python -m pytest` -> `228 passed, 1 deselected in 2.53s`; `git diff --check` completed with no output.
+- Status: `done`
 
 ### P10-T8 - tests
 
@@ -2334,7 +2397,16 @@ Phase goal: create durable report and agent history before TradingAgents integra
   - `cd backend && ./.venv/bin/alembic upgrade head`
 - Rollback notes:
   - Revert added tests and any related plan notes.
-- Status: `not_started`
+- Verification notes:
+  - Completed Phase 10 coverage across DB, schema, API, and markdown service layers.
+  - Added/updated tests: `backend/tests/db/test_report_threads.py`, `backend/tests/db/test_report_messages.py`, `backend/tests/db/test_agent_runs.py`, `backend/tests/db/test_agent_steps.py`, `backend/tests/unit/test_report_agent_schemas.py`, `backend/tests/api/test_reports.py`, and `backend/tests/services/test_markdown_reports.py`.
+  - Confirmed default pytest excludes `external` and `slow`: `pytest.ini` still uses `addopts = -ra -m "not external and not slow"` and the full run reported `1 deselected`.
+  - Full test result: `cd backend && ./.venv/bin/python -m pytest` -> `228 passed, 1 deselected in 2.53s`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic current` -> `0015_create_agent_steps (head)`.
+  - Alembic result: `cd backend && ./.venv/bin/alembic upgrade head` completed successfully.
+  - Diff hygiene result: `git diff --check` completed with no output.
+  - No LLM calls, TradingAgents calls, market data API calls, broker API calls, frontend code, or external services were added.
+- Status: `done`
 
 ## Phase 11 - Frontend Dashboard Shell A
 

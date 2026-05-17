@@ -28,6 +28,14 @@ The intended architecture is a full-stack application with:
 - Explicit, deterministic code for financial calculations and validation.
 - An adapter layer for any future integration with `../TradingAgents`.
 
+## Documentation Map
+
+- `docs/current_roadmap.md`: short current direction and active phase.
+- `docs/implementation_plan.md`: active and future tasks only.
+- `docs/completed_phases_log.md`: archived completed phase history and verification notes.
+- `docs/deferred_items.md`: known non-blocking follow-up work.
+- `docs/agent_context/`: short Codex and Claude handoff briefs for context-efficient reviews.
+
 ## Relationship to `../TradingAgents`
 
 `../TradingAgents` is a separate repository and should remain separate. This project may later integrate with it through an adapter layer or editable Python dependency, but this repository must not modify TradingAgents core files, copy its source code, vendor it as a subfolder, or add it as a git submodule for now.

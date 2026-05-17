@@ -54,6 +54,7 @@ def test_credential_metadata_allowlist_excludes_provider_secret_fields() -> None
         "provider_request_id": "demo-request",
         "userSecret": "11111111-1111-4111-8111-111111111111",
         "data": "opaque-provider-data",
+        "safe_but_unlisted": "must-not-persist",
     }
 
     assert allowlisted_provider_payload(payload, CREDENTIAL_METADATA_ALLOWLIST) == {

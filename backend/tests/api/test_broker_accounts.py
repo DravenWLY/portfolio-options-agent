@@ -51,7 +51,7 @@ def test_list_broker_accounts_for_connection(
     assert response.status_code == 200
     payload = response.json()
     assert len(payload) == 1
-    assert payload[0]["provider_account_id"] == "demo-provider-account"
+    assert "provider_account_id" not in payload[0]
     assert payload[0]["account_type"] == "taxable_individual"
     assert "raw_payload" not in response.text
     assert "private_provider_detail" not in response.text

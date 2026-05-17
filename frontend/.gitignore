@@ -1,0 +1,23 @@
+# Vite build output
+dist
+dist-ssr
+
+# Dependencies
+node_modules
+
+# Env files — never commit. Frontend must never carry secrets.
+.env
+*.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

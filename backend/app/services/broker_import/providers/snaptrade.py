@@ -27,7 +27,9 @@ from app.services.broker_import.providers.snaptrade_models import (
 class SnapTradeReadOnlyClient(Protocol):
     def register_user(self, user_ref: str) -> dict[str, Any]: ...
 
-    def create_connection_portal_url(self, snaptrade_user_id: str, user_secret: str) -> dict[str, Any]: ...
+    def create_connection_portal_url(
+        self, snaptrade_user_id: str, user_secret: str, broker: str | None = None
+    ) -> dict[str, Any]: ...
 
     def list_connections(self, user_ref: str) -> list[dict[str, Any]]: ...
 
@@ -72,8 +74,11 @@ class SnapTradeAdapter(BrokerPortfolioProvider):
         self,
         snaptrade_user_id: str,
         user_secret: str,
+        broker: str | None = None,
     ) -> SnapTradeConnectionPortalUrlResponse:
-        payload = self._require_client().create_connection_portal_url(snaptrade_user_id, user_secret)
+        payload = self._require_client().create_connection_portal_url(
+            snaptrade_user_id, user_secret, broker
+        )
         return SnapTradeConnectionPortalUrlResponse.model_validate(payload)
 
     def list_connections(self, user_ref: str) -> list[ProviderConnectionSnapshot]:

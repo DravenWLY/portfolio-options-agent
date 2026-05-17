@@ -49,7 +49,7 @@ def test_get_broker_sync_run_status(client: TestClient, db_session: Session) -> 
     payload = response.json()
     assert payload["id"] == str(sync_run.id)
     assert payload["status"] == "succeeded"
-    assert payload["provider_request_id"] == "demo-request"
+    assert "provider_request_id" not in payload
     assert payload["summary"]["warnings"] == ["synthetic warning"]
 
 

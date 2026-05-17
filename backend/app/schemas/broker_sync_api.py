@@ -11,7 +11,6 @@ class SnapTradeUserRegistrationRequest(BaseModel):
 
 class SnapTradeUserRegistrationRead(BaseModel):
     provider: Literal["snaptrade"] = "snaptrade"
-    snaptrade_user_id: str
     credential_metadata_id: UUID
 
 
@@ -49,7 +48,6 @@ class BrokerAccountPublicRead(BaseModel):
     id: UUID
     broker_connection_id: UUID
     account_id: UUID | None
-    provider_account_id: str
     display_name: str
     account_type: str
     base_currency: str
@@ -80,7 +78,6 @@ class BrokerSyncSummaryRead(BaseModel):
     option_positions_count: int | None = None
     partial_failures: list[BrokerSyncPartialFailureRead] = []
     warnings: list[str] = []
-    provider_request_id: str | None = None
 
 
 class BrokerSyncRunPublicRead(BaseModel):
@@ -93,7 +90,6 @@ class BrokerSyncRunPublicRead(BaseModel):
     status: str
     started_at: datetime | None
     completed_at: datetime | None
-    provider_request_id: str | None
     accounts_count: int
     positions_count: int
     transactions_count: int

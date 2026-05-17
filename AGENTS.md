@@ -37,6 +37,18 @@ Rules for coding agents working in `portfolio-options-agent`.
 - Do not log API keys, broker data, account values, real reports, or private strategy parameters.
 - Never put API keys in frontend code.
 
+## Real Brokerage Data Access Rules
+
+This project may connect to real read-only brokerage data through SnapTrade. Treat all synced brokerage data as private user data.
+
+- Do not read, print, summarize, export, screenshot, query, or inspect real brokerage data unless the user explicitly grants narrow permission for that specific diagnostic action.
+- Protected brokerage data includes account names, account numbers, provider account IDs, balances, buying power, cash, holdings, quantities, positions, cost basis, option positions, transaction history, statements, broker sync payloads, reports, screenshots, database dumps, generated logs, SnapTrade user IDs, SnapTrade user secrets, portal URLs, access tokens, and API keys.
+- Do not query a local database, API endpoint, browser screen, log file, report, or generated artifact if it may contain real brokerage holdings, balances, transactions, account identifiers, or provider raw payloads.
+- Do not call live SnapTrade, Fidelity, broker, market-data, or LLM APIs unless the active task explicitly requires it and the user confirms the real-data access boundary.
+- Prefer source-code review, schemas, synthetic fixtures, mocked API responses, redacted examples, and UI layout with fake/demo data.
+- Never paste real brokerage values into docs, tests, fixtures, prompts, commits, screenshots, examples, logs, or responses.
+- If a task appears to require real brokerage data, stop and ask for explicit permission. State exactly what data would be accessed and prefer a redacted or synthetic alternative.
+
 ## Implementation Loop Rule
 
 - For multi-step work, maintain `docs/implementation_plan.md`.
@@ -44,6 +56,19 @@ Rules for coding agents working in `portfolio-options-agent`.
 - Implement only one task at a time unless explicitly told otherwise.
 - After each task, update `docs/implementation_plan.md`.
 - Stop for review after each task.
+
+## Context Efficiency Rules
+
+- Prefer `docs/current_roadmap.md` for high-level project direction.
+- Prefer `docs/agent_context/codex_working_context.md` before implementation tasks.
+- Prefer `docs/agent_context/opus_review_brief.md` for high-stakes Claude Opus reviews.
+- Keep `docs/implementation_plan.md` focused on active and future tasks.
+- Keep completed verification history in `docs/completed_phases_log.md`.
+- Do not load `docs/completed_phases_log.md` unless historical verification details are directly relevant.
+- Do not ask Claude or another review agent to perform broad repo-wide reviews by default.
+- For Claude review prompts, provide a strict read whitelist with only the current task docs, changed files, and directly related tests.
+- Use Opus only for high-risk architecture, finance semantics, schema/migration, broker/security, or disagreement-resolution reviews.
+- Use Sonnet for normal code review, frontend UI/UX, copy, accessibility, and implementation-plan scope checks.
 
 ## Testing Rules
 

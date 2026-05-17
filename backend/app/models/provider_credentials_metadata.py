@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, func, text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -33,7 +33,7 @@ class ProviderCredentialsMetadata(Base):
     provider: Mapped[str] = mapped_column(String(40), nullable=False)
     credential_name: Mapped[str] = mapped_column(String(120), nullable=False)
     secret_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    encrypted_secret_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    encrypted_secret_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
     scopes: Mapped[list[str] | None] = mapped_column(ARRAY(String(80)), nullable=True)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="unknown", server_default="unknown")
     last_tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

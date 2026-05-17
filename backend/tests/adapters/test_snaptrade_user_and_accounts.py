@@ -2,7 +2,9 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.services.broker_import.providers.exceptions import BrokerProviderError
 from app.services.broker_import.providers.snaptrade import SnapTradeAdapter
+from app.services.broker_import.providers.snaptrade_sdk_client import SnapTradeSDKClient
 
 
 pytestmark = [pytest.mark.adapter, pytest.mark.unit]
@@ -20,7 +22,9 @@ class FakeSnapTradeReadOnlyClient:
             "raw_payload": {"synthetic": True},
         }
 
-    def create_connection_portal_url(self, snaptrade_user_id: str, user_secret: str) -> dict:
+    def create_connection_portal_url(
+        self, snaptrade_user_id: str, user_secret: str, broker: str | None = None
+    ) -> dict:
         self.calls.append(f"create_connection_portal_url:{snaptrade_user_id}:{user_secret}")
         return {
             "portal_url": "https://example.test/snaptrade/connect/demo",
@@ -102,3 +106,78 @@ def test_snaptrade_adapter_lists_connections_and_accounts_from_mocked_client() -
     assert accounts[0].provider_account_id == "demo-account"
     assert accounts[0].base_currency == "USD"
     assert client.calls == ["list_connections:demo-user", "list_accounts:demo-connection"]
+
+
+class _FakeSnapTradeResponse:
+    def __init__(self, body):
+        self.body = body
+
+
+class _FakeSnapTradeAuth:
+    def __init__(self) -> None:
+        self.login_kwargs: dict | None = None
+
+    def login_snap_trade_user(self, **kwargs):
+        self.login_kwargs = kwargs
+        return _FakeSnapTradeResponse({"redirectURI": "https://example.test/portal"})
+
+    def register_snap_trade_user(self, body):
+        raise RuntimeError("raw-provider-secret-token")
+
+
+class _FakeSnapTrade:
+    def __init__(self) -> None:
+        self.authentication = _FakeSnapTradeAuth()
+
+
+def test_snaptrade_sdk_client_requests_read_only_connection_portal() -> None:
+    snaptrade = _FakeSnapTrade()
+    client = SnapTradeSDKClient(
+        snaptrade=snaptrade,
+        db=None,
+        encryption_key="test_snaptrade_secret_encryption_key_32_chars",
+    )
+
+    response = client.create_connection_portal_url("demo-snaptrade-user", "demo-secret", broker="FIDELITY")
+
+    assert response["portal_url"] == "https://example.test/portal"
+    assert snaptrade.authentication.login_kwargs is not None
+    assert snaptrade.authentication.login_kwargs["connection_type"] == "read"
+
+
+def test_snaptrade_sdk_client_provider_errors_do_not_echo_raw_exception() -> None:
+    client = SnapTradeSDKClient(
+        snaptrade=_FakeSnapTrade(),
+        db=None,
+        encryption_key="test_snaptrade_secret_encryption_key_32_chars",
+    )
+
+    with pytest.raises(BrokerProviderError) as exc_info:
+        client.register_user("demo-user")
+
+    assert str(exc_info.value) == "SnapTrade register_user failed"
+    assert "raw-provider-secret-token" not in str(exc_info.value)
+
+
+def test_snaptrade_sdk_client_never_uses_account_number_as_display_name() -> None:
+    client = SnapTradeSDKClient(
+        snaptrade=_FakeSnapTrade(),
+        db=None,
+        encryption_key="test_snaptrade_secret_encryption_key_32_chars",
+    )
+
+    mapped = client._map_account(  # noqa: SLF001 - explicit safety regression for SDK mapping boundary.
+        {
+            "id": "provider-account-id",
+            "number": "123456789",
+            "raw_type": "Individual",
+            "account_category": "INVESTMENT",
+            "balance": {"total": {"currency": "USD"}},
+            "sync_status": {"holdings": {"initial_sync_completed": True}},
+        },
+        "provider-connection-id",
+        datetime(2026, 5, 14, 15, 30, tzinfo=UTC),
+    )
+
+    assert mapped["display_name"] == "Taxable Individual Account"
+    assert "123456789" not in mapped["display_name"]

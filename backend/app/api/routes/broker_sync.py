@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_db
+from app.services.broker_import.providers.snaptrade_sdk_client import SnapTradeSDKClient
 from app.schemas.broker_sync_api import (
     BrokerAccountPublicRead,
     BrokerAccountSyncRequest,
@@ -28,12 +29,27 @@ from app.services.broker_import.providers.snaptrade import SnapTradeAdapter
 router = APIRouter(tags=["broker-sync"])
 
 
-def get_snaptrade_adapter() -> SnapTradeAdapter:
-    return SnapTradeAdapter()
-
-
 def get_app_settings() -> Settings:
     return get_settings()
+
+
+def get_snaptrade_adapter(
+    settings: Settings = Depends(get_app_settings),
+    db: Session = Depends(get_db),
+) -> SnapTradeAdapter:
+    if settings.snaptrade_client_id and settings.snaptrade_consumer_key:
+        from snaptrade_client import SnapTrade  # lazy import — only when credentials present
+        snaptrade = SnapTrade(
+            consumer_key=settings.snaptrade_consumer_key,
+            client_id=settings.snaptrade_client_id,
+        )
+        client = SnapTradeSDKClient(
+            snaptrade=snaptrade,
+            db=db,
+            encryption_key=settings.snaptrade_secret_encryption_key,
+        )
+        return SnapTradeAdapter(client=client)
+    return SnapTradeAdapter()  # unconfigured — raises on use with 503
 
 
 def _provider_unavailable() -> HTTPException:
@@ -65,9 +81,7 @@ def register_snaptrade_user(
     except RuntimeError as exc:
         raise _provider_unavailable() from exc
 
-    snaptrade_user_id = (credential.raw_metadata or {}).get("snaptrade_user_id", "")
     return SnapTradeUserRegistrationRead(
-        snaptrade_user_id=snaptrade_user_id,
         credential_metadata_id=credential.id,
     )
 

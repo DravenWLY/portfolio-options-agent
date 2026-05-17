@@ -4,6 +4,8 @@ Status: design document only. No business logic, database code, frontend code, o
 
 This repository is intended to become a professional full-stack portfolio-aware options income and risk copilot for manual traders. It should combine portfolio data, market context, deterministic risk calculations, custom portfolio-aware agents, optional TradingAgents stock/company research, and durable report history into manual decision support. The dashboard is the cockpit, not the whole product. SnapTrade, market data providers, and TradingAgents are inputs/components, not the center of the system.
 
+For context-efficient daily work, read `docs/current_roadmap.md` first. Use `docs/implementation_plan.md` for active and future tasks, `docs/completed_phases_log.md` for archived verification history, and `docs/agent_context/` for short Codex/Claude handoff briefs.
+
 This is not financial advice. This project must not execute trades, store broker login credentials, scrape Fidelity, bypass MFA, promise returns, or present generated output as guaranteed investment guidance.
 
 ## Product North Star

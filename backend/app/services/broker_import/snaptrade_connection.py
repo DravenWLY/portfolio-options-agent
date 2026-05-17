@@ -1,3 +1,5 @@
+import json
+from uuid import uuid4
 from uuid import UUID
 
 from sqlalchemy import select
@@ -42,6 +44,24 @@ def _get_snaptrade_credential(db: Session, user_id: UUID) -> ProviderCredentials
     )
 
 
+def _encrypt_snaptrade_credentials(snaptrade_user_id: str, user_secret: str, encryption_key: str) -> str:
+    payload = json.dumps(
+        {"snaptrade_user_id": snaptrade_user_id, "user_secret": user_secret},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return encrypt_secret(payload, encryption_key)
+
+
+def decrypt_snaptrade_credentials(encrypted_secret_ref: str, encryption_key: str) -> tuple[str, str]:
+    payload = json.loads(decrypt_secret(encrypted_secret_ref, encryption_key))
+    snaptrade_user_id = str(payload.get("snaptrade_user_id") or "").strip()
+    user_secret = str(payload.get("user_secret") or "").strip()
+    if not snaptrade_user_id or not user_secret:
+        raise SnapTradeUserRegistrationMissingError("SnapTrade credential envelope is incomplete")
+    return snaptrade_user_id, user_secret
+
+
 def register_snaptrade_user(
     db: Session,
     user_id: UUID,
@@ -55,7 +75,8 @@ def register_snaptrade_user(
     if credential is not None and credential.status == "active" and credential.encrypted_secret_ref:
         return credential
 
-    response = adapter.register_user(str(user_id))
+    snaptrade_user_ref = f"poa_{uuid4().hex}"
+    response = adapter.register_user(snaptrade_user_ref)
     if credential is None:
         credential = ProviderCredentialsMetadata(
             user_id=user_id,
@@ -66,11 +87,14 @@ def register_snaptrade_user(
 
     resolved_key = resolve_snaptrade_encryption_key(encryption_key)
     credential.secret_ref = None
-    credential.encrypted_secret_ref = encrypt_secret(response.user_secret, resolved_key)
+    credential.encrypted_secret_ref = _encrypt_snaptrade_credentials(
+        response.snaptrade_user_id,
+        response.user_secret,
+        resolved_key,
+    )
     credential.status = "active"
     credential.scopes = ["read_accounts", "read_balances", "read_positions"]
     credential.raw_metadata = {
-        "snaptrade_user_id": response.snaptrade_user_id,
         "registration_payload": allowlisted_provider_payload(
             response.raw_payload,
             CREDENTIAL_METADATA_ALLOWLIST,
@@ -86,6 +110,7 @@ def create_connection_portal_url(
     user_id: UUID,
     adapter: SnapTradeAdapter,
     encryption_key: str,
+    broker: str | None = None,
 ):
     if _get_active_user(db, user_id) is None:
         raise SnapTradeUserNotFoundError("User not found")
@@ -94,12 +119,8 @@ def create_connection_portal_url(
     if credential is None or credential.encrypted_secret_ref is None:
         raise SnapTradeUserRegistrationMissingError("SnapTrade user has not been registered")
 
-    snaptrade_user_id = (credential.raw_metadata or {}).get("snaptrade_user_id")
-    if not snaptrade_user_id:
-        raise SnapTradeUserRegistrationMissingError("SnapTrade user metadata is incomplete")
-
-    user_secret = decrypt_secret(
+    snaptrade_user_id, user_secret = decrypt_snaptrade_credentials(
         credential.encrypted_secret_ref,
         resolve_snaptrade_encryption_key(encryption_key),
     )
-    return adapter.create_connection_portal_url(snaptrade_user_id, user_secret)
+    return adapter.create_connection_portal_url(snaptrade_user_id, user_secret, broker)

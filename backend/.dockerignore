@@ -1,0 +1,53 @@
+# Keep secrets, real brokerage artifacts, caches, and destructive tooling
+# out of the backend image build context.
+
+# Env and secrets
+.env
+.env.*
+*.env
+secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Destructive / manual maintenance tooling — must never ship in the runtime image
+scripts/manual/
+
+# Python build/test caches and virtualenvs
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local databases and brokerage artifacts
+*.db
+*.sqlite
+*.sqlite3
+*.csv
+*.qfx
+*.ofx
+*.pdf
+data/
+reports/
+imports/
+exports/
+statements/
+transactions/
+logs/
+cache/
+checkpoints/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo

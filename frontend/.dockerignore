@@ -1,0 +1,20 @@
+# Keep host deps, build output, and any local env out of the frontend image
+# build context. Dependencies are installed in-image via `npm ci`.
+
+node_modules
+dist
+dist-ssr
+build
+coverage
+
+# Env and secrets (frontend must never carry secrets)
+.env
+.env.*
+*.env
+
+# OS / editor
+.DS_Store
+.idea
+.vscode
+*.swp
+*.swo

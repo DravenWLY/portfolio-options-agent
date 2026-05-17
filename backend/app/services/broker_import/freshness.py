@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.broker_account import BrokerAccount
@@ -18,7 +18,11 @@ def _latest_broker_account_sync_run(db: Session, broker_account_id: UUID) -> Bro
     return db.scalar(
         select(BrokerSyncRun)
         .where(BrokerSyncRun.broker_account_id == broker_account_id)
-        .order_by(BrokerSyncRun.created_at.desc(), BrokerSyncRun.id.desc())
+        .order_by(
+            func.coalesce(BrokerSyncRun.completed_at, BrokerSyncRun.created_at).desc(),
+            BrokerSyncRun.created_at.desc(),
+            BrokerSyncRun.id.desc(),
+        )
         .limit(1)
     )
 

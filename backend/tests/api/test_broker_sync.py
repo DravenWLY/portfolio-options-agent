@@ -168,8 +168,8 @@ def test_sync_broker_account_creates_traceable_sync_run(
         "option_positions_count": 1,
         "partial_failures": [],
         "warnings": [],
-        "provider_request_id": "demo-refresh",
     }
+    assert "provider_request_id" not in payload
     assert adapter.calls == [
         "refresh_account:demo-provider-account",
         "get_balances:demo-provider-account",

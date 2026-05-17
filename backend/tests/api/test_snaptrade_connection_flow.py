@@ -27,7 +27,9 @@ class FakeSnapTradeConnectionAdapter:
             raw_payload={"synthetic": True, "userSecret": "11111111-1111-4111-8111-111111111111"},
         )
 
-    def create_connection_portal_url(self, snaptrade_user_id: str, user_secret: str):
+    def create_connection_portal_url(
+        self, snaptrade_user_id: str, user_secret: str, broker: str | None = None
+    ):
         self.calls.append(f"create_connection_portal_url:{snaptrade_user_id}:{user_secret}")
         from app.services.broker_import.providers.snaptrade_models import SnapTradeConnectionPortalUrlResponse
 
@@ -105,9 +107,10 @@ def test_register_snaptrade_user_stores_metadata_without_returning_secret(
     payload = response.json()
     response_text = response.text.lower()
     assert payload["provider"] == "snaptrade"
-    assert payload["snaptrade_user_id"] == f"demo-snaptrade-user-{user_id}"
+    assert "snaptrade_user_id" not in payload
     assert "secret_ref" not in response_text
     assert "secret://" not in response_text
+    assert "demo-snaptrade-user" not in response_text
 
     credential = db_session.get(ProviderCredentialsMetadata, payload["credential_metadata_id"])
     assert credential is not None
@@ -117,6 +120,7 @@ def test_register_snaptrade_user_stores_metadata_without_returning_secret(
     assert credential.encrypted_secret_ref is not None
     raw_rows = db_session.execute(text("SELECT * FROM provider_credentials_metadata")).all()
     assert "11111111-1111-4111-8111-111111111111" not in str(raw_rows)
+    assert "demo-snaptrade-user" not in str(raw_rows)
 
 
 def test_create_snaptrade_connection_portal_url_returns_url_only(
@@ -192,7 +196,8 @@ def test_register_snaptrade_user_is_idempotent(
     assert first.status_code == 201
     assert second.status_code == 201
     assert first.json()["credential_metadata_id"] == second.json()["credential_metadata_id"]
-    assert adapter.calls == [f"register_user:{user_id}"]
+    assert len(adapter.calls) == 1
+    assert adapter.calls[0].startswith("register_user:poa_")
 
 
 def test_refresh_snaptrade_connections_endpoint_persists_safe_records(
@@ -211,6 +216,7 @@ def test_refresh_snaptrade_connections_endpoint_persists_safe_records(
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "succeeded"
-    assert payload["summary"]["provider_request_id"] == "demo-request"
+    assert "provider_request_id" not in payload
+    assert "provider_request_id" not in payload["summary"]
     assert "raw_payload" not in response.text
     assert adapter.calls == [f"list_connections:{user_id}", "list_accounts:demo-connection"]

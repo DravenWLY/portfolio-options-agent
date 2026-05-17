@@ -1,10 +1,14 @@
 from collections.abc import Generator
+import os
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+
+os.environ.setdefault("LOCAL_DEV_ACCESS_TOKEN", "test-local-dev-access-token")
+os.environ.setdefault("SNAPTRADE_SECRET_ENCRYPTION_KEY", "test_snaptrade_secret_encryption_key_32_chars")
 
 from app.db.session import SessionLocal, engine
 from app.main import app as fastapi_app
@@ -40,7 +44,7 @@ def app():
 
 @pytest.fixture
 def client(app) -> TestClient:
-    return TestClient(app)
+    return TestClient(app, headers={"X-Local-Access-Token": "test-local-dev-access-token"})
 
 
 @pytest.fixture

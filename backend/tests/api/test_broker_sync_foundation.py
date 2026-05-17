@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from app.main import app
 from app.schemas.provider_credentials_metadata import ProviderCredentialsMetadataCreate
 
 
@@ -60,7 +61,59 @@ FIDELITY_CSV_PREVIEW_ROW_FIELDS = {
     "data",
     "warnings",
 }
+SNAPTRADE_USER_REGISTRATION_FIELDS = {
+    "provider",
+    "credential_metadata_id",
+}
+BROKER_ACCOUNT_PUBLIC_FIELDS = {
+    "id",
+    "broker_connection_id",
+    "account_id",
+    "display_name",
+    "account_type",
+    "base_currency",
+    "sync_status",
+    "data_freshness_status",
+    "last_successful_sync_at",
+    "created_at",
+    "updated_at",
+}
+BROKER_SYNC_SUMMARY_FIELDS = {
+    "balance_currency",
+    "stock_positions_count",
+    "option_positions_count",
+    "partial_failures",
+    "warnings",
+}
+BROKER_SYNC_RUN_PUBLIC_FIELDS = {
+    "id",
+    "broker_connection_id",
+    "broker_account_id",
+    "trigger",
+    "status",
+    "started_at",
+    "completed_at",
+    "accounts_count",
+    "positions_count",
+    "transactions_count",
+    "error",
+    "summary",
+    "created_at",
+    "updated_at",
+}
 MARKET_DATA_FIELD_TOKENS = ("quote", "bid", "ask", "market_quote")
+PROVIDER_IDENTIFIER_FIELDS = {
+    "snaptrade_user_id",
+    "snaptradeUserId",
+    "provider_account_id",
+    "providerAccountId",
+    "provider_request_id",
+    "providerRequestId",
+    "raw_payload",
+    "rawPayload",
+    "raw_metadata",
+    "rawMetadata",
+}
 
 
 def test_openapi_does_not_expose_secret_reference_fields(client: TestClient) -> None:
@@ -81,6 +134,13 @@ def test_openapi_does_not_expose_secret_reference_fields(client: TestClient) -> 
             assert value not in forbidden
 
     walk(response.json())
+
+
+def test_application_routes_require_local_access_token() -> None:
+    response = TestClient(app).get("/users")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Local API access token required"
 
 
 def test_broker_sync_foundation_uses_fake_secret_references_only() -> None:
@@ -132,3 +192,23 @@ def test_openapi_fidelity_csv_preview_schemas_are_explicit_and_not_market_quotes
     assert preview_row_fields == FIDELITY_CSV_PREVIEW_ROW_FIELDS
     for field_name in preview_fields | preview_row_fields:
         assert not any(token in field_name for token in MARKET_DATA_FIELD_TOKENS)
+
+
+def test_openapi_public_broker_schemas_exclude_provider_identifiers(client: TestClient) -> None:
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    schemas = response.json()["components"]["schemas"]
+
+    assert set(schemas["SnapTradeUserRegistrationRead"]["properties"]) == SNAPTRADE_USER_REGISTRATION_FIELDS
+    assert set(schemas["BrokerAccountPublicRead"]["properties"]) == BROKER_ACCOUNT_PUBLIC_FIELDS
+    assert set(schemas["BrokerSyncSummaryRead"]["properties"]) == BROKER_SYNC_SUMMARY_FIELDS
+    assert set(schemas["BrokerSyncRunPublicRead"]["properties"]) == BROKER_SYNC_RUN_PUBLIC_FIELDS
+
+    public_fields = (
+        set(schemas["SnapTradeUserRegistrationRead"]["properties"])
+        | set(schemas["BrokerAccountPublicRead"]["properties"])
+        | set(schemas["BrokerSyncSummaryRead"]["properties"])
+        | set(schemas["BrokerSyncRunPublicRead"]["properties"])
+    )
+    assert PROVIDER_IDENTIFIER_FIELDS.isdisjoint(public_fields)

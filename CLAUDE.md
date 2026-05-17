@@ -60,6 +60,20 @@ Claude Code must not, in this repository:
 - `.env.example` is the only `.env`-style file Claude Code may read or modify, and only to document variable names with placeholder values.
 - Generated artifacts in `data/`, `reports/`, `imports/`, `exports/`, `statements/`, `transactions/`, `logs/`, `cache/`, and `checkpoints/` are out of bounds. Do not read them.
 
+## Real brokerage data boundary
+
+Claude Code may review and edit source code, schemas, docs, synthetic fixtures, mocked responses, and UI layouts. Claude Code must not inspect real brokerage content by default.
+
+Claude Code must not:
+
+- Read, print, summarize, export, screenshot, or inspect real SnapTrade/Fidelity/brokerage data.
+- Query a local database or API endpoint that may return real account balances, holdings, option positions, transactions, account identifiers, provider account IDs, broker sync raw payloads, reports, logs, or generated artifacts.
+- Inspect browser screens, screenshots, terminal output, API payloads, or database rows containing real portfolio values or account details.
+- Read or display SnapTrade user IDs, user secrets, portal URLs, consumer keys, access tokens, encrypted secret envelopes, or provider raw payloads.
+- Use real brokerage values in docs, tests, examples, fixtures, screenshots, commits, prompts, or review summaries.
+
+If a frontend or review task appears to need real brokerage data, Claude Code must stop and ask for explicit permission for that exact access. Prefer asking the user to run the diagnostic locally and provide redacted output. UI design and review should use synthetic or mocked data only.
+
 ## Financial calculation rule
 
 - Any deterministic financial calculation (P/L, breakeven, annualized ROI, probability, Greeks, collateral) must be implemented in backend Python code with unit tests.

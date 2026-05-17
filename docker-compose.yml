@@ -8,7 +8,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-portfolio_options_agent}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-portfolio_options_agent_dev_password}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Loopback-only: never expose Postgres (real brokerage data) to the LAN.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -17,6 +18,42 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+
+  backend:
+    build: ./backend
+    container_name: portfolio-options-agent-backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Override DATABASE_URL so the backend reaches postgres by service name, not localhost.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-portfolio_options_agent}:${POSTGRES_PASSWORD:-portfolio_options_agent_dev_password}@postgres:5432/${POSTGRES_DB:-portfolio_options_agent}
+      LOCAL_DEV_ACCESS_TOKEN: ${LOCAL_DEV_ACCESS_TOKEN:?Set LOCAL_DEV_ACCESS_TOKEN in .env for local brokerage-data routes}
+    ports:
+      # Loopback-only: backend serves real read-only brokerage data.
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    container_name: portfolio-options-agent-frontend
+    restart: unless-stopped
+    environment:
+      # Vite proxy uses this to reach the backend by service name inside Docker.
+      BACKEND_URL: http://backend:8000
+      # Used only by the Vite dev proxy, not bundled into React.
+      LOCAL_DEV_ACCESS_TOKEN: ${LOCAL_DEV_ACCESS_TOKEN:?Set LOCAL_DEV_ACCESS_TOKEN in .env for local brokerage-data routes}
+    ports:
+      # Loopback-only: local dev UI only.
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules  # keeps the container's node_modules intact under the host volume mount
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:

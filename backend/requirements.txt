@@ -6,3 +6,5 @@ sqlalchemy
 psycopg[binary]
 alembic
 email-validator
+snaptrade-python-sdk
+cryptography

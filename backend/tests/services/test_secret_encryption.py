@@ -14,6 +14,7 @@ def test_secret_encryption_round_trips_without_plaintext() -> None:
     encrypted = encrypt_secret(secret, key)
 
     assert secret not in encrypted
+    assert '"alg":"Fernet"' in encrypted
     assert '"key_id":"local-v1"' in encrypted
     assert decrypt_secret(encrypted, key) == secret
 

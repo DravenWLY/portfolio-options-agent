@@ -1,4 +1,5 @@
 import { type ReactNode } from "react";
+import AppearanceControl from "./AppearanceControl";
 
 interface TopBarProps {
   /** Slot for the account selector chip — wired in P11-T2. */
@@ -21,6 +22,7 @@ export default function TopBar({ accountSlot }: TopBarProps) {
       </div>
 
       <div style={styles.accountArea}>
+        <AppearanceControl />
         {accountSlot ?? (
           <span style={styles.accountPlaceholder}>
             — account selector (P11-T2) —

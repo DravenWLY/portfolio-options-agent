@@ -401,6 +401,64 @@ Phase goal: implement deterministic calculations before custom agents explain th
   - Remove deterministic risk report service and tests.
 - Status: `not_started`
 
+## Future Layer - Broker Activities, Transactions, and Strategy Memory
+
+This future layer is intentionally deferred until current-position sync, the thin dashboard,
+market data contracts, and the deterministic options/risk engine are stable. It should not
+block Phase 12 or Phase 13.
+
+Purpose:
+
+- Current broker position/balance sync answers "what does the account currently hold?"
+- Broker activities/transactions answer "what happened historically in the account?"
+- Historical activity is needed for realized premium tracking, option assignment/exercise/
+  expiration detection, dividend/interest/fee review, and wheel lifecycle reconstruction.
+
+Design decisions:
+
+- Keep current position/balance sync as the source of current account state.
+- Add activities as a separate read-only sync layer, not as a replacement for position sync.
+- Store sanitized raw provider activities separately first; normalize selected events into
+  app-level trades, premium income records, and wheel lifecycle records later.
+- Activities may be cached, delayed, partial, or daily. Do not treat them as intraday
+  real-time trade/execution data.
+- Keep orders separate from activities. Orders are read-only intent/status data; activities
+  are historical account events.
+- Do not add automatic trading, order placement, cancellation, disconnect, or destructive
+  broker actions.
+
+Candidate future tables/models:
+
+- `broker_activities`: sanitized provider activity records with provider activity id,
+  broker account id, type/subtype, symbol/option symbol, quantity, price, amount,
+  trade date, settlement date, source/freshness metadata, and sanitized raw payload.
+- `broker_activity_sync_runs`: activity-history sync attempts, date ranges, status,
+  counts, warnings, sanitized error summaries, and freshness timestamps.
+- `broker_orders`: optional later read-only order status/history, kept separate from
+  activities and never used for order management.
+- `premium_income_records`: normalized option premium credits/debits and realized
+  premium capture after reconciliation.
+- `wheel_cycles` and `wheel_cycle_events`: deterministic lifecycle reconstruction for
+  sell put, buy-to-close, assignment, covered call, expiration, exercise, and call-away.
+- `trade_journal_entries`: manual/system notes and user-reviewed strategy annotations.
+
+Candidate future tasks:
+
+- `BA-T1` - BrokerActivityProvider interface and mocked SnapTrade activities contract.
+- `BA-T2` - `broker_activities` and `broker_activity_sync_runs` schema/migration.
+- `BA-T3` - SnapTrade activities sync, mock-first, sanitized payload persistence only.
+- `BA-T4` - activity freshness model and dashboard activity sync status.
+- `BA-T5` - transaction normalization candidates for trades and premium income records.
+- `BA-T6` - assignment/exercise/expiration detection with deterministic regression tests.
+- `BA-T7` - wheel lifecycle reconstruction as user-reviewable candidates, not automatic
+  conclusions.
+
+MVP boundary:
+
+- MVP can store and display sanitized activity history plus freshness.
+- MVP should not infer final wheel-cycle conclusions without an audit trail.
+- MVP should not use activities for automatic trading or real-time execution confirmation.
+
 ## Phase 14 - Custom Portfolio-Aware Agent Orchestrator
 
 Phase goal: build workflow-first, deterministic-first agents that consume structured portfolio/risk outputs and optionally ask an LLM to explain, summarize, or debate already-computed facts.

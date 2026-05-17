@@ -16,7 +16,11 @@ def list_connection_broker_accounts(db: Session, broker_connection_id: UUID) -> 
         db.scalars(
             select(BrokerAccount)
             .where(BrokerAccount.broker_connection_id == broker_connection_id, BrokerAccount.deleted_at.is_(None))
-            .order_by(BrokerAccount.created_at.desc())
+            .order_by(
+                BrokerAccount.display_name.asc(),
+                BrokerAccount.account_type.asc(),
+                BrokerAccount.id.asc(),
+            )
         )
     )
 

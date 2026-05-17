@@ -40,10 +40,17 @@ def list_stock_positions(db: Session, account_id: UUID) -> list[StockPosition] |
     if not account_exists(db, account_id):
         return None
 
-    return list(
-        db.scalars(
-            select(StockPosition)
-            .where(StockPosition.account_id == account_id)
-            .order_by(StockPosition.symbol.asc(), StockPosition.as_of.desc())
+    rows = db.scalars(
+        select(StockPosition)
+        .where(StockPosition.account_id == account_id)
+        .order_by(
+            StockPosition.symbol.asc(),
+            StockPosition.as_of.desc(),
+            StockPosition.created_at.desc(),
+            StockPosition.id.desc(),
         )
     )
+    latest_by_symbol: dict[str, StockPosition] = {}
+    for position in rows:
+        latest_by_symbol.setdefault(position.symbol, position)
+    return list(latest_by_symbol.values())

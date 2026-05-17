@@ -1,8 +1,12 @@
+from datetime import UTC, datetime
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+
+from app.models.stock_position import StockPosition
 
 
 pytestmark = [pytest.mark.api, pytest.mark.db]
@@ -84,3 +88,80 @@ def test_stock_position_validation_rejects_negative_quantity(client: TestClient,
     )
 
     assert response.status_code == 422
+
+
+def test_list_stock_positions_tolerates_legacy_provider_rows(client: TestClient, db_session: Session) -> None:
+    account_id = _create_account(client)
+    db_session.add(
+        StockPosition(
+            account_id=UUID(account_id),
+            symbol="HOOD 85 CALL",
+            asset_type="option",
+            quantity=Decimal("-1"),
+            market_value=Decimal("-290.00"),
+            source="snaptrade",
+            data_freshness_status="cached",
+        )
+    )
+    db_session.commit()
+
+    response = client.get(f"/accounts/{account_id}/stock-positions")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["symbol"] == "HOOD 85 CALL"
+    assert payload[0]["asset_type"] == "option"
+    assert Decimal(payload[0]["quantity"]) == Decimal("-1")
+    assert Decimal(payload[0]["market_value"]) == Decimal("-290.00")
+
+
+def test_list_stock_positions_returns_latest_snapshot_per_symbol(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    account_id = _create_account(client)
+    account_uuid = UUID(account_id)
+    db_session.add_all(
+        [
+            StockPosition(
+                account_id=account_uuid,
+                symbol="VOO",
+                asset_type="etf",
+                quantity=Decimal("66"),
+                market_value=Decimal("44800.00"),
+                source="snaptrade",
+                data_freshness_status="cached",
+                as_of=datetime(2026, 5, 17, 17, 0, tzinfo=UTC),
+            ),
+            StockPosition(
+                account_id=account_uuid,
+                symbol="VOO",
+                asset_type="etf",
+                quantity=Decimal("67"),
+                market_value=Decimal("45522.48"),
+                source="snaptrade",
+                data_freshness_status="cached",
+                as_of=datetime(2026, 5, 17, 18, 0, tzinfo=UTC),
+            ),
+            StockPosition(
+                account_id=account_uuid,
+                symbol="SPAXX",
+                asset_type="open_ended_fund",
+                quantity=Decimal("43586.25"),
+                market_value=Decimal("43586.25"),
+                source="snaptrade",
+                data_freshness_status="cached",
+                as_of=datetime(2026, 5, 17, 18, 0, tzinfo=UTC),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(f"/accounts/{account_id}/stock-positions")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [position["symbol"] for position in payload] == ["SPAXX", "VOO"]
+    voo = next(position for position in payload if position["symbol"] == "VOO")
+    assert Decimal(voo["quantity"]) == Decimal("67")
+    assert Decimal(voo["market_value"]) == Decimal("45522.48")

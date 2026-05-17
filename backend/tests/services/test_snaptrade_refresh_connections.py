@@ -15,6 +15,8 @@ pytestmark = [pytest.mark.db, pytest.mark.integration]
 
 
 class FakeSnapTradeConnectionListAdapter:
+    account_snapshots: list[ProviderAccountSnapshot] | None = None
+
     def list_connections(self, user_ref: str) -> list[ProviderConnectionSnapshot]:
         now = datetime(2026, 5, 14, 15, 30, tzinfo=UTC)
         return [
@@ -33,6 +35,8 @@ class FakeSnapTradeConnectionListAdapter:
         ]
 
     def list_accounts(self, connection_ref: str) -> list[ProviderAccountSnapshot]:
+        if self.account_snapshots is not None:
+            return self.account_snapshots
         now = datetime(2026, 5, 14, 15, 30, tzinfo=UTC)
         return [
             ProviderAccountSnapshot(
@@ -86,7 +90,7 @@ def test_refresh_connections_reuses_matching_manual_account_without_duplicates(d
         user_id=user.id,
         broker_name="Fidelity Demo",
         account_type="taxable_individual",
-        display_name="Manual Taxable Account",
+        display_name="Demo Taxable Account",
         is_manual=True,
     )
     db_session.add(manual_account)
@@ -100,3 +104,116 @@ def test_refresh_connections_reuses_matching_manual_account_without_duplicates(d
     assert accounts[0].id == manual_account.id
     assert accounts[0].is_manual is False
     assert broker_account.account_id == manual_account.id
+
+
+def test_refresh_connections_creates_separate_accounts_for_same_broker_and_account_type(
+    db_session: Session,
+) -> None:
+    user = _create_user(db_session)
+    now = datetime(2026, 5, 14, 15, 30, tzinfo=UTC)
+    adapter = FakeSnapTradeConnectionListAdapter()
+    adapter.account_snapshots = [
+        ProviderAccountSnapshot(
+            provider="snaptrade",
+            provider_connection_id="demo-connection",
+            provider_account_id="provider-individual",
+            display_name="Individual",
+            account_type="taxable_individual",
+            base_currency="USD",
+            sync_status="succeeded",
+            data_freshness_status="fresh",
+            sync_timestamp=now,
+            received_at=now,
+        ),
+        ProviderAccountSnapshot(
+            provider="snaptrade",
+            provider_connection_id="demo-connection",
+            provider_account_id="provider-cash-management",
+            display_name="Cash Management (Individual)",
+            account_type="taxable_individual",
+            base_currency="USD",
+            sync_status="succeeded",
+            data_freshness_status="fresh",
+            sync_timestamp=now,
+            received_at=now,
+        ),
+    ]
+
+    refresh_snaptrade_connections(db_session, user.id, adapter)
+
+    accounts = db_session.query(Account).filter_by(user_id=user.id).order_by(Account.display_name).all()
+    broker_accounts = db_session.query(BrokerAccount).order_by(BrokerAccount.display_name).all()
+    assert [account.display_name for account in accounts] == ["Cash Management (Individual)", "Individual"]
+    assert len({broker_account.account_id for broker_account in broker_accounts}) == 2
+
+
+def test_refresh_connections_repairs_shared_internal_account_mapping(
+    db_session: Session,
+) -> None:
+    user = _create_user(db_session)
+    now = datetime(2026, 5, 14, 15, 30, tzinfo=UTC)
+    connection = BrokerConnection(
+        user_id=user.id,
+        provider="snaptrade",
+        broker_name="Fidelity Demo",
+        provider_connection_id="demo-connection",
+    )
+    shared_account = Account(
+        user_id=user.id,
+        broker_name="Fidelity Demo",
+        account_type="taxable_individual",
+        display_name="Shared Stale Account",
+        is_manual=False,
+    )
+    db_session.add_all([connection, shared_account])
+    db_session.flush()
+    db_session.add_all(
+        [
+            BrokerAccount(
+                broker_connection_id=connection.id,
+                account_id=shared_account.id,
+                provider_account_id="provider-individual",
+                display_name="Individual",
+            ),
+            BrokerAccount(
+                broker_connection_id=connection.id,
+                account_id=shared_account.id,
+                provider_account_id="provider-cash-management",
+                display_name="Cash Management (Individual)",
+            ),
+        ]
+    )
+    db_session.commit()
+    adapter = FakeSnapTradeConnectionListAdapter()
+    adapter.account_snapshots = [
+        ProviderAccountSnapshot(
+            provider="snaptrade",
+            provider_connection_id="demo-connection",
+            provider_account_id="provider-individual",
+            display_name="Individual",
+            account_type="taxable_individual",
+            base_currency="USD",
+            sync_status="succeeded",
+            data_freshness_status="fresh",
+            sync_timestamp=now,
+            received_at=now,
+        ),
+        ProviderAccountSnapshot(
+            provider="snaptrade",
+            provider_connection_id="demo-connection",
+            provider_account_id="provider-cash-management",
+            display_name="Cash Management (Individual)",
+            account_type="taxable_individual",
+            base_currency="USD",
+            sync_status="succeeded",
+            data_freshness_status="fresh",
+            sync_timestamp=now,
+            received_at=now,
+        ),
+    ]
+
+    refresh_snaptrade_connections(db_session, user.id, adapter)
+
+    broker_accounts = db_session.query(BrokerAccount).order_by(BrokerAccount.display_name).all()
+    assert len({broker_account.account_id for broker_account in broker_accounts}) == 2
+    assert all(broker_account.account_id != shared_account.id for broker_account in broker_accounts)

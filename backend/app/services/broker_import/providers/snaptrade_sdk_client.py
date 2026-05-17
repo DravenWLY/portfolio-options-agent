@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 import json
+import re
 from typing import Any
 
 from sqlalchemy import select
@@ -56,6 +57,46 @@ def _to_datetime(val: Any) -> datetime | None:
 
 def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt is not None else None
+
+
+def _to_decimal(val: Any) -> Decimal | None:
+    if val is None:
+        return None
+    try:
+        return Decimal(str(val))
+    except Exception:
+        return None
+
+
+def _to_date(val: Any) -> date | None:
+    if isinstance(val, date) and not isinstance(val, datetime):
+        return val
+    if isinstance(val, datetime):
+        return val.date()
+    if isinstance(val, str):
+        try:
+            return date.fromisoformat(val[0:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _occ_symbol_from_parts(
+    underlying_symbol: str,
+    expiration_date: date | None,
+    option_type: str,
+    strike_price: Decimal | None,
+) -> str | None:
+    if not underlying_symbol or expiration_date is None or strike_price is None:
+        return None
+    type_code = option_type.strip().upper()[:1]
+    if type_code not in {"C", "P"}:
+        return None
+    strike_digits = int((strike_price * Decimal("1000")).to_integral_value())
+    return f"{underlying_symbol.upper()}{expiration_date:%y%m%d}{type_code}{strike_digits:08d}"
+
+
+OCC_SYMBOL_PATTERN = re.compile(r"^[A-Z]{1,6}\d{6}[CP]\d{8}$")
 
 
 class SnapTradeSDKClient:
@@ -237,9 +278,22 @@ class SnapTradeSDKClient:
             raise _provider_failure("get_positions") from exc
 
     def get_option_positions(self, provider_account_id: str) -> list[dict[str, Any]]:
-        # SnapTrade options come through the positions endpoint filtered by type.
-        # Returning empty until option normalization is confirmed end-to-end.
-        return []
+        snaptrade_user_id, user_secret = self._creds_by_provider_account(provider_account_id)
+        try:
+            resp = self._st.options.list_option_holdings(
+                user_id=snaptrade_user_id,
+                user_secret=user_secret,
+                account_id=provider_account_id,
+            )
+            now = datetime.now(UTC)
+            return [
+                self._map_option_position(item, provider_account_id, now)
+                for item in (resp.body or [])
+            ]
+        except BrokerProviderError:
+            raise
+        except Exception as exc:
+            raise _provider_failure("get_option_positions") from exc
 
     def get_transactions(
         self, provider_account_id: str, start: Any, end: Any
@@ -383,10 +437,7 @@ class SnapTradeSDKClient:
         asset_type = type_desc if type_desc else "stock"
 
         units = _g(item, "units")
-        try:
-            quantity = Decimal(str(units)) if units is not None else Decimal("0")
-        except Exception:
-            quantity = Decimal("0")
+        quantity = _to_decimal(units) or Decimal("0")
 
         price = _g(item, "price")
         market_value: Decimal | None = None
@@ -414,11 +465,74 @@ class SnapTradeSDKClient:
             "raw_payload": None,
         }
 
+    def _map_option_position(
+        self, item: Any, provider_account_id: str, now: datetime
+    ) -> dict[str, Any]:
+        option_symbol = self._extract_option_symbol(item)
+        underlying = _g(option_symbol, "underlying_symbol")
+        underlying_symbol = _str_upper(
+            _g(underlying, "symbol")
+            or _g(underlying, "raw_symbol")
+            or _g(option_symbol, "underlying_symbol"),
+            "UNKNOWN",
+        )
+        option_type = str(_g(option_symbol, "option_type") or "").strip().upper()
+        expiration_date = _to_date(_g(option_symbol, "expiration_date"))
+        strike_price = _to_decimal(_g(option_symbol, "strike_price"))
+        ticker = _str_upper(_g(option_symbol, "ticker"))
+        occ_symbol = ticker.replace(" ", "")
+        if not OCC_SYMBOL_PATTERN.match(occ_symbol):
+            occ_symbol = _occ_symbol_from_parts(
+                underlying_symbol,
+                expiration_date,
+                option_type,
+                strike_price,
+            ) or ticker or "UNSUPPORTED-OPTION"
+
+        units = _to_decimal(_g(item, "units")) or Decimal("0")
+        price = _to_decimal(_g(item, "price"))
+        market_value = abs(price * units) if price is not None else None
+        position_side = "short" if units < 0 else "long"
+        curr_code = _str_upper(_nested(item, "currency", "code"), "USD")
+
+        iso_now = _iso(now)
+        return {
+            "provider": "snaptrade",
+            "provider_account_id": provider_account_id,
+            "occ_symbol": occ_symbol,
+            "underlying_symbol": underlying_symbol,
+            "position_side": position_side,
+            "quantity": str(abs(units)),
+            "market_value": str(market_value) if market_value is not None else None,
+            "currency": curr_code,
+            "sync_timestamp": iso_now,
+            "received_at": iso_now,
+            "sync_status": "succeeded",
+            "data_freshness_status": "cached",
+            "raw_payload": None,
+        }
+
+    @staticmethod
+    def _extract_option_symbol(item: Any) -> Any:
+        return (
+            _nested(item, "symbol", "option_symbol")
+            or _g(item, "option_symbol")
+            or _nested(item, "instrument", "option_symbol")
+        )
+
     @staticmethod
     def _is_option(item: Any) -> bool:
+        if SnapTradeSDKClient._extract_option_symbol(item):
+            return True
         sec_type = _nested(item, "symbol", "symbol", "type")
+        symbol = _nested(item, "symbol", "symbol")
         descriptor = (
-            f"{_g(sec_type, 'code') or ''} {_g(sec_type, 'description') or ''}"
+            f"{_g(sec_type, 'code') or ''} "
+            f"{_g(sec_type, 'description') or ''} "
+            f"{_g(symbol, 'symbol') or ''} "
+            f"{_g(symbol, 'raw_symbol') or ''} "
+            f"{_nested(item, 'symbol', 'description') or ''} "
+            f"{_nested(item, 'instrument', 'kind') or ''}"
         ).lower()
         return "option" in descriptor or "call" in descriptor or "put" in descriptor
 

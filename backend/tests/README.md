@@ -35,6 +35,12 @@ Use demo users, demo accounts, fake keys, placeholder symbols, and synthetic rep
 
 CSV fixtures under `backend/tests/fixtures/` must be synthetic demo files only. Real Fidelity exports, broker CSVs, statements, transactions, PDFs, and spreadsheets are private data and must never be committed. Keep fallback import tests small and explicit, and use demo symbols such as `DEMO` or `DEMOETF`.
 
+## Database Safety
+
+Database-backed tests wipe application tables before and after each test. They must run only against an explicit disposable test database whose name ends in `_test`.
+
+Do not run DB tests against the normal local development database after syncing real brokerage data. For one-off disposable environments only, `POA_ALLOW_DESTRUCTIVE_DB_TESTS=1` can override the guard, but never use that override with real SnapTrade/Fidelity data loaded.
+
 ## Commands
 
 Run the default test suite:

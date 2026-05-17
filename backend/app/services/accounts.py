@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.account import Account
@@ -34,10 +34,20 @@ def list_user_accounts(db: Session, user_id: UUID) -> list[Account] | None:
     if not user_exists(db, user_id):
         return None
 
+    from app.models.broker_account import BrokerAccount
+
+    linked_broker_account = exists().where(
+        BrokerAccount.account_id == Account.id,
+        BrokerAccount.deleted_at.is_(None),
+    )
     return list(
         db.scalars(
             select(Account)
-            .where(Account.user_id == user_id, Account.deleted_at.is_(None))
+            .where(
+                Account.user_id == user_id,
+                Account.deleted_at.is_(None),
+                or_(Account.is_manual.is_(True), linked_broker_account),
+            )
             .order_by(Account.created_at.desc())
         )
     )
@@ -64,6 +74,8 @@ def find_or_create_synced_account(
                 Account.user_id == user_id,
                 Account.broker_name == broker_name,
                 Account.account_type == account_type,
+                Account.display_name == display_name,
+                Account.is_manual.is_(True),
                 Account.deleted_at.is_(None),
             )
             .order_by(Account.created_at.asc())

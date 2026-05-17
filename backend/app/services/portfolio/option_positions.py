@@ -45,10 +45,17 @@ def list_option_positions(db: Session, account_id: UUID) -> list[OptionPosition]
     if not account_exists(db, account_id):
         return None
 
-    return list(
-        db.scalars(
-            select(OptionPosition)
-            .where(OptionPosition.account_id == account_id)
-            .order_by(OptionPosition.as_of.desc(), OptionPosition.created_at.desc())
+    rows = db.scalars(
+        select(OptionPosition)
+        .where(OptionPosition.account_id == account_id, OptionPosition.status == "open")
+        .order_by(
+            OptionPosition.option_contract_id.asc(),
+            OptionPosition.as_of.desc(),
+            OptionPosition.created_at.desc(),
+            OptionPosition.id.desc(),
         )
     )
+    latest_by_contract: dict[UUID, OptionPosition] = {}
+    for position in rows:
+        latest_by_contract.setdefault(position.option_contract_id, position)
+    return list(latest_by_contract.values())

@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import TopBar from "./TopBar";
 import Sidebar from "./Sidebar";
+import { useUIPreference } from "../../context/useUIPreference";
 
 interface AppShellProps {
   children: ReactNode;
@@ -17,11 +18,16 @@ interface AppShellProps {
  *   Main    (scrollable, offset by sidebar and topbar)
  */
 export default function AppShell({ children, accountSlot }: AppShellProps) {
+  const { sidebarCollapsed } = useUIPreference();
+  const sidebarWidth = sidebarCollapsed
+    ? "var(--sidebar-width-collapsed)"
+    : "var(--sidebar-width)";
+
   return (
     <>
       <TopBar accountSlot={accountSlot} />
       <Sidebar />
-      <main style={styles.main} id="main-content">
+      <main style={{ ...styles.main, marginLeft: sidebarWidth }} id="main-content">
         {children}
       </main>
     </>
@@ -31,9 +37,9 @@ export default function AppShell({ children, accountSlot }: AppShellProps) {
 const styles: Record<string, React.CSSProperties> = {
   main: {
     marginTop: "var(--topbar-height)",
-    marginLeft: "var(--sidebar-width)",
     minHeight: "calc(100vh - var(--topbar-height))",
     padding: "var(--space-8)",
     overflowY: "auto",
+    transition: "margin-left 160ms ease",
   },
 };

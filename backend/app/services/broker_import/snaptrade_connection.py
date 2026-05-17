@@ -105,6 +105,48 @@ def register_snaptrade_user(
     return credential
 
 
+def link_existing_snaptrade_user(
+    db: Session,
+    user_id: UUID,
+    snaptrade_user_id: str,
+    user_secret: str,
+    encryption_key: str,
+) -> ProviderCredentialsMetadata:
+    if _get_active_user(db, user_id) is None:
+        raise SnapTradeUserNotFoundError("User not found")
+
+    normalized_snaptrade_user_id = snaptrade_user_id.strip()
+    normalized_user_secret = user_secret.strip()
+    if not normalized_snaptrade_user_id or not normalized_user_secret:
+        raise SnapTradeUserRegistrationMissingError("SnapTrade user id and user secret are required")
+
+    credential = _get_snaptrade_credential(db, user_id)
+    if credential is None:
+        credential = ProviderCredentialsMetadata(
+            user_id=user_id,
+            provider="snaptrade",
+            credential_name=SNAPTRADE_USER_CREDENTIAL_NAME,
+        )
+        db.add(credential)
+
+    resolved_key = resolve_snaptrade_encryption_key(encryption_key)
+    credential.secret_ref = None
+    credential.encrypted_secret_ref = _encrypt_snaptrade_credentials(
+        normalized_snaptrade_user_id,
+        normalized_user_secret,
+        resolved_key,
+    )
+    credential.status = "active"
+    credential.scopes = ["read_accounts", "read_balances", "read_positions"]
+    credential.raw_metadata = {
+        "registration_payload": {},
+        "manual_existing_user_link": True,
+    }
+    db.commit()
+    db.refresh(credential)
+    return credential
+
+
 def create_connection_portal_url(
     db: Session,
     user_id: UUID,

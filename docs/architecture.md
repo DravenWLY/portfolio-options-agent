@@ -86,6 +86,8 @@ flowchart TD
 5. **TradingAgents Adapter** - optional stock/company research evidence stream for news, sentiment, fundamentals, and bull/bear debate. It does not own account-level risk decisions.
 6. **Dashboard and Report History** - frontend cockpit, report threads, report messages, agent runs, agent steps, markdown reports, and later agent run monitor/report detail pages.
 
+Future extension: add a **Broker Activities / Transactions** layer after current-position sync and the deterministic risk engine are stable. Position/balance sync answers "what does the account currently hold?" while activities answer "what happened historically?" Activities can support realized premium tracking, assignment/exercise/expiration detection, dividends, interest, deposits, withdrawals, fees, and wheel lifecycle reconstruction. Activities must have their own freshness model because provider activity history may be cached, delayed, partial, or daily; it must not be treated as intraday real-time execution data. Store sanitized raw provider activities separately first, then normalize selected events into trades, premium income records, and wheel cycle records later. Keep read-only broker orders separate from activities.
+
 ## Deterministic vs LLM Boundary
 
 The core rule is simple: Python code calculates; LLMs explain.

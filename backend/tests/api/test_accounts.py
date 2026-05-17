@@ -1,6 +1,12 @@
+from uuid import UUID
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+
+from app.models.account import Account
+from app.models.broker_account import BrokerAccount
+from app.models.broker_connection import BrokerConnection
 
 
 pytestmark = [pytest.mark.api, pytest.mark.db]
@@ -75,3 +81,55 @@ def test_account_validation_rejects_invalid_account_type(client: TestClient, db_
     )
 
     assert response.status_code == 422
+
+
+def test_list_accounts_hides_stale_unlinked_synced_accounts(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user_id = _create_user(client)
+    user_uuid = UUID(user_id)
+    stale_synced = Account(
+        user_id=user_uuid,
+        broker_name="Webull",
+        account_type="taxable_individual",
+        display_name="Old Webull Duplicate",
+        is_manual=False,
+    )
+    linked_synced = Account(
+        user_id=user_uuid,
+        broker_name="Webull",
+        account_type="taxable_individual",
+        display_name="Webull Individual Cash",
+        is_manual=False,
+    )
+    manual = Account(
+        user_id=user_uuid,
+        broker_name="Manual",
+        account_type="taxable_individual",
+        display_name="Manual Sandbox",
+        is_manual=True,
+    )
+    connection = BrokerConnection(
+        user_id=user_uuid,
+        provider="snaptrade",
+        broker_name="Webull",
+        provider_connection_id="demo-connection",
+    )
+    db_session.add_all([stale_synced, linked_synced, manual, connection])
+    db_session.flush()
+    db_session.add(
+        BrokerAccount(
+            broker_connection_id=connection.id,
+            account_id=linked_synced.id,
+            provider_account_id="provider-webull",
+            display_name="Webull Individual Cash",
+        )
+    )
+    db_session.commit()
+
+    response = client.get(f"/users/{user_id}/accounts")
+
+    assert response.status_code == 200
+    names = {item["display_name"] for item in response.json()}
+    assert names == {"Webull Individual Cash", "Manual Sandbox"}

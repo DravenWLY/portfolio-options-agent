@@ -83,7 +83,21 @@ Backend endpoints used (all existing, no new backend code):
 - `src/api/` — fetch wrappers per domain
 - `src/hooks/` — React data hooks
 - `src/types/` — TypeScript types mirroring backend response shapes
-- `src/context/` — AccountContext (provider) + useAccountContext (hook, split file)
+- `src/context/` — AccountContext + UIPreferenceContext (each: def + provider + hook, split files)
+
+## Appearance & layout preferences
+
+- Appearance control (TopBar): **System / Light / Dark**. "System" follows
+  `prefers-color-scheme` live; Light/Dark explicitly override it. Dark is the
+  default cockpit theme; the light theme is a refined "paper cockpit" with
+  status/warning colors darkened to keep WCAG-AA contrast.
+- Sidebar collapse toggle: compact icon rail vs. full labels. The read-only /
+  "no trades placed" framing stays visible in both states.
+- Theme is applied to `<html data-theme="…">`; a pre-render bootstrap in
+  `main.tsx` sets it before first paint (no flash).
+- `localStorage` stores **only** the two non-sensitive UI preferences
+  (`poa-appearance`, `poa-sidebar-collapsed`) — never account, broker,
+  credential, token, or report data.
 
 ## Design tokens
 
@@ -96,7 +110,8 @@ Key token groups:
 - `--color-accent` — interactive accent (links, focus rings)
 - `--space-*` — 4px-based spacing scale
 - `--font-size-*` — type scale
-- `--sidebar-width`, `--topbar-height` — layout constants
+- `--sidebar-width`, `--sidebar-width-collapsed`, `--topbar-height` — layout constants
+- `[data-theme="light"]` block overrides the dark `:root` tokens for the light theme
 
 ## Safety rules
 

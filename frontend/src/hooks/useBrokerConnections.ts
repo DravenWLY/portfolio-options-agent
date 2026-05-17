@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { brokerSyncApi } from "../api/brokerSync";
 import type { BrokerConnectionPublicRead, BrokerAccountPublicRead } from "../types/api";
 
@@ -18,6 +18,7 @@ export function useBrokerConnections(userId: string | null): UseBrokerConnection
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
+  const hasLoadedRef = useRef(false);
 
   const reload = useCallback(() => setTick((t) => t + 1), []);
 
@@ -27,11 +28,13 @@ export function useBrokerConnections(userId: string | null): UseBrokerConnection
       setAccountsByConnection({});
       setStatus("idle");
       setError(null);
+      hasLoadedRef.current = false;
       return;
     }
 
     let cancelled = false;
-    setStatus("loading");
+    const isInitialLoad = !hasLoadedRef.current;
+    if (isInitialLoad) setStatus("loading");
     setError(null);
 
     brokerSyncApi.listBrokerConnections(userId)
@@ -53,6 +56,7 @@ export function useBrokerConnections(userId: string | null): UseBrokerConnection
 
         if (!cancelled) {
           setAccountsByConnection(accountMap);
+          hasLoadedRef.current = true;
           setStatus("success");
         }
       })
@@ -60,7 +64,7 @@ export function useBrokerConnections(userId: string | null): UseBrokerConnection
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : "Failed to load broker connections";
         setError(msg);
-        setStatus("error");
+        setStatus(hasLoadedRef.current ? "success" : "error");
       });
 
     return () => { cancelled = true; };

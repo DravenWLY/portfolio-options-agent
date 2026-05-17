@@ -278,3 +278,101 @@ def test_missing_market_values_count_positions_and_emit_warning(db_session: Sess
     assert summary.short_option_position_count == 1
     assert summary.option_market_value == Decimal("0")
     assert [warning.code for warning in summary.broker_data_warnings] == ["broker_data_market_value_missing"]
+
+
+def test_portfolio_summary_ignores_legacy_option_rows_in_stock_table(db_session: Session) -> None:
+    account = _create_account(db_session)
+    now = datetime(2026, 5, 14, 15, 30, tzinfo=UTC)
+    db_session.add_all(
+        [
+            CashBalance(
+                account_id=account.id,
+                total_cash=Decimal("10000.00"),
+                reserved_collateral_cash=Decimal("0.00"),
+                free_cash=Decimal("10000.00"),
+                premium_income_cash=Decimal("0.00"),
+                dca_cash=Decimal("0.00"),
+                source="snaptrade",
+                data_freshness_status="cached",
+                as_of=now,
+            ),
+            StockPosition(
+                account_id=account.id,
+                symbol="VOO",
+                quantity=Decimal("10"),
+                market_value=Decimal("4500.00"),
+                source="snaptrade",
+                data_freshness_status="cached",
+                as_of=now,
+            ),
+            StockPosition(
+                account_id=account.id,
+                symbol="HOOD 85 CALL",
+                asset_type="option",
+                quantity=Decimal("-1"),
+                market_value=Decimal("-290.00"),
+                source="snaptrade",
+                data_freshness_status="cached",
+                as_of=now,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    summary = get_portfolio_summary(db_session, account.id)
+
+    assert summary is not None
+    assert summary.stock_position_count == 1
+    assert summary.stock_market_value == Decimal("4500.00")
+    assert summary.total_internal_value == Decimal("14500.00")
+
+
+def test_portfolio_summary_excludes_fidelity_cash_sweep_from_stock_book_value(
+    db_session: Session,
+) -> None:
+    account = _create_account(db_session)
+    now = datetime(2026, 5, 17, 18, 41, tzinfo=UTC)
+    db_session.add_all(
+        [
+            CashBalance(
+                account_id=account.id,
+                total_cash=Decimal("43586.25"),
+                reserved_collateral_cash=Decimal("0.00"),
+                free_cash=Decimal("43586.25"),
+                premium_income_cash=Decimal("0.00"),
+                dca_cash=Decimal("0.00"),
+                source="snaptrade",
+                data_freshness_status="cached",
+                as_of=now,
+            ),
+            StockPosition(
+                account_id=account.id,
+                symbol="SPAXX",
+                asset_type="open_ended_fund",
+                quantity=Decimal("43586.25"),
+                market_value=Decimal("43586.25"),
+                source="snaptrade",
+                data_freshness_status="cached",
+                as_of=now,
+            ),
+            StockPosition(
+                account_id=account.id,
+                symbol="VOO",
+                asset_type="etf",
+                quantity=Decimal("67"),
+                market_value=Decimal("45522.48"),
+                source="snaptrade",
+                data_freshness_status="cached",
+                as_of=now,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    summary = get_portfolio_summary(db_session, account.id)
+
+    assert summary is not None
+    assert summary.total_cash == Decimal("43586.25")
+    assert summary.stock_position_count == 1
+    assert summary.stock_market_value == Decimal("45522.48")
+    assert summary.total_internal_value == Decimal("89108.73")

@@ -6,12 +6,9 @@ operation, equivalent to deleting a user from the SnapTrade dashboard (which
 does not expose that button). It must never be imported by application code,
 wired into a route, run in Docker startup, migrations, seed scripts, or tests.
 
-Why it exists: the SnapTrade Free plan allows a single connected user. If a
-stale user (e.g. one created out-of-band by the SnapTrade CLI for a smoke
-test) occupies that slot with zero broker connections, the app's normal
-registerSnapTradeUser flow fails with error 1012. There is no supported way
-to adopt an existing user without its original userSecret (resetUserSecret
-requires the existing secret), so the slot must be freed by deletion.
+Why it exists: the SnapTrade Free plan allows a single connected user. Prefer
+`link_existing_snaptrade_user.py` if you have the existing userId + userSecret.
+Deletion is only for a stale user that you have confirmed is safe to remove.
 
 Safety:
   * Defaults to DRY-RUN. Real deletion requires BOTH:

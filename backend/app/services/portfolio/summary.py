@@ -15,6 +15,14 @@ from app.services.portfolio.warnings import generate_broker_data_warnings, gener
 
 
 ZERO = Decimal("0")
+CASH_EQUIVALENT_STOCK_SYMBOLS = {
+    # Fidelity sweep / money-market core positions. These also appear in cash
+    # balances, so including them in stock book value double-counts cash.
+    "SPAXX",
+    "FDRXX",
+    "FZFXX",
+    "FCASH",
+}
 
 
 class _PositionSnapshot(Protocol):
@@ -53,6 +61,16 @@ def _has_missing_market_value(positions: list[StockPosition] | list[OptionPositi
     return any(position.market_value is None for position in positions)
 
 
+def _is_stock_summary_position(position: StockPosition) -> bool:
+    """Exclude legacy provider rows that were misclassified before option ingestion existed."""
+    descriptor = f"{position.asset_type or ''} {position.symbol or ''}".lower()
+    return "option" not in descriptor and " call" not in descriptor and " put" not in descriptor
+
+
+def _is_cash_equivalent_stock_position(position: StockPosition) -> bool:
+    return (position.symbol or "").upper() in CASH_EQUIVALENT_STOCK_SYMBOLS
+
+
 def get_portfolio_summary(db: Session, account_id: UUID) -> PortfolioSummaryRead | None:
     account_exists = db.scalar(select(Account.id).where(Account.id == account_id, Account.deleted_at.is_(None)))
     if account_exists is None:
@@ -76,6 +94,10 @@ def get_portfolio_summary(db: Session, account_id: UUID) -> PortfolioSummaryRead
     )
     latest_stock_positions = {}
     for position in stock_rows:
+        if not _is_stock_summary_position(position):
+            continue
+        if _is_cash_equivalent_stock_position(position):
+            continue
         latest_stock_positions.setdefault(position.symbol, position)
 
     option_rows = db.scalars(

@@ -73,6 +73,13 @@ Phase 14 - Custom Portfolio-Aware Agent Orchestrator.
 - Freshness/Guardrail Agent, Report Composer Agent
 - LLM boundary mocked by default
 
+Future Broker Activities / Transactions layer.
+
+- Read-only activity sync for historical buys, sells, dividends, deposits, withdrawals, fees, option open/close events, assignment, exercise, and expiration where the broker provider supports it.
+- Store sanitized raw broker activities separately first; normalize selected events into trades, premium income records, and wheel lifecycle records later.
+- Treat activity freshness separately from broker position freshness and market quote freshness. Activities may be cached/daily and must not be treated as real-time execution data.
+- Keep orders separate from activities and read-only only.
+
 Phase 15 - TradingAgents Adapter (optional, stock/company research only).
 
 Phase 16 - Frontend Agent Workspace B (report detail, agent run monitor, risk review).

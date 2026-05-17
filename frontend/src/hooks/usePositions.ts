@@ -30,6 +30,7 @@ function useResource<T>(
     }
 
     let cancelled = false;
+    setData(null);
     setStatus("loading");
     setError(null);
 
@@ -51,7 +52,7 @@ function useResource<T>(
 }
 
 export function useCashBalance(accountId: string | null) {
-  return useResource<CashBalanceRead>(getLatestCashBalance, accountId);
+  return useResource<CashBalanceRead | null>(getLatestCashBalance, accountId);
 }
 
 export function useStockPositions(accountId: string | null) {

@@ -1,8 +1,12 @@
+from datetime import UTC, datetime
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+
+from app.models.option_position import OptionPosition
 
 
 pytestmark = [pytest.mark.api, pytest.mark.db]
@@ -83,3 +87,49 @@ def test_create_option_position_for_missing_account_returns_404(client: TestClie
     )
 
     assert response.status_code == 404
+
+
+def test_list_option_positions_returns_latest_open_snapshot_per_contract(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    account_id = _create_account(client)
+    first_response = client.post(f"/accounts/{account_id}/option-positions", json=_option_payload())
+    assert first_response.status_code == 201
+    first = first_response.json()
+    db_session.add_all(
+        [
+            OptionPosition(
+                account_id=UUID(account_id),
+                option_contract_id=UUID(first["option_contract_id"]),
+                position_side="short",
+                quantity=Decimal("1"),
+                average_price=Decimal("2.5000"),
+                market_value=Decimal("6.05"),
+                status="open",
+                source="snaptrade",
+                data_freshness_status="cached",
+                as_of=datetime(2026, 5, 17, 17, 0, tzinfo=UTC),
+            ),
+            OptionPosition(
+                account_id=UUID(account_id),
+                option_contract_id=UUID(first["option_contract_id"]),
+                position_side="short",
+                quantity=Decimal("1"),
+                average_price=Decimal("2.5000"),
+                market_value=Decimal("2.90"),
+                status="open",
+                source="snaptrade",
+                data_freshness_status="cached",
+                as_of=datetime(2026, 5, 17, 18, 0, tzinfo=UTC),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(f"/accounts/{account_id}/option-positions")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert Decimal(payload[0]["market_value"]) == Decimal("2.90")

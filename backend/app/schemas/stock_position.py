@@ -35,10 +35,21 @@ class StockPositionCreate(BaseModel):
         return value.strip().upper()
 
 
-class StockPositionRead(StockPositionCreate):
+class StockPositionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     account_id: UUID
+    symbol: str
+    asset_type: str
+    quantity: Decimal
+    cost_basis: Decimal | None
+    market_price: Decimal | None
+    market_value: Decimal | None
+    source: PositionSource
+    source_ref: str | None
+    data_freshness_status: DataFreshnessStatus
+    raw_provider_payload: dict | None
+    as_of: datetime
     created_at: datetime
     updated_at: datetime

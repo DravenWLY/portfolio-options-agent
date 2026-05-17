@@ -22,6 +22,15 @@ This file tracks known non-blocking work so active plans can stay small. Do not 
 - Cost basis provider mapping where safe and supported.
 - More advanced provider payload sanitizer value heuristics.
 
+## Broker Activities and Transactions
+
+- Add a future read-only broker activities sync layer after current-position sync and deterministic risk foundations are stable.
+- Store sanitized provider activities separately first, for example in `broker_activities` plus activity sync-run metadata, before normalizing into app-level trade or strategy records.
+- Do not treat activities as intraday real-time execution data; they may be cached, delayed, partial, or daily depending on provider and broker.
+- Keep broker orders separate from broker activities. Orders are read-only status/intent data; activities are historical account events.
+- Later normalization candidates: `trade_journal_entries`, `premium_income_records`, `wheel_cycles`, and `wheel_cycle_events`.
+- Use activities to support realized premium tracking, assignment/exercise/expiration detection, and wheel lifecycle reconstruction only after deterministic reconciliation tests exist.
+
 ## CSV and Manual Fallback
 
 - Project-specific CSV exception hierarchy.

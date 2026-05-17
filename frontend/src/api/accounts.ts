@@ -5,3 +5,8 @@ import { type AccountRead } from "../types/api";
 export function listUserAccounts(userId: string): Promise<AccountRead[]> {
   return apiClient.get<AccountRead[]>(`/users/${userId}/accounts`);
 }
+
+/** GET /accounts/{accountId} — canonical account detail. */
+export function getAccount(accountId: string): Promise<AccountRead> {
+  return apiClient.get<AccountRead>(`/accounts/${accountId}`);
+}

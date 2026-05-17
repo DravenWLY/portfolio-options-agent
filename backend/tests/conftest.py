@@ -4,6 +4,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -28,7 +29,23 @@ from app.models.stock_position import StockPosition
 from app.models.user import User
 
 
+DESTRUCTIVE_TEST_DB_ENV = "POA_ALLOW_DESTRUCTIVE_DB_TESTS"
+
+
+def _database_is_safe_for_destructive_tests() -> bool:
+    """DB fixtures wipe tables; only run them against explicit test databases."""
+    if os.environ.get(DESTRUCTIVE_TEST_DB_ENV) == "1":
+        return True
+    try:
+        database_name = make_url(str(engine.url)).database or ""
+    except Exception:
+        return False
+    return database_name.endswith("_test")
+
+
 def _database_available() -> bool:
+    if not _database_is_safe_for_destructive_tests():
+        return False
     try:
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
@@ -50,7 +67,10 @@ def client(app) -> TestClient:
 @pytest.fixture
 def db_session() -> Generator[Session, None, None]:
     if not _database_available():
-        pytest.skip("Configured database is unavailable")
+        pytest.skip(
+            "Configured database is unavailable or not marked safe for destructive tests. "
+            "Use a *_test database or set POA_ALLOW_DESTRUCTIVE_DB_TESTS=1 only for disposable data."
+        )
 
     db = SessionLocal()
     try:

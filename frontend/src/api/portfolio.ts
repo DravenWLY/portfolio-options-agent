@@ -1,4 +1,4 @@
-import { apiClient } from "./client";
+import { apiClient, ApiRequestError } from "./client";
 import {
   type PortfolioSummaryRead,
   type CashBalanceRead,
@@ -16,10 +16,15 @@ export function getPortfolioSummary(
 /** GET /accounts/{accountId}/cash-balances/latest */
 export function getLatestCashBalance(
   accountId: string
-): Promise<CashBalanceRead> {
-  return apiClient.get<CashBalanceRead>(
-    `/accounts/${accountId}/cash-balances/latest`
-  );
+): Promise<CashBalanceRead | null> {
+  return apiClient
+    .get<CashBalanceRead>(`/accounts/${accountId}/cash-balances/latest`)
+    .catch((err: unknown) => {
+      if (err instanceof ApiRequestError && err.status === 404) {
+        return null;
+      }
+      throw err;
+    });
 }
 
 /** GET /accounts/{accountId}/stock-positions */

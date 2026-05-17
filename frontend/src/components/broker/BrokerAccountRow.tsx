@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { getAccount } from "../../api/accounts";
 import { brokerSyncApi } from "../../api/brokerSync";
 import { ApiRequestError } from "../../api/client";
 import { useAccountContext } from "../../context/useAccountContext";
@@ -51,20 +52,24 @@ export default function BrokerAccountRow({ account, userId, onSyncComplete }: Br
     onSyncComplete?.();
   }
 
-  function handleViewPortfolio() {
+  async function handleViewPortfolio() {
     if (!account.account_id) return;
-    setSelectedAccount({
-      id: account.account_id,
-      user_id: userId,
-      broker_name: account.display_name,
-      account_type: account.account_type as "taxable_individual" | "roth_ira" | "traditional_ira" | "other",
-      display_name: account.display_name,
-      base_currency: account.base_currency,
-      is_manual: false,
-      created_at: account.created_at,
-      updated_at: account.updated_at,
-      deleted_at: null,
-    });
+    try {
+      setSelectedAccount(await getAccount(account.account_id));
+    } catch {
+      setSelectedAccount({
+        id: account.account_id,
+        user_id: userId,
+        broker_name: account.display_name,
+        account_type: account.account_type as "taxable_individual" | "roth_ira" | "traditional_ira" | "other",
+        display_name: account.display_name,
+        base_currency: account.base_currency,
+        is_manual: false,
+        created_at: account.created_at,
+        updated_at: account.updated_at,
+        deleted_at: null,
+      });
+    }
     navigate("/");
   }
 

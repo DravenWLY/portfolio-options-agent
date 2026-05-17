@@ -130,6 +130,70 @@ class _FakeSnapTrade:
         self.authentication = _FakeSnapTradeAuth()
 
 
+class _FakeSnapTradePositions:
+    def get_user_account_positions(self, **kwargs):
+        return _FakeSnapTradeResponse(
+            [
+                {
+                    "symbol": {
+                        "symbol": {
+                            "symbol": "VOO",
+                            "raw_symbol": "VOO",
+                            "type": {"code": "cs", "description": "Common Stock"},
+                        },
+                    },
+                    "units": 10,
+                    "price": 450,
+                    "currency": {"code": "USD"},
+                },
+                {
+                    "symbol": {
+                        "option_symbol": {
+                            "ticker": "HOOD  260618C00085000",
+                            "option_type": "CALL",
+                            "strike_price": 85,
+                            "expiration_date": "2026-06-18",
+                            "underlying_symbol": {"symbol": "HOOD", "raw_symbol": "HOOD"},
+                        },
+                        "description": "HOOD 85 Call Jun 18 2026",
+                    },
+                    "units": -1,
+                    "price": 290,
+                    "currency": {"code": "USD"},
+                },
+            ]
+        )
+
+
+class _FakeSnapTradeOptions:
+    def list_option_holdings(self, **kwargs):
+        return _FakeSnapTradeResponse(
+            [
+                {
+                    "symbol": {
+                        "option_symbol": {
+                            "ticker": "HOOD  260618C00085000",
+                            "option_type": "CALL",
+                            "strike_price": 85,
+                            "expiration_date": "2026-06-18",
+                            "underlying_symbol": {"symbol": "HOOD", "raw_symbol": "HOOD"},
+                        },
+                        "description": "HOOD 85 Call Jun 18 2026",
+                    },
+                    "units": -1,
+                    "price": 290,
+                    "currency": {"code": "USD"},
+                }
+            ]
+        )
+
+
+class _FakeSnapTradePortfolio:
+    def __init__(self) -> None:
+        self.account_information = _FakeSnapTradePositions()
+        self.options = _FakeSnapTradeOptions()
+
+
 def test_snaptrade_sdk_client_requests_read_only_connection_portal() -> None:
     snaptrade = _FakeSnapTrade()
     client = SnapTradeSDKClient(
@@ -181,3 +245,46 @@ def test_snaptrade_sdk_client_never_uses_account_number_as_display_name() -> Non
 
     assert mapped["display_name"] == "Taxable Individual Account"
     assert "123456789" not in mapped["display_name"]
+
+
+def test_snaptrade_sdk_client_excludes_option_holdings_from_stock_positions() -> None:
+    client = SnapTradeSDKClient(
+        snaptrade=_FakeSnapTradePortfolio(),
+        db=None,
+        encryption_key="test_snaptrade_secret_encryption_key_32_chars",
+    )
+    client._creds_by_provider_account = lambda _account_id: ("demo-user", "demo-secret")  # noqa: SLF001
+
+    positions = client.get_positions("demo-account")
+
+    assert [position["symbol"] for position in positions] == ["VOO"]
+    assert positions[0]["market_value"] == "4500"
+
+
+def test_snaptrade_sdk_client_maps_short_call_option_holdings() -> None:
+    client = SnapTradeSDKClient(
+        snaptrade=_FakeSnapTradePortfolio(),
+        db=None,
+        encryption_key="test_snaptrade_secret_encryption_key_32_chars",
+    )
+    client._creds_by_provider_account = lambda _account_id: ("demo-user", "demo-secret")  # noqa: SLF001
+
+    option_positions = client.get_option_positions("demo-account")
+
+    assert option_positions == [
+        {
+            "provider": "snaptrade",
+            "provider_account_id": "demo-account",
+            "occ_symbol": "HOOD260618C00085000",
+            "underlying_symbol": "HOOD",
+            "position_side": "short",
+            "quantity": "1",
+            "market_value": "290",
+            "currency": "USD",
+            "sync_timestamp": option_positions[0]["sync_timestamp"],
+            "received_at": option_positions[0]["received_at"],
+            "sync_status": "succeeded",
+            "data_freshness_status": "cached",
+            "raw_payload": None,
+        }
+    ]

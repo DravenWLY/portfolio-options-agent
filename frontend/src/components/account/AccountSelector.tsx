@@ -39,6 +39,16 @@ export default function AccountSelector() {
     }
   }, [accountsStatus, accounts, selectedAccount, setSelectedAccount]);
 
+  // When another page sets selectedAccount from a broker-account action,
+  // replace it with the canonical row once /users/{id}/accounts catches up.
+  useEffect(() => {
+    if (accountsStatus !== "success" || selectedAccount === null) return;
+    const canonical = accounts.find((a) => a.id === selectedAccount.id);
+    if (canonical && canonical !== selectedAccount) {
+      setSelectedAccount(canonical);
+    }
+  }, [accountsStatus, accounts, selectedAccount, setSelectedAccount]);
+
   return (
     <div style={styles.wrap} aria-label="Account selector (local dev mode)">
       <span style={styles.devBadge} title="Local MVP mode — not production auth">
@@ -137,6 +147,12 @@ function AccountPicker({
   selected: AccountRead | null;
   onSelect: (a: AccountRead | null) => void;
 }) {
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  if (selected && !accountsById.has(selected.id)) {
+    accountsById.set(selected.id, selected);
+  }
+  const displayAccounts = [...accountsById.values()];
+
   if (status === "loading") {
     return <span style={styles.loading}>loading accounts…</span>;
   }
@@ -147,7 +163,7 @@ function AccountPicker({
       </span>
     );
   }
-  if (status === "success" && accounts.length === 0) {
+  if (status === "success" && displayAccounts.length === 0) {
     return <span style={styles.empty}>no accounts</span>;
   }
 
@@ -157,14 +173,14 @@ function AccountPicker({
       aria-label="Select account"
       value={selected?.id ?? ""}
       onChange={(e) => {
-        const found = accounts.find((a) => a.id === e.target.value) ?? null;
+        const found = displayAccounts.find((a) => a.id === e.target.value) ?? null;
         onSelect(found);
       }}
     >
       <option value="" disabled>
         — account —
       </option>
-      {accounts.map((a) => (
+      {displayAccounts.map((a) => (
         <option key={a.id} value={a.id}>
           {a.display_name} ({a.broker_name})
         </option>

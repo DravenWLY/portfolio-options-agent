@@ -57,6 +57,45 @@ def test_list_broker_accounts_for_connection(
     assert "private_provider_detail" not in response.text
 
 
+def test_list_broker_accounts_for_connection_uses_stable_display_order(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    connection = _create_connection(client, db_session)
+    db_session.add_all(
+        [
+            BrokerAccount(
+                broker_connection_id=connection.id,
+                provider_account_id="provider-individual",
+                display_name="Individual",
+                account_type="taxable_individual",
+            ),
+            BrokerAccount(
+                broker_connection_id=connection.id,
+                provider_account_id="provider-roth",
+                display_name="ROTH IRA",
+                account_type="roth_ira",
+            ),
+            BrokerAccount(
+                broker_connection_id=connection.id,
+                provider_account_id="provider-cash-management",
+                display_name="Cash Management (Individual)",
+                account_type="taxable_individual",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(f"/users/{connection.user_id}/broker-connections/{connection.id}/accounts")
+
+    assert response.status_code == 200
+    assert [item["display_name"] for item in response.json()] == [
+        "Cash Management (Individual)",
+        "Individual",
+        "ROTH IRA",
+    ]
+
+
 def test_list_broker_accounts_for_missing_connection_returns_404(
     client: TestClient,
     db_session: Session,

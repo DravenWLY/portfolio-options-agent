@@ -4,9 +4,9 @@ This is the short context file for routine Codex and Claude reviews. Prefer this
 
 ## Product North Star
 
-`portfolio-options-agent` is a portfolio-aware options income and risk copilot for manual traders. It combines broker portfolio state, market context, deterministic options/risk calculations, custom portfolio-aware agents, optional TradingAgents stock/company research, and durable report history.
+`portfolio-options-agent` is a portfolio-aware options income and risk copilot for manual traders. It combines broker portfolio state, market context, deterministic options/risk calculations, strategy-extensible evaluators, custom portfolio-aware agents, optional TradingAgents stock/company research, and durable report history.
 
-The dashboard is the cockpit, not the whole product. SnapTrade, market data providers, and TradingAgents are inputs/components, not the center.
+The dashboard is the cockpit, not the whole product. SnapTrade, market data providers, and TradingAgents are inputs/components, not the center. Wheel-style workflows are the first practical use case, not the product boundary.
 
 ## Safety Boundary
 
@@ -37,18 +37,22 @@ Detailed verification history lives in `docs/completed_phases_log.md`.
 
 ## Active Phase
 
-Phase 12 - Market Data Contracts and Manual Provider.
+Phase 12 - Market Data Contracts, Snapshots, Manual Provider, and Market Status UI Slice.
 
 Goal: define quote and option-chain contracts, keeping broker freshness strictly separate from market quote freshness.
 
 Scope:
 
-- Provider-agnostic MarketDataProvider interface.
-- OptionDataProvider interface.
-- Quote freshness model.
+- Strategy-agnostic market data domain models.
+- Option contract identity and immutable quote/chain snapshots.
+- Provider-agnostic MarketDataProvider, OptionDataProvider, and GreeksProvider interfaces.
+- Quote freshness and actionability policy.
 - Market quote response models.
 - Manual/mock provider (deterministic, no real API calls).
 - Mocked market data tests.
+- Claude review of frontend implications after backend contracts are stable.
+- Thin frontend market-data status slice using only mock/manual data.
+- Codex integration/security review before Phase 13.
 
 Out of scope:
 
@@ -59,19 +63,29 @@ Out of scope:
 
 ## Next Phases
 
-Phase 13 - Deterministic Options/Risk Engine MVP.
+Phase 13 - Generic Options Metrics and Portfolio Risk Engine plus Risk Review UI Slice.
 
-- option formulas, collateral/free cash, assignment scenario
-- covered call eligibility, CSP candidate evaluator
-- allocation/concentration risk
+- option formulas, collateral/free cash, assignment/exercise scenario
+- allocation impact and concentration risk
+- generic deterministic risk report
 - `risk_rule_violations` with severity `info`, `warning`, `violation`, or `blocker`
+- Claude review of deterministic risk contracts before UI work
+- thin frontend deterministic risk review slice
 
-Phase 14 - Custom Portfolio-Aware Agent Orchestrator.
+Phase 14 - Strategy Evaluator Framework MVP plus Strategy Review UI Slice.
+
+- `StrategyEvaluator` protocol and deterministic `StrategyEvaluationResult`
+- first evaluators: cash-secured put and covered call
+- light wheel lifecycle composition as a workflow view, not the product boundary
+- future-ready for protective puts, collars, long options, vertical spreads, ETF overlays, and hedge analysis
+
+Phase 15 - Custom Portfolio-Aware Agent Orchestrator plus Agent/Report Workspace Slice A.
 
 - Portfolio Context Agent, Options Income Agent
 - Collateral and Assignment Risk Agent, Allocation Risk Agent
 - Freshness/Guardrail Agent, Report Composer Agent
 - LLM boundary mocked by default
+- frontend report/agent workspace slice that displays persisted custom-agent outputs
 
 Future Broker Activities / Transactions layer.
 
@@ -80,9 +94,20 @@ Future Broker Activities / Transactions layer.
 - Treat activity freshness separately from broker position freshness and market quote freshness. Activities may be cached/daily and must not be treated as real-time execution data.
 - Keep orders separate from activities and read-only only.
 
-Phase 15 - TradingAgents Adapter (optional, stock/company research only).
+Phase 16 - TradingAgents Adapter plus Evidence UI Slice (optional, stock/company research only).
 
-Phase 16 - Frontend Agent Workspace B (report detail, agent run monitor, risk review).
+Phase 17 - Expanded Frontend Agent Workspace B (deeper report detail, agent run monitor, risk review).
+
+## Delivery Rhythm
+
+Each new capability should now ship as a small vertical slice:
+
+1. Codex implements the backend contract/service with synthetic tests.
+2. Claude reviews frontend implications and finance-safety language.
+3. Claude implements the corresponding frontend view only after the backend contract exists.
+4. Codex performs the final integration/security review.
+
+Do not build speculative frontend fields before backend contracts exist, and do not run backend phases far ahead without a minimal reviewable UI surface.
 
 ## Review Guidance
 

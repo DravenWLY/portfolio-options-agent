@@ -74,10 +74,26 @@ Backend endpoints used (all existing, no new backend code):
 | `GET /users/{id}/broker-sync-runs/{rid}` | Poll sync run status |
 | `GET /users/{id}/broker-accounts/{aid}/freshness` | Account freshness detail |
 
+## Market Data status (P12-T9)
+
+Route: `/market-data` — a thin read-only status slice for Phase 12.
+
+- No real market-data provider is connected. The page renders a static,
+  contract-faithful **sample** of the manual/mock `MarketDataProviderStatusRead`
+  shape — it makes **no** network calls and stores nothing in browser storage.
+- `data_mode`, `freshness_status`, and `actionability_status` are always shown
+  **together** (a quote being recent never implies it is actionable; manual
+  inputs are analysis-only).
+- Market-quote freshness (`freshness_scope="market_quote"`) is shown explicitly
+  **separate** from broker portfolio sync freshness (Dashboard / Broker pages).
+- Copy is conservative: provider-not-connected, manual/mock only, not live
+  pricing, no guaranteed-return / trade-execution language.
+
 ## Architecture notes
 
 - `src/components/layout/` — AppShell, TopBar, Sidebar (fixed chrome)
 - `src/components/broker/` — Broker connection UI components (P11-T7)
+- `src/components/marketdata/` — Market data status slice (P12-T9)
 - `src/pages/` — top-level page components
 - `src/styles/globals.css` — CSS custom properties (design tokens), global resets
 - `src/api/` — fetch wrappers per domain

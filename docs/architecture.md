@@ -2,7 +2,7 @@
 
 Status: design document only. No business logic, database code, frontend code, or TradingAgents changes are authorized by this document.
 
-This repository is intended to become a professional full-stack portfolio-aware options income and risk copilot for manual traders. It should combine portfolio data, market context, deterministic risk calculations, custom portfolio-aware agents, optional TradingAgents stock/company research, and durable report history into manual decision support. The dashboard is the cockpit, not the whole product. SnapTrade, market data providers, and TradingAgents are inputs/components, not the center of the system.
+This repository is intended to become a professional full-stack portfolio-aware trade review and risk copilot for manual investors. It should combine portfolio data, market context, deterministic risk calculations, trade-intent review, optional research evidence, custom portfolio-aware agents, and durable report history into manual decision support. The dashboard is the cockpit, not the whole product. SnapTrade, market data providers, and TradingAgents are inputs/components, not the center of the system.
 
 For context-efficient daily work, read `docs/current_roadmap.md` first. Use `docs/implementation_plan.md` for active and future tasks, `docs/completed_phases_log.md` for archived verification history, and `docs/agent_context/` for short Codex/Claude handoff briefs.
 
@@ -10,21 +10,25 @@ This is not financial advice. This project must not execute trades, store broker
 
 ## Product North Star
 
-The product north star is an agentic portfolio and options decision-support workflow:
+The product north star is a portfolio-aware trade review and risk copilot for manual investors:
 
 ```text
 portfolio system of record
 + market data context
-+ deterministic options/risk calculations
-+ custom portfolio-aware agents
++ proposed stock / ETF / option TradeIntent
++ deterministic trade-review and risk calculations
 + optional TradingAgents stock/company research
 + durable report and agent history
-= manual trading decision support
+= manual trade review and decision support
 ```
 
-The system should help a human trader reason through account cash, option collateral, assignment exposure, allocation drift, concentration risk, data freshness, and stock/company research. It must not become only a SnapTrade dashboard, market data viewer, option-chain browser, or thin TradingAgents wrapper.
+Before a user manually places a stock, ETF, or options trade, the system should help them understand how the proposed action affects portfolio context, cash, collateral, exposures, data freshness, and risk rules. It must not become only a SnapTrade dashboard, market data viewer, option-chain browser, wheel-strategy app, options-income app, CSP/covered-call screener, AI stock picker, automated trading system, or thin TradingAgents wrapper.
 
 The core boundary remains: Python calculates financial metrics; LLMs explain structured results, compare tradeoffs, and compose reports.
+
+Options remain the strongest wedge because option trades make portfolio impact, collateral, assignment, payoff, and data-freshness issues obvious. Covered calls and cash-secured puts are early high-value workflows, not the product identity. Long calls, long puts, stock buys/sells, ETF trades, collars, spreads, hedges, and future multi-leg strategies should fit the same trade-review architecture.
+
+The core abstraction is `TradeIntent`, not wheel, CSP, or covered call. Core systems should store and evaluate `TradeIntent`, `StockTradeIntent`, `ETFTradeIntent`, `OptionStrategyIntent`, `OptionLeg`, scenario results, portfolio impact, risk-rule violations, report history, and journal/history links. Strategy-specific behavior belongs behind a `StrategyEvaluator` layer so future strategy wrappers can be added without rewriting the core engine.
 
 ## Executive Recommendations
 
@@ -41,7 +45,7 @@ The core boundary remains: Python calculates financial metrics; LLMs explain str
 | Market data layer | Provider-agnostic interfaces and a manual/mock provider before real provider integration | Do not couple Fidelity account management to quote data. Every quote must carry provider, timestamp, and freshness. |
 | Broker portfolio sync | SnapTrade read-only as the primary broker portfolio sync path; manual input and Fidelity CSV import remain backup/fallback paths; long-term Akoya/Fidelity Access style permissioned data; Plaid Investments as fallback where coverage fits | Fidelity does not provide a simple public retail API. Broker holdings/cash freshness must be tracked separately from market quote freshness. No scraping, broker passwords, MFA bypass, or trading/order endpoints. |
 | TradingAgents integration | Optional dependency + adapter fallback after report/agent persistence exists. Local editable install for development; pinned Git/package extra for public users; no source copy, no submodule. | TradingAgents is a stock/company research evidence stream, not the account-level decision engine. |
-| MVP | Multi-user/multi-account portfolio system of record + broker freshness + manual/CSV fallback + report/agent history + deterministic options/risk analytics + thin agent workspace | Small enough to build, strong enough to demonstrate backend, fintech, data modeling, AI app engineering, and product judgment. |
+| MVP | Multi-user/multi-account portfolio system of record + broker freshness + manual/CSV fallback + report/agent history + deterministic trade-review/risk analytics + thin review workspace | Small enough to build, strong enough to demonstrate backend, fintech, data modeling, AI app engineering, and product judgment. |
 
 ## System Overview
 
@@ -81,10 +85,75 @@ flowchart TD
 
 1. **Portfolio System of Record** - users, accounts, SnapTrade/manual/CSV input, cash balances, stock positions, option contracts, option positions, broker connections, broker accounts, broker sync runs, and broker freshness.
 2. **Market Data Layer** - stock quotes, option quotes, option chains, IV, Greeks, provider metadata, quote timestamps, and quote freshness. This stays separate from broker portfolio sync.
-3. **Deterministic Options/Risk Engine** - formulas, collateral, free cash, assignment scenarios, covered call eligibility, CSP evaluation, allocation/concentration risk, deterministic risk reports, and `risk_rule_violations`.
-4. **Custom Portfolio-Aware Agents** - Portfolio Context Agent, Options Income Agent, Collateral & Assignment Risk Agent, Allocation Risk Agent, Freshness/Guardrail Agent, and Report Composer Agent. These agents consume structured deterministic outputs.
-5. **TradingAgents Adapter** - optional stock/company research evidence stream for news, sentiment, fundamentals, and bull/bear debate. It does not own account-level risk decisions.
-6. **Dashboard and Report History** - frontend cockpit, report threads, report messages, agent runs, agent steps, markdown reports, and later agent run monitor/report detail pages.
+3. **Trade Intent Review Layer** - `TradeIntent`, `StockTradeIntent`, `ETFTradeIntent`, `OptionStrategyIntent`, and `OptionLeg` capture what the user is considering before they manually act.
+4. **Deterministic Trade/Risk Engine** - strategy-agnostic stock/ETF/options metrics, payoff scenarios, collateral, free cash, assignment/exercise scenarios, allocation/concentration impact, deterministic reports, and `risk_rule_violations`.
+5. **Strategy Evaluator Layer** - plug-in deterministic wrappers such as stock buy/sell/trim, ETF review, long call, long put, cash-secured put, and covered call first, then protective puts, collars, vertical spreads, ETF overlays, and hedge analysis later. Wheel lifecycle is a composition of historical intents and strategy outputs, not the core architecture.
+6. **Custom Portfolio-Aware Agents** - Portfolio Context Agent, Trade Review Agent, Collateral & Assignment Risk Agent, Allocation Risk Agent, Freshness/Guardrail Agent, and Report Composer Agent. These agents consume structured deterministic outputs.
+7. **TradingAgents Adapter** - optional asynchronous stock/company research evidence stream for news, sentiment, fundamentals, and bull/bear debate. It does not own account-level risk decisions and is not in the fast path.
+8. **Dashboard and Report History** - frontend cockpit, report threads, report messages, agent runs, agent steps, markdown reports, journal links, and later agent run monitor/report detail pages.
+
+## Trade Intent Review Architecture
+
+`TradeIntent` is the central domain concept for user-proposed actions. It represents a hypothetical manual trade that the app reviews before execution outside the app.
+
+Core intent shapes:
+
+- `TradeIntent`: shared id, user/account references, asset class, intent type, assumptions, notes, calculation version, and freshness snapshot.
+- `StockTradeIntent`: buy, sell, trim, or add-to-position review for a stock.
+- `ETFTradeIntent`: buy, sell, trim, or add-to-position review for an ETF.
+- `OptionStrategyIntent`: one or more option legs tied to an underlying.
+- `OptionLeg`: buy/sell, call/put, expiration, strike, quantity, premium/price assumption, multiplier, OCC symbol, and provider identifiers when safe.
+
+Generic trade review pipeline:
+
+1. Capture `TradeIntent`.
+2. Resolve portfolio context.
+3. Resolve market/quote snapshot.
+4. Run deterministic calculations.
+5. Run portfolio impact engine.
+6. Run risk-rule engine.
+7. Attach optional research evidence.
+8. Generate deterministic report.
+9. Let AI explain structured results.
+10. Save to journal and report history.
+
+Key app-owned modules:
+
+- `PortfolioContextBuilder`
+- `MarketSnapshotResolver`
+- `TradeIntentValidator`
+- `PayoffScenarioEngine`
+- `PortfolioImpactEngine`
+- `RiskRuleEngine`
+- `ResearchEvidenceService`
+- `ReportComposer`
+- `JournalService`
+
+Core tables should not be named around a single strategy family. Avoid `covered_call_candidates`, `csp_candidates`, `wheel_positions`, or `premium_income_strategy` as core schema foundations. Strategy-specific outputs should reference generic `TradeIntent`, `OptionLeg`, `ScenarioResult`, `PortfolioImpact`, `RiskRuleViolation`, report history, and journal/history records.
+
+`StrategyEvaluator` remains useful, but as a wrapper around the trade-review pipeline:
+
+```python
+class StrategyEvaluator:
+    def evaluate(
+        self,
+        intent: TradeIntent,
+        portfolio_context: PortfolioContext,
+        market_snapshot: MarketSnapshot,
+    ) -> StrategyReview: ...
+```
+
+Early evaluators:
+
+- `StockBuyReviewEvaluator`
+- `StockSellTrimReviewEvaluator`
+- `ETFReviewEvaluator`
+- `LongCallReviewEvaluator`
+- `LongPutReviewEvaluator`
+- `CashSecuredPutEvaluator`
+- `CoveredCallEvaluator`
+
+Wheel lifecycle should be a later composition of historical trade intents, broker activities, assignments/exercises, stock ownership, and covered-call reviews. It should not become a core schema or product boundary.
 
 Future extension: add a **Broker Activities / Transactions** layer after current-position sync and the deterministic risk engine are stable. Position/balance sync answers "what does the account currently hold?" while activities answer "what happened historically?" Activities can support realized premium tracking, assignment/exercise/expiration detection, dividends, interest, deposits, withdrawals, fees, and wheel lifecycle reconstruction. Activities must have their own freshness model because provider activity history may be cached, delayed, partial, or daily; it must not be treated as intraday real-time execution data. Store sanitized raw provider activities separately first, then normalize selected events into trades, premium income records, and wheel cycle records later. Keep read-only broker orders separate from activities.
 
@@ -92,9 +161,9 @@ Future extension: add a **Broker Activities / Transactions** layer after current
 
 The core rule is simple: Python code calculates; LLMs explain.
 
-Deterministic Python should calculate annualized ROI, premium yield, probability estimates, breakeven price, downside buffer, collateral requirements, assignment exposure, covered-call eligibility, allocation drift, sector concentration, liquidity scores, bid-ask spread percentage, premium capture, option collateral usage, free cash, projected allocation after assignment, and rule violations.
+Deterministic Python should calculate stock/ETF trade impact, option payoff scenarios, annualized/simple return metrics when applicable, breakeven price, downside/upside boundaries, collateral requirements, assignment exposure, allocation drift, concentration risk, liquidity scores, bid-ask spread percentage, option collateral usage, free cash, projected allocation after assignment, and rule violations.
 
-LLMs may summarize structured context, explain tradeoffs, produce final markdown reports, compare bullish and bearish narratives, and label conclusions as `do`, `wait`, `avoid`, or `only do under these conditions`. LLM output must cite deterministic fields by name and must not invent metrics.
+LLMs may summarize structured context, explain tradeoffs, produce final markdown reports, compare bullish and bearish narratives, and list questions or conditions for manual review. LLM output must cite deterministic fields by name and must not invent metrics. Avoid "you should buy/sell" phrasing, guaranteed-return language, and any implication that the app is placing or managing trades.
 
 Personal allocation targets and strategy thresholds should be loaded from private config or database records. Public documentation and examples should use synthetic demo data only.
 
@@ -323,7 +392,9 @@ TradingAgents should not handle:
 - broker sync freshness or market quote freshness
 - final portfolio-aware conclusions
 
-TradingAgents output is an evidence stream with a source such as `tradingagents_stock_research`. The app-owned custom agents and deterministic services decide how that evidence fits the account, cash, collateral, allocation, option exposure, and risk rules.
+TradingAgents output is an optional asynchronous research evidence stream with a source such as `tradingagents_stock_research`. It should attach to ticker-level or company-level research records and reports after the deterministic fast path has already produced a portfolio-aware trade review. The app-owned custom agents and deterministic services decide how that evidence fits the account, cash, collateral, allocation, option exposure, and risk rules.
+
+Do not send holdings, account values, cash balances, broker account ids, trade journal entries, or account-specific risk thresholds to TradingAgents or any LLM by default. When possible, send only ticker symbols and public company research context. Deep research should be user-triggered, budgeted, cacheable by ticker/research type/model/prompt version, and clearly labeled as evidence rather than the final portfolio-aware conclusion.
 
 ### What Is Too Generic or Expensive for This Use Case
 
@@ -1154,13 +1225,17 @@ Report and agent persistence should exist before TradingAgents integration. Dura
 | Load market data | Provider call/cache | Yes | No | Yes | Yes | Phase 12 |
 | Load option chain | Provider call/cache | Yes | No | Yes | Yes | Phase 12 |
 | Portfolio analytics | Pure Python | No | No | Yes by input hash | Yes | Yes |
-| Option screener | Pure Python | No | No | Yes by chain hash | Yes | Yes |
+| Capture trade intent | User input / DB write | No | No | Yes | Yes | Yes |
+| Trade intent validation | Pure Python | No | No | Yes by input hash | Yes | Yes |
+| Payoff/scenario engine | Pure Python | No | No | Yes by input hash | Yes | Yes |
+| Portfolio impact engine | Pure Python | No | No | Yes by input hash | Yes | Yes |
+| Strategy evaluator wrapper | Pure Python | No | No | Yes by input hash | Yes | Yes |
 | Risk checks | Pure Python | No | No | Yes | Yes | Yes |
 | News/macro summarizer | Provider + LLM | Yes | Cheap model | Yes | Yes | Later MVP |
 | Technical analyst | Python/LLM optional | Maybe | Optional | Yes | Yes | Later |
 | Options analyst narrative | LLM over structured data | No | Yes | Yes by input hash | Yes | Later |
 | Portfolio risk manager narrative | LLM over deterministic results | No | Yes | Yes | Yes | Later |
-| TradingAgents stock research | TradingAgents adapter | Yes | Yes | Partly | Yes | Phase 15 |
+| TradingAgents stock research | Async TradingAgents adapter | Yes | Yes | Partly | Yes | Later evidence layer |
 | Final markdown report | Template + optional LLM | No | Optional | Yes | Yes | Yes |
 | Persist outputs | DB write | No | No | N/A | Yes | Yes |
 | Stream progress | SSE | No | No | N/A | N/A | Yes |
@@ -1302,8 +1377,8 @@ Auth assumption for MVP: local user selector with `user_id` in requests or devel
 | `GET /accounts/{account_id}/allocation` | none | allocation summary | read positions/cash/targets | MVP |
 | `POST /accounts/{account_id}/target-allocation` | target bands | `TargetAllocation[]` | write `target_allocations` | MVP |
 | `GET /accounts/{account_id}/allocation-drift` | none | drift report | read targets/snapshot | MVP |
-| `POST /accounts/{account_id}/screen-puts` | filters/provider/data mode | candidates/report | market cache/options/risk | MVP |
-| `POST /accounts/{account_id}/screen-covered-calls` | filters/provider | candidates/report | positions/options/quotes | MVP |
+| `POST /accounts/{account_id}/trade-reviews` | proposed stock/ETF/option trade intent | deterministic review/report | portfolio context/market snapshots/risk rules | Future |
+| `GET /accounts/{account_id}/trade-reviews/{review_id}` | none | deterministic review/report | report history/journal links | Future |
 | `GET /accounts/{account_id}/assignment-scenario` | query open positions or ids | scenario result | read/write scenarios optional | MVP |
 | `GET /accounts/{account_id}/open-options-review` | none | open option review | positions/contracts/quotes | MVP |
 | `POST /broker-sync/snaptrade/users` | user/account scope | provider user metadata | broker connections/secret refs | Phase 6 |
@@ -1886,6 +1961,7 @@ Goals:
 - Build a thin React/Vite dashboard shell.
 - Add local user/account selector.
 - Show portfolio summary, cash positions, stock positions, option positions, broker freshness, broker warnings, and report history placeholder.
+- Add a visible New Trade Review placeholder so the product direction points toward trade review rather than dashboard-only portfolio viewing.
 
 Files:
 
@@ -1913,6 +1989,7 @@ Goals:
 - Define `MarketDataProvider` and `OptionDataProvider` interfaces.
 - Define stock quote, option quote, option chain, IV/Greeks, and quote freshness models.
 - Add a manual/mock provider for synthetic tests.
+- Keep market data models strategy-neutral. They must not know about CSP, covered calls, wheel lifecycle, or personal strategy thresholds.
 
 Files:
 
@@ -1936,12 +2013,12 @@ Tests:
 
 - Mock provider tests, quote freshness tests, stale quote tests, and module-boundary tests.
 
-### Phase 13 - Deterministic Options/Risk Engine MVP
+### Phase 13 - Generic Options/Risk Services
 
 Goals:
 
-- Implement option formulas.
-- Calculate collateral, free cash, assignment scenarios, covered call eligibility, CSP candidate evaluation, allocation/concentration risk, and deterministic risk reports.
+- Implement generic option formulas and reusable risk services.
+- Calculate payoff/scenario inputs, collateral, free cash, assignment/exercise scenarios, allocation/concentration risk, and deterministic risk reports.
 - Emit `risk_rule_violations` with severity `info`, `warning`, `violation`, or `blocker`.
 
 Files:
@@ -1964,14 +2041,73 @@ Acceptance:
 
 Tests:
 
-- Unit tests for formulas, collateral, assignment, eligibility, concentration, and rule violations.
+- Unit tests for formulas, collateral, assignment, allocation/concentration, and rule violations.
 
-### Phase 14 - Custom Portfolio-Aware Agent Orchestrator
+### Phase 14 - Trade Intent Review Foundation
 
 Goals:
 
-- Add workflow-first, deterministic-first custom agents.
-- Include Portfolio Context Agent, Options Income Agent, Collateral & Assignment Risk Agent, Allocation Risk Agent, Freshness/Guardrail Agent, and Report Composer Agent.
+- Add `TradeIntent`, `StockTradeIntent`, `ETFTradeIntent`, `OptionStrategyIntent`, and `OptionLeg`.
+- Add `PortfolioContextBuilder`, `MarketSnapshotResolver`, and `TradeIntentValidator`.
+- Add journal/report-history links for reviewed intents.
+- Keep this as a data/contract foundation with no strategy-specific recommendations.
+
+Files:
+
+- `backend/app/services/trade_review/*`
+- `backend/tests/services/trade_review/*`
+
+Risks:
+
+- Overfitting core schema to CSP, covered calls, or wheel lifecycle.
+- Accidentally turning review records into orders or execution intent.
+
+Acceptance:
+
+- Stock, ETF, and option trade intents share one review foundation.
+- Core tables/models are strategy-neutral.
+- No automatic trading, broker order execution, or advice language.
+
+Tests:
+
+- Domain model, validation, and report-link tests with synthetic data.
+
+### Phase 15 - Deterministic Trade Review Engine MVP
+
+Goals:
+
+- Add `PayoffScenarioEngine`, `PortfolioImpactEngine`, and `RiskRuleEngine` integration for trade intents.
+- Add early evaluators: stock buy, stock sell/trim, ETF review, long call, long put, cash-secured put, and covered call.
+- Generate deterministic trade review reports with calculation versioning and freshness snapshots.
+
+Files:
+
+- `backend/app/services/trade_review/*`
+- `backend/app/services/strategies/*`
+- `backend/tests/services/trade_review/*`
+- `backend/tests/services/strategies/*`
+
+Risks:
+
+- Presenting scenario analysis as a buy/sell recommendation.
+- Letting LLMs invent or recompute metrics.
+
+Acceptance:
+
+- Deterministic reports cover stock/ETF and option intents.
+- Early strategy evaluators are wrappers, not schema foundations.
+- No guaranteed-return, "you should buy/sell", or execution wording.
+
+Tests:
+
+- Synthetic trade-intent, payoff/scenario, portfolio-impact, and risk-rule tests.
+
+### Phase 16 - Custom Portfolio-Aware Agent Orchestrator
+
+Goals:
+
+- Add workflow-first, deterministic-first custom agents that consume reviewed trade outputs.
+- Include Portfolio Context Agent, Trade Review Agent, Collateral & Assignment Risk Agent, Allocation Risk Agent, Freshness/Guardrail Agent, and Report Composer Agent.
 - Mock LLM provider boundaries by default.
 
 Files:
@@ -1982,23 +2118,25 @@ Files:
 Risks:
 
 - Agents inventing metrics or bypassing deterministic outputs.
+- Sending brokerage data to LLMs.
 
 Acceptance:
 
 - Agents consume structured deterministic inputs.
 - Outputs persist to report/agent history.
-- LLM calls are mocked by default.
+- LLM calls are mocked by default and receive only approved structured inputs.
 
 Tests:
 
 - Workflow tests, mocked LLM tests, and report persistence tests.
 
-### Phase 15 - TradingAgents Adapter
+### Phase 17 - TradingAgents Adapter as Async Research Evidence
 
 Goals:
 
 - Add optional TradingAgents dependency detection.
 - Add adapter interface, missing dependency fallback, mocked output parser, and report-message/agent-step mapping.
+- Run TradingAgents as optional asynchronous ticker/company research evidence, not the synchronous trade-review fast path.
 
 Files:
 
@@ -2009,22 +2147,26 @@ Risks:
 
 - Becoming a thin TradingAgents wrapper.
 - Importing TradingAgents in global FastAPI startup.
+- Sending holdings, account values, cash, broker account ids, trade journal entries, or account-specific thresholds into LLM prompts.
 
 Acceptance:
 
 - Adapter is stock/company research only.
 - No source copy, submodule, or TradingAgents core edits.
-- Deterministic app features work without TradingAgents installed.
+- Deterministic trade review works without TradingAgents installed.
+- Research evidence is cached by ticker/research type/model/prompt version where possible.
 
 Tests:
 
-- Missing dependency tests and mocked TradingAgents output parser tests.
+- Missing dependency tests, mocked TradingAgents output parser tests, and prompt/input safety tests.
 
-### Phase 16 - Frontend Agent Workspace B
+### Phase 18 - Frontend Trade Review Workspace
 
 Goals:
 
-- Add report detail, agent run monitor, risk review workspace, TradingAgents research section, and agent disagreement/guardrail display.
+- Add New Trade Review workspace for stock, ETF, and options intents.
+- Show deterministic portfolio impact, cash impact, collateral/assignment impact where applicable, risk-rule violations, data freshness warnings, journal links, and report history.
+- Show TradingAgents or other research evidence only when available and clearly separated from deterministic conclusions.
 
 Files:
 
@@ -2034,12 +2176,13 @@ Risks:
 
 - Blurring deterministic calculations and LLM-generated text.
 - Collapsing broker freshness and market quote freshness.
+- Adding order tickets or execution-like affordances.
 
 Acceptance:
 
-- UI distinguishes deterministic calculations from LLM-generated text.
+- UI distinguishes deterministic calculations, optional AI explanation, and optional research evidence.
 - UI shows broker freshness and market quote freshness separately.
-- No trade execution UI.
+- No trade execution UI, broker order actions, "you should buy/sell" wording, or guaranteed-return language.
 
 Tests:
 

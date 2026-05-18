@@ -297,3 +297,67 @@ export interface BrokerSyncConflictRead {
   sync_run_id: string;
   status: string;
 }
+
+/* ── Deterministic risk review (P13) ─────────────────────────────────────── */
+/* Mirrors backend/app/schemas/risk.py exactly. Pydantic serializes Decimal as
+   a JSON string, so `Decimal | str | None` → `string | null` and
+   `Decimal | str | int | None` → `string | number | null`. The backend Read
+   schema deliberately omits account_id and other broker/private keys — do not
+   reintroduce them client-side. */
+
+export type RiskSeverity = "info" | "warning" | "violation" | "blocker";
+
+export type SnapshotKind = "stock_quote" | "option_quote" | "option_chain";
+
+export type SnapshotPurpose =
+  | "current_chain_cache"
+  | "selected_candidate_snapshot"
+  | "report_input_snapshot";
+
+export interface RiskRuleViolationRead {
+  code: string;
+  severity: RiskSeverity;
+  message: string;
+  source: string;
+  metric: string | null;
+  actual: string | null;
+  threshold: string | null;
+}
+
+export interface RiskReportSectionRead {
+  title: string;
+  facts: Record<string, string | number | null>;
+}
+
+export interface MarketDataSnapshotReferenceRead {
+  snapshot_id: string;
+  kind: SnapshotKind;
+  purpose: SnapshotPurpose;
+  provider: string;
+  stable_key: string;
+  captured_at: string;
+  quote_time: string | null;
+  freshness_scope: "market_quote";
+  data_mode: string;
+  freshness_status: string;
+  actionability_status: string;
+}
+
+export interface RiskReportInputSnapshotRead {
+  report_input_snapshot_id: string;
+  quote_references: MarketDataSnapshotReferenceRead[];
+  chain_references: MarketDataSnapshotReferenceRead[];
+  captured_at: string;
+  uses_current_quotes: boolean;
+}
+
+export interface DeterministicRiskReportRead {
+  generated_at: string;
+  calculation_version: string;
+  sections: RiskReportSectionRead[];
+  risk_rule_violations: RiskRuleViolationRead[];
+  highest_severity: RiskSeverity | null;
+  has_blocker: boolean;
+  input_snapshot: RiskReportInputSnapshotRead | null;
+  markdown: string;
+}

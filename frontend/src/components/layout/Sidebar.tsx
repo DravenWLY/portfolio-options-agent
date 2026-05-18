@@ -41,6 +41,8 @@ export default function Sidebar() {
         <ul style={styles.navList} role="list">
           <NavItem label="Dashboard" icon="⬡" to="/" collapsed={sidebarCollapsed} end />
           <NavItem label="Broker" icon="⊛" to="/broker" collapsed={sidebarCollapsed} />
+          <NavItem label="Market Data" icon="◷" to="/market-data" collapsed={sidebarCollapsed} />
+          <NavItem label="Risk Review" icon="◭" to="/risk" collapsed={sidebarCollapsed} />
           <NavItem label="Reports" icon="⊙" to="#reports" collapsed={sidebarCollapsed} />
         </ul>
       </div>

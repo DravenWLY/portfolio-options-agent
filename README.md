@@ -93,29 +93,10 @@ TradingAgents should not receive account holdings, account values, cash balances
 
 Keep `.env` private. Use `.env.example` only for placeholder variable names. Do not paste secrets into prompts, logs, commits, screenshots, or issue text.
 
-From the repo root, start Postgres:
+For the normal local stack, run Docker Compose from the repo root:
 
 ```bash
-docker compose up -d postgres
-```
-
-From `backend/`, install and run the API:
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-./.venv/bin/alembic upgrade head
-uvicorn app.main:app --reload
-```
-
-From `frontend/`, install and run the Vite app:
-
-```bash
-cd frontend
-npm install
-npm run dev
+docker compose up --build -d
 ```
 
 Then open:
@@ -123,6 +104,30 @@ Then open:
 ```text
 http://localhost:5173
 ```
+
+Stop the local stack with:
+
+```bash
+docker compose down
+```
+
+Plain `docker compose down` keeps the local Postgres volume. Use `docker compose down -v` only when you intentionally want to delete local database state.
+
+For backend-only or frontend-only development, you can still run services directly:
+
+```bash
+cd backend
+./.venv/bin/alembic upgrade head
+uvicorn app.main:app --reload
+```
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The Docker Compose path is the preferred all-in-one startup flow.
 
 The frontend proxies `/api` requests to the backend. Browser code must never call SnapTrade, market-data providers, LLM APIs, or TradingAgents directly.
 

@@ -3970,3 +3970,410 @@ Phase goal: run one deterministic review pipeline for proposed stock, ETF, and o
   - Phase 16 may start. Phase 18 remains blocked on the typed trade-review read schema and covered-call/CSP coverage/collateral caveat or modelling fix.
   - Focused run: `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review tests/services/strategies` -> `41 passed in 0.16s`.
   - Full backend run: `cd backend && ./.venv/bin/python -m pytest` -> `320 passed, 92 skipped, 1 deselected in 1.26s`; DB-backed tests skipped because the configured database was unavailable or not marked safe for destructive tests.
+
+---
+
+## Phase 16 Archive - Deterministic Agent Components and Portfolio-Aware Agent Team Orchestrator
+
+This section preserves completed Phase 16A and Phase 16B history moved out of `docs/shared/implementation_plan.md` after Codex B accepted Phase 16B and cleared Phase 17 to start.
+
+## Phase 16A - Deterministic Agent Components
+
+Phase goal: build safe deterministic-first agent components that consume structured trade-review outputs and compose explainable reports. These components are the foundation for the later portfolio-aware agent team, but they are not the full TradingAgents-inspired orchestrator. Agents must not compute financial metrics from scratch and must not receive raw brokerage data by default.
+
+Current P16-T0 through P16-T4 belong to Phase 16A.
+
+### P16-T0 - Portfolio Snapshot Actionability Policy
+
+- Task id: `P16-T0`
+- Title: Portfolio Snapshot Actionability Policy
+- Objective: Add a backend-owned policy contract/service that classifies trade-review readiness before Phase 16A deterministic agent components produce polished account-specific outputs.
+- Files expected to change:
+  - `backend/app/schemas/actionability.py` or existing equivalent schema module
+  - `backend/app/services/trade_review/actionability.py` or existing equivalent service module
+  - `backend/tests/services/trade_review/test_actionability.py`
+  - optionally `backend/app/api/routes/trade_reviews.py` if a small preflight route already fits existing patterns
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P15-T7`
+- Implementation steps:
+  1. Define safe enums and schemas for broker snapshot freshness, market quote freshness, source/provenance, provider status/errors, timestamp metadata, user confirmation state, and policy output.
+  2. Implement deterministic status precedence from `docs/codex-b-architecture/adr/0001-portfolio-snapshot-actionability-policy.md`.
+  3. Return separate nested `broker_snapshot` and `market_quotes` metadata plus one `review_actionability_status`.
+  4. Keep the first slice small: pure service/schema tests are sufficient unless an existing trade-review preflight route is already straightforward.
+  5. Persist policy decision snapshots only when creating trade reviews, reports, agent runs, or agent steps; compute preview status on demand.
+- Acceptance criteria:
+  - Accepted `review_actionability_status` values are exactly `normal_review`, `analysis_only`, `manual_confirmation_required`, `blocked_stale_broker_snapshot`, `blocked_stale_market_quote`, `blocked_unknown_freshness`, and `blocked_provider_error`.
+  - Stale, unknown, provider-error, manual, CSV, synthetic/mock, cached, delayed, or EOD inputs cannot produce `normal_review`.
+  - Manual confirmation permits `analysis_only`, not `normal_review`.
+  - Broker snapshot freshness and market quote freshness remain separate in the response.
+  - Safe output does not expose raw holdings, account values, cash balances, broker/provider account ids, raw provider payloads, secrets, trade journal entries, or account-specific thresholds.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_actionability.py`
+  - `cd backend && ./.venv/bin/python -m pytest`
+- Rollback notes:
+  - Remove actionability schema/service/tests and revert dependent Phase 16 agent inputs.
+- Status: `done`
+- Verification notes:
+  - Added `backend/app/schemas/actionability.py` with safe Pydantic read/input contracts for `PortfolioActionabilityInput`, `PortfolioActionabilityDecision`, `BrokerSnapshotMetadata`, `MarketQuotesMetadata`, `UserConfirmationMetadata`, and actionability reasons.
+  - Added `backend/app/services/trade_review/actionability.py` with deterministic `review_actionability_status` precedence: provider error, unknown freshness, stale broker snapshot, stale market quote, manual confirmation required, analysis-only, then normal review.
+  - Accepted status vocabulary is exactly `normal_review`, `analysis_only`, `manual_confirmation_required`, `blocked_stale_broker_snapshot`, `blocked_stale_market_quote`, `blocked_unknown_freshness`, and `blocked_provider_error`.
+  - Broker snapshot metadata and market quote metadata remain separate (`freshness_scope="broker_snapshot"` vs `freshness_scope="market_quote"`); manual, CSV, synthetic/mock, cached, delayed, indicative, manual market, and EOD inputs cannot produce `normal_review`.
+  - Manual confirmation permits `analysis_only` only; it does not upgrade non-provider-verified or non-live inputs to `normal_review`.
+  - Safe-output tests assert actionability schemas reject extra forbidden fields and omit raw holdings, account values, cash balances, broker/provider account ids, raw provider payloads, secrets, trade journal entries, and account-specific thresholds.
+  - Added exports from `backend/app/services/trade_review/__init__.py`.
+  - Added `backend/tests/services/trade_review/test_actionability.py` with 25 synthetic unit tests covering every accepted status, precedence, broker-stale/market-fresh, broker-fresh/market-stale, manual/CSV/synthetic confirmed and unconfirmed paths, provider-error precedence, unknown-freshness precedence, expired confirmation, and safe output shape.
+  - No route was added; the first slice is service/schema-only because no existing trade-review preflight route fits cleanly yet.
+  - Focused run: `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_actionability.py` -> `25 passed in 0.14s`.
+  - Full backend run: `cd backend && ./.venv/bin/python -m pytest` -> `345 passed, 92 skipped, 1 deselected in 1.40s`; DB-backed tests skipped because the configured database was unavailable or not marked safe for destructive tests.
+  - PASS recommendation for proceeding to P16-T1: Phase 16A deterministic agent components now have a backend-owned actionability policy to consume instead of inferring readiness from scattered freshness fields.
+
+### P16-T1 - Portfolio Context Agent
+
+- Task id: `P16-T1`
+- Title: Portfolio Context Agent
+- Objective: Load approved user/account context, holdings summaries, freshness metadata, and report history references.
+- Files expected to change:
+  - `backend/app/services/agents/portfolio_context.py`
+  - `backend/tests/services/agents/test_portfolio_context.py`
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P16-T0`
+- Implementation steps:
+  1. Build structured context from existing backend services.
+  2. Include freshness and snapshot metadata.
+  3. Exclude secrets, provider ids, account numbers, raw payloads, and unnecessary brokerage details from any LLM-bound payload.
+- Acceptance criteria:
+  - Agent output is structured and deterministic.
+  - No private brokerage data is sent to LLMs by default.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest`
+- Rollback notes:
+  - Remove agent and tests.
+- Status: `done`
+- Verification notes:
+  - Added `backend/app/services/agents/portfolio_context.py` with `PortfolioContextAgent`, `PortfolioContextAgentOutput`, `HoldingsShapeSummary`, `PortfolioFreshnessSummary`, and `ReportHistoryReference`.
+  - The agent consumes existing `PortfolioReviewContext` plus the P16-T0 `PortfolioActionabilityDecision`, preserving the backend-owned actionability status instead of recomputing readiness.
+  - Default `to_llm_payload()` includes only portfolio shape counts, freshness/actionability metadata, report history references, and policy notes; it omits raw cash values, account values, quantities, account ids, provider ids, raw payloads, source refs, secrets, and account-specific thresholds.
+  - The payload section is named `portfolio_shape`, not `holdings`, so LLM-bound context does not imply raw broker holdings are being sent.
+  - Added exports from `backend/app/services/agents/__init__.py`.
+  - Added `backend/tests/services/agents/test_portfolio_context.py` with synthetic unit tests for deterministic output, blocked-actionability propagation, and forbidden private broker data exclusion.
+  - Focused run: `cd backend && ./.venv/bin/python -m pytest tests/services/agents/test_portfolio_context.py` -> `3 passed in 0.08s`.
+  - Full backend run: `cd backend && ./.venv/bin/python -m pytest` -> `348 passed, 92 skipped, 1 deselected in 0.73s`; DB-backed tests skipped because the configured database was unavailable or not marked safe for destructive tests.
+
+### P16-T2 - Trade Review Agent
+
+- Task id: `P16-T2`
+- Title: Trade Review Agent
+- Objective: Explain deterministic trade-review outputs without inventing metrics or making buy/sell recommendations.
+- Files expected to change:
+  - `backend/app/services/agents/trade_review.py`
+  - `backend/tests/services/agents/test_trade_review.py`
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P16-T1`
+- Implementation steps:
+  1. Consume deterministic trade-review report outputs.
+  2. Explain scenario tradeoffs, blockers, and open questions.
+  3. Mock LLM explanation boundary by default.
+- Acceptance criteria:
+  - Agent never computes financial metrics from scratch.
+  - Agent avoids "you should buy/sell" wording.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest`
+- Rollback notes:
+  - Remove agent and tests.
+- Status: `done`
+- Verification notes:
+  - Added `backend/app/services/agents/trade_review.py` with `TradeReviewAgent`, `TradeReviewAgentOutput`, and `TradeReviewExplanationSection`.
+  - The agent consumes the Phase 15 `TradeReviewAgentProjection` and P16-T0 `PortfolioActionabilityDecision`; it does not inspect raw report internals, account ids, or owner-facing cash values.
+  - When `can_run_agent_explanation` is false, output is limited to the actionability gate reasons and does not explain payoff/risk metrics.
+  - When explanation is allowed, sections are generated only from deterministic fields: payoff scenario shape, risk findings, broker freshness, market freshness, and review actionability status.
+  - `to_llm_payload()` rejects forbidden broker/private keys and prohibited advice phrases such as `you should`, `i recommend`, `recommend buying`, and `recommend selling`.
+  - Added exports from `backend/app/services/agents/__init__.py`.
+  - Added `backend/tests/services/agents/test_trade_review.py` with synthetic unit tests for deterministic explanation, blocked-actionability gating, private-field exclusion, and advice-language exclusion.
+  - Focused run: `cd backend && ./.venv/bin/python -m pytest tests/services/agents/test_trade_review.py` -> `3 passed in 0.05s`.
+  - Full backend run: `cd backend && ./.venv/bin/python -m pytest` -> `351 passed, 92 skipped, 1 deselected in 1.00s`; DB-backed tests skipped because the configured database was unavailable or not marked safe for destructive tests.
+
+### P16-T3 - Freshness/Guardrail Agent
+
+- Task id: `P16-T3`
+- Title: Freshness/Guardrail Agent
+- Objective: Prevent stale broker or market inputs from being presented as immediately actionable.
+- Files expected to change:
+  - `backend/app/services/agents/freshness_guardrail.py`
+  - `backend/tests/services/agents/test_freshness_guardrail.py`
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P16-T2`
+- Implementation steps:
+  1. Consume the Portfolio Snapshot Actionability Policy decision instead of inferring readiness from scattered fields.
+  2. Review broker freshness and market quote freshness separately in explanation output.
+  3. Emit guardrail explanations for stale/unknown/error/manual-confirmation states.
+  4. Persist guardrail outputs to agent steps.
+- Acceptance criteria:
+  - Stale data cannot be labeled immediately actionable.
+  - Broker freshness and quote freshness remain distinct.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest`
+- Rollback notes:
+  - Remove agent and tests.
+- Status: `done`
+- Verification notes:
+  - Added `backend/app/services/agents/freshness_guardrail.py` as a deterministic interpreter of `PortfolioActionabilityDecision`; it does not recompute review readiness.
+  - Added `FreshnessGuardrailAgentOutput.to_agent_step_output()` as the safe persistence payload for later `agent_steps.output_snapshot_json` wiring; no database writes or routes were introduced.
+  - Guardrail output preserves separate broker snapshot and market quote scopes/statuses (`broker_snapshot` vs. `market_quote`) and emits explicit messages for normal review, analysis-only, manual-confirmation-required, stale broker, stale market, unknown freshness, and provider-error states.
+  - Stale broker/market states are always blocker guardrails and are never labelled immediately actionable.
+  - Added exports from `backend/app/services/agents/__init__.py`.
+  - Added `backend/tests/services/agents/test_freshness_guardrail.py` with synthetic unit tests for distinct broker/market freshness, stale broker blocking, stale market blocking, provider-error blocking, unknown-freshness blocking, manual-confirmation guardrails, analysis-only confirmed inputs, and forbidden private-field exclusion.
+  - Focused run: `cd backend && ./.venv/bin/python -m pytest tests/services/agents/test_freshness_guardrail.py` -> `8 passed in 0.06s`.
+  - Full backend run: `cd backend && ./.venv/bin/python -m pytest` -> `359 passed, 92 skipped, 1 deselected in 0.63s`; DB-backed tests skipped because the configured database was unavailable or not marked safe for destructive tests.
+
+### P16-T4 - Report Composer Agent
+
+- Task id: `P16-T4`
+- Title: Report Composer Agent
+- Objective: Compose deterministic trade-review outputs and approved agent explanations into a durable markdown report.
+- Files expected to change:
+  - `backend/app/services/agents/report_composer.py`
+  - `backend/tests/services/agents/test_report_composer.py`
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P16-T3`
+- Implementation steps:
+  1. Combine structured outputs from prior agents.
+  2. Mark deterministic calculations separately from LLM-generated text.
+  3. Persist the final markdown report to report history.
+- Acceptance criteria:
+  - Report is traceable to agent steps and deterministic inputs.
+  - LLM boundary remains mocked by default.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest`
+- Rollback notes:
+  - Remove agent and tests.
+- Status: `done`
+- Verification notes:
+  - Added `backend/app/services/agents/report_composer.py` with `ReportComposerAgent` and `ReportComposerAgentOutput`.
+  - Composer combines `PortfolioContextAgentOutput`, `TradeReviewAgentOutput`, and `FreshnessGuardrailAgentOutput` into deterministic markdown with explicit sections for portfolio shape, freshness guardrails, deterministic trade-review explanation, LLM boundary, and safety boundary.
+  - `ReportComposerAgentOutput.to_report_message_create(sequence=...)` returns a `ReportMessageCreate` payload with `message_type="final_report"` for existing report-history persistence; no new route, database schema, migration, or direct DB write was introduced.
+  - Markdown and JSON traceability preserve source agent names, deterministic section names, review actionability status, separate broker/market freshness scopes, highest severity, and blocker state.
+  - LLM-generated sections are represented as an empty tuple by default and the report states that future LLM text must explain structured deterministic outputs only.
+  - Added exports from `backend/app/services/agents/__init__.py`.
+  - Added `backend/tests/services/agents/test_report_composer.py` with synthetic unit tests for deterministic markdown composition, report-history message payload construction, blocked guardrail preservation, forbidden private-field exclusion, and advice/guarantee phrase exclusion.
+  - Focused run: `cd backend && ./.venv/bin/python -m pytest tests/services/agents/test_report_composer.py` -> `4 passed in 0.06s`.
+  - Full backend run: `cd backend && ./.venv/bin/python -m pytest` -> `363 passed, 92 skipped, 1 deselected in 0.66s`; DB-backed tests skipped because the configured database was unavailable or not marked safe for destructive tests.
+
+### P16A-T5 - Claude review of deterministic agent components
+
+- Task id: `P16A-T5`
+- Title: Claude review of deterministic agent components
+- Objective: Review Phase 16A component output contracts, report messages, and frontend implications before building the first trade-review workspace UI.
+- Files expected to change:
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P16-T4`
+- Implementation steps:
+  1. Generate a focused Claude handoff prompt limited to custom agent outputs, report/agent history schemas, tests, and this plan section.
+  2. Use Sonnet for UX/copy review; use Opus only for high-risk agent safety or financial reasoning disputes.
+  3. Confirm deterministic calculations are visually and semantically separated from LLM-generated text.
+- Acceptance criteria:
+  - Agent/report output is reviewable before adding UI.
+- Tests to run:
+  - Documentation/review task only; no tests unless fixes are accepted.
+- Rollback notes:
+  - Remove review notes if superseded.
+- Status: `done`
+- Verification notes:
+  - Claude B review verdict: `PASS`; no blockers or important issues for Phase 16A deterministic agent components.
+  - Review confirmed actionability policy precedence, broker-vs-market freshness separation, forbidden-field exclusion, no advice/execution wording, and deterministic-vs-LLM separation.
+  - Focused Claude B test run: `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_actionability.py tests/services/agents/ -q` -> `43 passed in 0.12s`.
+
+### P16A-T6 - Codex integration review for Phase 16A
+
+- Task id: `P16A-T6`
+- Title: Codex integration review for Phase 16A
+- Objective: Verify deterministic agent component outputs before Phase 16B orchestration, frontend workspace, and public research evidence work.
+- Files expected to change:
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P16A-T5`
+- Implementation steps:
+  1. Run backend tests.
+  2. Confirm agents consume persisted deterministic outputs rather than recomputing or inventing metrics.
+  3. Confirm TradingAgents remains absent from the fast path.
+- Acceptance criteria:
+  - Phase 16A ships as a deterministic-first component foundation.
+  - Phase 16 is not called complete until Phase 16B is implemented or explicitly deferred.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest`
+- Rollback notes:
+  - Reopen P16A-T5 if integration issues are found.
+- Status: `done`
+- Verification notes:
+  - Codex B review verdict: `PASS`; Phase 16A accepted as deterministic agent components.
+  - Confirmed actionability is consumed rather than re-inferred, broker snapshot freshness and market quote freshness remain separate, agent-safe projections exclude owner-facing cash/account values, and Report Composer keeps deterministic, guardrail, and LLM-boundary sections separate.
+  - Focused run: `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_actionability.py tests/services/agents/ -q` -> `43 passed in 0.19s`.
+  - Full backend run: `cd backend && ./.venv/bin/python -m pytest -q` -> `363 passed, 92 skipped, 1 deselected in 1.53s`; DB-backed tests skipped because no safe disposable DB was available.
+
+## Phase 16B - Portfolio-Aware Agent Team Orchestrator
+
+Phase goal: define and implement the app-owned stage graph/workflow that turns Phase 16A components into a TradingAgents-inspired, portfolio-aware trade review agent team. The orchestrator must enforce actionability, preserve deterministic-vs-LLM boundaries, persist run/step outputs, and degrade safely when research, real market providers, TradingAgents, or LLMs are unavailable.
+
+### P16B-T1 - Agent-Team Orchestration Contract
+
+- Task id: `P16B-T1`
+- Title: Agent-Team Orchestration Contract
+- Objective: Define the backend orchestration contract, stage order, role registry, context-envelope boundary, and fallback vocabulary before executable orchestration.
+- Files expected to change:
+  - `backend/app/services/agents/orchestrator.py`
+  - `backend/app/services/agents/context_envelopes.py`
+  - `backend/app/services/agents/__init__.py`
+  - `backend/app/services/privacy.py`
+  - `backend/tests/services/agents/test_orchestrator_contract.py`
+  - `backend/tests/services/agents/test_context_envelopes.py`
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P16A-T6`
+- Implementation steps:
+  1. Define fixed stage order from `TradeIntent` validation through final run/step persistence.
+  2. Define MVP roles: Portfolio Context, Trade Feasibility/Trade Review, Risk/Concentration behavior, Freshness/Guardrail, and Report Composer.
+  3. Define P1/future roles: Market Data, News/Research Evidence, Bull Case, Bear Case, and optional TradingAgents public research adapter.
+  4. Specify private/sanitized portfolio context envelopes versus public evidence and LLM/explanation envelopes.
+  5. Represent skipped/unavailable fallbacks for public research, TradingAgents, real market providers, and LLM interpretation.
+- Acceptance criteria:
+  - Default workflow stage order is exact and stable.
+  - MVP, P1, and optional future role vocabularies are stable.
+  - Actionability stage consumes a supplied `PortfolioActionabilityDecision`; it does not re-infer freshness.
+  - Blocked or manual-confirmation actionability gates downstream interpretation/report stages.
+  - Public evidence roles cannot receive private portfolio context by default.
+  - Broker snapshot freshness and market quote freshness remain separate in context metadata.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest tests/services/agents/test_orchestrator_contract.py tests/services/agents/test_context_envelopes.py`
+  - `cd backend && ./.venv/bin/python -m pytest`
+- Rollback notes:
+  - Remove orchestrator/context envelope files and tests, then revert agent exports/privacy constants.
+- Status: `done`
+- Verification notes:
+  - Added `backend/app/services/agents/orchestrator.py` with fixed workflow vocabulary and `build_orchestration_contract(...)`.
+  - Default stage order is exactly: `validate_trade_intent`, `build_portfolio_context`, `resolve_market_snapshot`, `run_deterministic_review`, `evaluate_actionability`, `retrieve_public_research_evidence`, `run_optional_interpretation`, `run_freshness_guardrail`, `compose_report`, `persist_run_steps`.
+  - Role vocabulary is grouped into MVP roles (`portfolio_context_agent`, `trade_review_agent`, `risk_concentration_behavior`, `freshness_guardrail_agent`, `report_composer_agent`), P1 roles (`market_data_agent`, `news_research_evidence_agent`, `bull_case_agent`, `bear_case_agent`), and optional future role (`tradingagents_public_research_adapter`).
+  - Contract stages expose status, role name, execution mode, input/output envelope type, actionability status where relevant, unavailable/gated reason, and source component/version metadata.
+  - `evaluate_actionability` consumes an existing `PortfolioActionabilityDecision` when supplied; no policy logic is duplicated.
+  - `resolve_market_snapshot`, `retrieve_public_research_evidence`, and `run_optional_interpretation` are explicit `unavailable`/`gated` fallback states by default and do not call real providers, TradingAgents, or LLMs.
+  - Blocked actionability gates optional interpretation and blocks polished report composition; manual-confirmation-required gates report composition.
+  - Added `backend/app/services/agents/context_envelopes.py` with explicit envelopes for private portfolio-safe context, deterministic review context, actionability context, public evidence context, LLM/explanation context, and report composition context.
+  - Public evidence and LLM/explanation envelopes reject forbidden private fields recursively; actionability envelopes preserve separate `broker_snapshot` and `market_quotes` metadata.
+  - Extended `backend/app/services/privacy.py` with `FORBIDDEN_PRIVATE_CONTEXT_KEYS` and `find_forbidden_keys(...)` for shared recursive envelope guards.
+  - Added exports from `backend/app/services/agents/__init__.py`.
+  - Added `backend/tests/services/agents/test_orchestrator_contract.py` and `backend/tests/services/agents/test_context_envelopes.py`.
+  - Focused run: `cd backend && ./.venv/bin/python -m pytest tests/services/agents/test_orchestrator_contract.py tests/services/agents/test_context_envelopes.py` -> `12 passed in 0.06s`.
+  - Full backend run: `cd backend && ./.venv/bin/python -m pytest` -> `375 passed, 92 skipped, 1 deselected in 0.81s`; DB-backed tests skipped because the configured database was unavailable or not marked safe for destructive tests.
+  - No frontend, route, database persistence, migration, TradingAgents import, real provider call, LLM call, or broker action was added.
+
+### P16B-T2 - orchestrator service skeleton and stage execution
+
+- Task id: `P16B-T2`
+- Title: orchestrator service skeleton and stage execution
+- Objective: Implement the backend orchestrator service that runs Phase 16A components in the approved stage order with synthetic inputs.
+- Files expected to change:
+  - `backend/app/services/agents/orchestrator.py`
+  - `backend/app/services/agents/context_envelopes.py`
+  - `backend/tests/services/agents/test_orchestrator.py`
+  - `backend/tests/services/agents/test_context_envelopes.py`
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P16B-T1`
+- Implementation steps:
+  1. Add role/stage enums or equivalents.
+  2. Execute the deterministic Phase 16A components in approved order.
+  3. Enforce the Portfolio Snapshot Actionability Policy before explanation/report stages.
+  4. Keep research and LLM stages mocked/unavailable by default.
+- Acceptance criteria:
+  - Orchestrator can produce deterministic output with no real market provider, LLM, or TradingAgents calls.
+  - Actionability gates cannot be bypassed.
+  - Forbidden private fields are excluded from public/LLM-bound envelopes.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest tests/services/agents/test_orchestrator.py tests/services/agents/test_context_envelopes.py`
+  - `cd backend && ./.venv/bin/python -m pytest`
+- Rollback notes:
+  - Remove orchestrator/context envelope files and tests.
+- Status: `done`
+- Verification notes:
+  - Extended `backend/app/services/agents/orchestrator.py` with `PortfolioAgentTeamOrchestrator`, `AgentTeamOrchestrationResult`, and `AgentTeamStageOutput`.
+  - The orchestrator runs Phase 16A components in the approved order: portfolio context, trade review explanation, freshness guardrail, and report composer when actionability permits.
+  - `PortfolioActionabilityDecision` is consumed as the single actionability gate; the orchestrator does not re-infer broker or market freshness.
+  - `resolve_market_snapshot`, `retrieve_public_research_evidence`, and `run_optional_interpretation` remain explicit `unavailable` or `gated` stages by default; no real market provider, public research provider, TradingAgents import, or LLM call was added.
+  - Blocked actionability still runs deterministic guardrails and stage mapping, but blocks polished report composition; manual-confirmation-required gates report composition.
+  - Added `backend/tests/services/agents/test_orchestrator.py` with synthetic tests for exact stage order execution, unavailable optional stages, blocked-actionability behavior, freshness separation, and forbidden private-field exclusion from output snapshots.
+  - Updated `backend/app/services/agents/__init__.py` exports for the executable orchestrator/result/stage-output contracts.
+  - Focused run: `cd backend && ./.venv/bin/python -m pytest tests/services/agents/test_orchestrator.py tests/services/agents/test_context_envelopes.py` -> `11 passed in 0.08s`.
+  - Contract + execution run: `cd backend && ./.venv/bin/python -m pytest tests/services/agents/test_orchestrator_contract.py tests/services/agents/test_orchestrator.py tests/services/agents/test_context_envelopes.py` -> `18 passed in 0.07s`.
+  - Full backend run: `cd backend && ./.venv/bin/python -m pytest` -> `381 passed, 92 skipped, 1 deselected in 0.64s`; DB-backed tests skipped because the configured database was unavailable or not marked safe for destructive tests.
+
+### P16B-T3 - run/step persistence mapping and fallback behavior
+
+- Task id: `P16B-T3`
+- Title: run/step persistence mapping and fallback behavior
+- Objective: Map orchestrator outputs to existing agent run/step/report persistence contracts and define safe fallbacks.
+- Files expected to change:
+  - `backend/app/services/agents/orchestrator.py`
+  - `backend/app/schemas/agent_runs.py` if needed
+  - `backend/tests/services/agents/test_orchestrator.py`
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P16B-T2`
+- Implementation steps:
+  1. Map each stage to an agent step payload that excludes forbidden fields.
+  2. Preserve calculation version, policy decision, freshness snapshots, and source agent names.
+  3. Emit explicit unavailable states when research, real market providers, TradingAgents, or LLMs are not available.
+  4. Do not add external API calls.
+- Acceptance criteria:
+  - Outputs can be persisted or passed to existing report-history contracts without raw private data.
+  - Missing optional research/LLM/provider stages degrade to deterministic report, analysis-only, or blocked state as appropriate.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest tests/services/agents/test_orchestrator.py`
+  - `cd backend && ./.venv/bin/python -m pytest`
+- Rollback notes:
+  - Revert persistence mapping changes.
+- Status: `done`
+- Verification notes:
+  - Added pure mapping methods only; no database persistence, route, migration, or background worker was introduced.
+  - `AgentTeamStageOutput.to_agent_step_create(...)` maps each workflow stage to existing `AgentStepCreate` with step order, step key, execution mode, mapped status, input snapshot, output snapshot, calculation version, and freshness snapshot.
+  - `AgentTeamOrchestrationResult.to_agent_run_create(...)` maps the run to existing `AgentRunCreate` with `run_type="portfolio_agent_team"`, `provider="deterministic_backend"`, no model, zero token/cost budgets, deterministic calculation version, summary output snapshot, and separate broker/market freshness snapshot.
+  - `AgentTeamOrchestrationResult.to_report_message_create(...)` delegates to the existing report composer only when report composition is actionability-permitted; blocked/gated runs return `None`.
+  - Stage statuses degrade safely: unavailable optional provider/research/LLM stages map to skipped steps, blocked report composition maps to a partially completed run, and deterministic guardrail/persistence-mapping stages still complete.
+  - Output snapshot tests assert no forbidden private broker/account/secrets/cash/raw-provider keys are present in run summaries or step input/output/freshness snapshots.
+  - No change to `backend/app/schemas/agent_runs.py` was needed; existing `AgentRunCreate` and `AgentStepCreate` fields are sufficient for this non-persistent mapping.
+  - Focused run: `cd backend && ./.venv/bin/python -m pytest tests/services/agents/test_orchestrator.py` -> `6 passed in 0.07s`.
+  - Full backend run: `cd backend && ./.venv/bin/python -m pytest` -> `381 passed, 92 skipped, 1 deselected in 0.64s`; DB-backed tests skipped because the configured database was unavailable or not marked safe for destructive tests.
+
+### P16B-T4 - Codex integration review for Phase 16B
+
+- Task id: `P16B-T4`
+- Title: Codex integration review for Phase 16B
+- Objective: Verify the app-owned agent-team orchestrator before Phase 17 public evidence work and Phase 18 frontend exposure.
+- Files expected to change:
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P16B-T3`
+- Implementation steps:
+  1. Run backend tests.
+  2. Confirm stage order, actionability gating, context envelopes, and persistence mapping.
+  3. Confirm no raw private brokerage data enters public evidence, LLM, or TradingAgents-bound contexts.
+- Acceptance criteria:
+  - Phase 16 can be called complete only after this review passes or PM/Architecture explicitly defer 16B.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest`
+- Rollback notes:
+  - Reopen P16B-T2/P16B-T3 if integration issues are found.
+- Status: `done`
+- Blocker remediation notes:
+  - Codex B review blocked P16B because `make_context_envelope(...)` rejected forbidden payload keys but did not reject role/privacy mismatches; specifically, a `private_portfolio_safe_context` could be addressed to `tradingagents_public_research_adapter`.
+  - Added `backend/app/services/agents/roles.py` as the shared role vocabulary/privacy-policy module to avoid a `context_envelopes.py` -> `orchestrator.py` import cycle.
+  - `make_context_envelope(...)` now validates `allowed_role_names` against envelope type before constructing any envelope.
+  - Public/future roles (`market_data_agent`, `news_research_evidence_agent`, `bull_case_agent`, `bear_case_agent`, `tradingagents_public_research_adapter`) are rejected for private/non-public envelope types: `private_portfolio_safe_context`, `deterministic_review_context`, `actionability_context`, and `report_composition_context`.
+  - Public/LLM-safe envelopes still accept appropriate future roles with synthetic public payloads: `public_evidence_context` accepts public evidence/TradingAgents-bound roles, and `llm_explanation_context` accepts bull/bear roles.
+  - Regression tests prove the exact blocker case now fails: `private_portfolio_safe_context` addressed to `tradingagents_public_research_adapter` raises `ValueError`.
+  - Existing recursive forbidden-field checks still reject private broker/account/secrets/cash/raw-provider fields.
+  - Small traceability cleanup accepted: `validate_trade_intent` now emits validation-shaped output from `TradeIntentValidationResult`, while `run_deterministic_review` emits deterministic review/projection metadata; both still remain sanitized.
+  - Focused remediation run: `cd backend && ./.venv/bin/python -m pytest tests/services/agents/test_context_envelopes.py tests/services/agents/test_orchestrator_contract.py tests/services/agents/test_orchestrator.py -q` -> `36 passed in 0.11s`.
+  - Broader Phase 16/trade-review run: `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_actionability.py tests/services/agents/ -q` -> `79 passed in 0.15s`.
+  - Full backend run: `cd backend && ./.venv/bin/python -m pytest -q` -> `399 passed, 92 skipped, 1 deselected in 0.80s`; DB-backed tests skipped because the configured database was unavailable or not marked safe for destructive tests.
+  - `git diff --check` passed.
+  - Recommendation: P16B is ready for Codex B P16B-T4 re-review; no frontend, route, DB persistence, migration, TradingAgents import, real market provider, LLM call, or broker action was added.
+- Verification notes:
+  - Codex B re-review verdict: `PASS`; original role/context compatibility blocker resolved.
+  - `backend/app/services/agents/roles.py` centralizes role groups and envelope compatibility policy, and `make_context_envelope(...)` enforces that policy before envelope construction.
+  - Confirmed public evidence and TradingAgents-bound roles cannot receive private, deterministic, actionability, or report-composition envelopes by default; public and LLM-safe envelopes remain usable for future public research/debate roles.
+  - Confirmed orchestrator-created envelopes preserve exact stage order, actionability gate semantics, broker/market freshness separation, and sanitized run/step persistence mapping.
+  - Deferred note: before real Market Data Agent work, align `resolve_market_snapshot` envelope metadata with a public/sanitized market quote context or a new `market_quote_context` envelope type.
+  - Phase 16B accepted as complete; Phase 17 may start.

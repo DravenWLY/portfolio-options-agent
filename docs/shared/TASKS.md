@@ -4,9 +4,10 @@ This file is a lightweight task index. The detailed task specs remain in `docs/s
 
 ## Current State
 
-- Completed foundation: Phases 1-15.
-- Active roadmap phase: Phase 16 - Custom Portfolio-Aware Agent Orchestrator.
-- Immediate safety concern before deeper agent work: broker portfolio snapshot freshness/actionability must be explicit before polished account-specific agent outputs sound current.
+- Completed foundation: Phases 1-16.
+- Active roadmap phase: Phase 17 - TradingAgents/Public Research Evidence Adapter.
+- Current safety foundation: broker portfolio snapshot freshness/actionability is explicit, Phase 16 agent components consume it, and Phase 16B enforces private/public context boundaries.
+- Current architecture concern: Phase 17 must remain optional public ticker/company evidence only, not the portfolio-aware decision engine.
 
 ## Current Primary Owners
 
@@ -23,10 +24,10 @@ This file is a lightweight task index. The detailed task specs remain in `docs/s
 
 Do not treat this list as authorization to implement. Each item needs an approved task spec before code changes.
 
-1. Architecture pass: add ADRs for broker freshness/actionability, agent-safe projections, and TradingAgents-as-async-evidence.
-2. Backend: implement a Portfolio Snapshot Actionability Policy before Phase 16 agents produce polished account-specific outputs.
-3. Backend: continue Phase 16 only after the actionability gate is accepted.
-4. Frontend: wait for backend agent contracts before building the trade-review workspace.
+1. Backend: start Phase 17 optional dependency detection for TradingAgents/Public Research Evidence Adapter.
+2. Backend: keep Phase 17 public ticker/company evidence only; do not send private portfolio context to TradingAgents or public evidence roles.
+3. Frontend: wait for safe read schema and Phase 17 evidence contracts before rich research/debate UI; the first trade-review workspace can consume completed Phase 16 outputs.
+4. Market data: keep real provider integration deferred for local MVP; plan Tradier REST snapshots before external paid beta or quote-current options review.
 5. Security: formalize broker-data handling policy before any hosted deployment.
 
 ## Routine Task Checklist

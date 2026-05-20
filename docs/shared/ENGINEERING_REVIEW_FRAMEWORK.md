@@ -10,7 +10,7 @@ This framework is the project-wide quality bar for turning Portfolio Copilot int
 
 Use it to keep each change aligned with the product thesis:
 
-Portfolio Copilot is a read-only, portfolio-aware trade review and risk copilot for manual investors. It must not drift into automated trading, broker scraping, generic market-data viewing, options-income screening, AI stock picking, or a thin TradingAgents wrapper.
+Portfolio Copilot is a TradingAgents-inspired, read-only, portfolio-aware trade review agent team for manual investors. TradingAgents-inspired does not mean TradingAgents-centered: the product center remains broker-aware `TradeIntent` review. It must not drift into automated trading, broker scraping, generic market-data viewing, options-income screening, AI stock picking, or a thin TradingAgents wrapper.
 
 ## How To Apply
 

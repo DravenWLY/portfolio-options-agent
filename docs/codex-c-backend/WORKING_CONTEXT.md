@@ -4,11 +4,11 @@ Use this file as the short backend implementation context before starting work. 
 
 ## Current Active Phase
 
-Phase 16 - Custom Portfolio-Aware Agent Orchestrator.
+Phase 17 - TradingAgents/Public Research Evidence Adapter.
 
-Goal: build workflow-first, deterministic-first agents that consume structured trade-review outputs and optionally ask an LLM to explain, summarize, or debate already-computed facts.
+Phase 17 goal: add optional public ticker/company research evidence plumbing without making TradingAgents the portfolio-aware decision engine.
 
-Important near-term architecture concern: before agents produce polished account-specific outputs, broker portfolio snapshot freshness/actionability should be explicit. Fresh market quotes plus stale broker holdings can create confidently wrong cash, collateral, coverage, assignment, concentration, or allocation conclusions.
+Important architecture concern: Phase 17 must remain optional, async, public-evidence-only, and absent from the fast deterministic trade-review path. Do not send raw holdings, account values, cash, broker account ids, provider ids, trade journal entries, account-specific thresholds, or other private portfolio context to TradingAgents/public evidence roles by default.
 
 ## Current Backend Foundation
 
@@ -32,6 +32,7 @@ Implemented:
 - Generic option/risk services.
 - TradeIntent foundation for stock, ETF, and options intents.
 - Deterministic trade-review engine with payoff, portfolio impact, risk integration, strategy wrappers, deterministic report, and agent-safe projection.
+- Phase 16 deterministic agent components and portfolio-aware agent-team orchestrator with actionability enforcement, context envelopes, run/step mapping, privacy-safe fallbacks, and no TradingAgents/LLM/provider calls by default.
 
 ## Implementation Rules
 
@@ -69,12 +70,12 @@ Delivered:
 
 Not included (deferred to later phases): market quote UI, option screener, TradingAgents UI, trade execution UI.
 
-## Phase 16 Scope
+## Phase 17 Scope
 
-- Custom agents consume structured deterministic outputs; they do not compute metrics from scratch.
-- LLM boundary remains mocked by default.
-- Use Phase 15's agent-safe projection for trade-review outputs by default.
-- No private brokerage data is sent to LLMs by default.
-- TradingAgents remains out of the fast path.
+- Detect optional TradingAgents availability lazily; app features must work without it installed.
+- Define public ticker/company research interfaces and mocked parsers only.
+- Keep account-level portfolio, collateral, option-risk, actionability, and final conclusions owned by app services and Phase 16 orchestrator outputs.
+- Send only sanitized public research context where possible.
+- Do not import TradingAgents during FastAPI startup.
 
-Not in Phase 16: TradingAgents integration, frontend trade-review workspace, real market provider integration, broker order execution, automatic trading, or trade execution UI.
+Not in Phase 17: frontend trade-review workspace, real market provider integration, broker order execution, automatic trading, trade execution UI, or private portfolio context in public evidence prompts/cache keys.

@@ -10,27 +10,10 @@ from app.services.risk.allocation import AllocationImpact
 from app.services.risk.assignment import AssignmentProjection
 from app.services.risk.collateral import CollateralSummary
 from app.services.risk.violations import RISK_SEVERITIES, RiskRuleViolation, RiskSeverity
+from app.services.privacy import FORBIDDEN_REPORT_FACT_KEYS
 
 
 RiskFactValue = Decimal | str | int | None
-
-FORBIDDEN_REPORT_FACT_KEYS = {
-    "account_id",
-    "broker_account_id",
-    "broker_connection_id",
-    "cash_balance_id",
-    "provider_account_id",
-    "provider_connection_id",
-    "total_cash",
-    "available_cash",
-    "buying_power",
-    "positions",
-    "holdings",
-    "secret_ref",
-    "encrypted_secret_ref",
-    "raw_payload",
-    "raw_metadata",
-}
 
 
 @dataclass(frozen=True)

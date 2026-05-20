@@ -1,6 +1,6 @@
 # Implementation Plan
 
-Active and future implementation tasks only. Completed Phase 1-15 history lives in `docs/shared/completed_phases_log.md`. High-level review context lives in `docs/shared/current_roadmap.md`; role-specific briefs live in the agent folders under `docs/`.
+Active and future implementation tasks only. Completed Phase 1-16 history lives in `docs/shared/completed_phases_log.md`. High-level review context lives in `docs/shared/current_roadmap.md`; role-specific briefs live in the agent folders under `docs/`.
 
 Default reading rule: load this file for the current phase and next phase only. Avoid loading `docs/shared/completed_phases_log.md` unless a task explicitly needs historical verification details.
 
@@ -27,145 +27,9 @@ surface for the completed capability. Every frontend slice must stay read-only,
 show loading/empty/error/stale states, and distinguish broker freshness from
 market quote freshness.
 
-## Phase 16 - Custom Portfolio-Aware Agent Orchestrator
+## Phase 17 - TradingAgents/Public Research Evidence Adapter
 
-Phase goal: build workflow-first, deterministic-first agents that consume structured trade-review outputs and optionally ask an LLM to explain, summarize, or debate already-computed facts. Agents must not compute financial metrics from scratch and must not receive raw brokerage data by default.
-
-### P16-T1 - Portfolio Context Agent
-
-- Task id: `P16-T1`
-- Title: Portfolio Context Agent
-- Objective: Load approved user/account context, holdings summaries, freshness metadata, and report history references.
-- Files expected to change:
-  - `backend/app/services/agents/portfolio_context.py`
-  - `backend/tests/services/agents/test_portfolio_context.py`
-  - `docs/shared/implementation_plan.md`
-- Dependencies: `P15-T7`
-- Implementation steps:
-  1. Build structured context from existing backend services.
-  2. Include freshness and snapshot metadata.
-  3. Exclude secrets, provider ids, account numbers, raw payloads, and unnecessary brokerage details from any LLM-bound payload.
-- Acceptance criteria:
-  - Agent output is structured and deterministic.
-  - No private brokerage data is sent to LLMs by default.
-- Tests to run:
-  - `cd backend && ./.venv/bin/python -m pytest`
-- Rollback notes:
-  - Remove agent and tests.
-- Status: `not_started`
-
-### P16-T2 - Trade Review Agent
-
-- Task id: `P16-T2`
-- Title: Trade Review Agent
-- Objective: Explain deterministic trade-review outputs without inventing metrics or making buy/sell recommendations.
-- Files expected to change:
-  - `backend/app/services/agents/trade_review.py`
-  - `backend/tests/services/agents/test_trade_review.py`
-  - `docs/shared/implementation_plan.md`
-- Dependencies: `P16-T1`
-- Implementation steps:
-  1. Consume deterministic trade-review report outputs.
-  2. Explain scenario tradeoffs, blockers, and open questions.
-  3. Mock LLM explanation boundary by default.
-- Acceptance criteria:
-  - Agent never computes financial metrics from scratch.
-  - Agent avoids "you should buy/sell" wording.
-- Tests to run:
-  - `cd backend && ./.venv/bin/python -m pytest`
-- Rollback notes:
-  - Remove agent and tests.
-- Status: `not_started`
-
-### P16-T3 - Freshness/Guardrail Agent
-
-- Task id: `P16-T3`
-- Title: Freshness/Guardrail Agent
-- Objective: Prevent stale broker or market inputs from being presented as immediately actionable.
-- Files expected to change:
-  - `backend/app/services/agents/freshness_guardrail.py`
-  - `backend/tests/services/agents/test_freshness_guardrail.py`
-  - `docs/shared/implementation_plan.md`
-- Dependencies: `P16-T2`
-- Implementation steps:
-  1. Review broker freshness and market quote freshness separately.
-  2. Emit guardrail decisions for stale/unknown/error data.
-  3. Persist guardrail outputs to agent steps.
-- Acceptance criteria:
-  - Stale data cannot be labeled immediately actionable.
-  - Broker freshness and quote freshness remain distinct.
-- Tests to run:
-  - `cd backend && ./.venv/bin/python -m pytest`
-- Rollback notes:
-  - Remove agent and tests.
-- Status: `not_started`
-
-### P16-T4 - Report Composer Agent
-
-- Task id: `P16-T4`
-- Title: Report Composer Agent
-- Objective: Compose deterministic trade-review outputs and approved agent explanations into a durable markdown report.
-- Files expected to change:
-  - `backend/app/services/agents/report_composer.py`
-  - `backend/tests/services/agents/test_report_composer.py`
-  - `docs/shared/implementation_plan.md`
-- Dependencies: `P16-T3`
-- Implementation steps:
-  1. Combine structured outputs from prior agents.
-  2. Mark deterministic calculations separately from LLM-generated text.
-  3. Persist the final markdown report to report history.
-- Acceptance criteria:
-  - Report is traceable to agent steps and deterministic inputs.
-  - LLM boundary remains mocked by default.
-- Tests to run:
-  - `cd backend && ./.venv/bin/python -m pytest`
-- Rollback notes:
-  - Remove agent and tests.
-- Status: `not_started`
-
-### P16-T5 - Claude review of custom agent outputs
-
-- Task id: `P16-T5`
-- Title: Claude review of custom agent outputs
-- Objective: Review custom-agent output contracts, report messages, and frontend implications before building the first trade-review workspace UI.
-- Files expected to change:
-  - `docs/shared/implementation_plan.md`
-- Dependencies: `P16-T4`
-- Implementation steps:
-  1. Generate a focused Claude handoff prompt limited to custom agent outputs, report/agent history schemas, tests, and this plan section.
-  2. Use Sonnet for UX/copy review; use Opus only for high-risk agent safety or financial reasoning disputes.
-  3. Confirm deterministic calculations are visually and semantically separated from LLM-generated text.
-- Acceptance criteria:
-  - Agent/report output is reviewable before adding UI.
-- Tests to run:
-  - Documentation/review task only; no tests unless fixes are accepted.
-- Rollback notes:
-  - Remove review notes if superseded.
-- Status: `not_started`
-
-### P16-T6 - Codex integration review for Phase 16
-
-- Task id: `P16-T6`
-- Title: Codex integration review for Phase 16
-- Objective: Verify custom-agent backend outputs before frontend workspace and TradingAgents evidence work.
-- Files expected to change:
-  - `docs/shared/implementation_plan.md`
-- Dependencies: `P16-T5`
-- Implementation steps:
-  1. Run backend tests.
-  2. Confirm agents consume persisted deterministic outputs rather than recomputing or inventing metrics.
-  3. Confirm TradingAgents remains absent from the fast path.
-- Acceptance criteria:
-  - Phase 16 ships as a deterministic-first custom-agent foundation.
-- Tests to run:
-  - `cd backend && ./.venv/bin/python -m pytest`
-- Rollback notes:
-  - Reopen P16-T5 if integration issues are found.
-- Status: `not_started`
-
-## Phase 17 - TradingAgents Adapter as Async Research Evidence
-
-Phase goal: integrate TradingAgents only as optional asynchronous stock/company research evidence. TradingAgents must stay out of the fast trade-review path and must not receive user brokerage holdings, account values, cash, broker account ids, trade journal entries, or account-specific risk thresholds by default.
+Phase goal: integrate TradingAgents and/or other public research sources only as optional asynchronous public stock/company research evidence. TradingAgents must stay out of the fast trade-review path, must not become the portfolio-aware decision engine, and must not receive user brokerage holdings, account values, cash, broker account ids, trade journal entries, or account-specific risk thresholds by default.
 
 ### P17-T1 - optional dependency detection
 
@@ -176,7 +40,7 @@ Phase goal: integrate TradingAgents only as optional asynchronous stock/company 
   - `backend/app/services/tradingagents_adapter/dependency.py`
   - `backend/tests/services/test_tradingagents_dependency.py`
   - `docs/shared/implementation_plan.md`
-- Dependencies: `P16-T6`
+- Dependencies: `P16B-T4`
 - Implementation steps:
   1. Add lazy import detection.
   2. Return actionable install instructions when missing.
@@ -194,7 +58,7 @@ Phase goal: integrate TradingAgents only as optional asynchronous stock/company 
 
 - Task id: `P17-T2`
 - Title: async research evidence interface
-- Objective: Define clean methods for ticker/company research that can run asynchronously and attach evidence to reports later.
+- Objective: Define clean methods for public ticker/company research that can run asynchronously and attach evidence to reports later.
 - Files expected to change:
   - `backend/app/services/tradingagents_adapter/interfaces.py`
   - `backend/tests/services/test_tradingagents_interface.py`
@@ -202,10 +66,10 @@ Phase goal: integrate TradingAgents only as optional asynchronous stock/company 
 - Dependencies: `P17-T1`
 - Implementation steps:
   1. Add methods such as `request_stock_research`, `get_research_status`, `parse_agent_outputs`, and `map_to_report_thread`.
-  2. Keep account-level portfolio/risk decisions outside TradingAgents.
+  2. Keep account-level portfolio/risk decisions outside TradingAgents and other public evidence adapters.
   3. Send only ticker/public company research context where possible.
 - Acceptance criteria:
-  - Interface is stock/company research evidence only.
+  - Interface is public stock/company research evidence only.
   - No TradingAgents source code is copied.
   - Research is optional and asynchronous.
 - Tests to run:
@@ -252,7 +116,7 @@ Phase goal: integrate TradingAgents only as optional asynchronous stock/company 
 - Implementation steps:
   1. Define a safe mocked output shape.
   2. Parse research sections, debate outputs, and final proposal text.
-  3. Sanitize and tag output as stock/company research evidence.
+  3. Sanitize and tag output as public stock/company research evidence.
   4. Keep final portfolio-aware conclusion owned by custom agents and deterministic services.
 - Acceptance criteria:
   - Parser works with mocked outputs only.
@@ -263,20 +127,20 @@ Phase goal: integrate TradingAgents only as optional asynchronous stock/company 
   - Remove parser/mapping service and tests.
 - Status: `not_started`
 
-### P17-T5 - Claude review of TradingAgents evidence boundary
+### P17-T5 - Claude review of public research evidence boundary
 
 - Task id: `P17-T5`
-- Title: Claude review of TradingAgents evidence boundary
-- Objective: Review the TradingAgents adapter outputs and UI implications before exposing stock/company research evidence in the frontend.
+- Title: Claude review of public research evidence boundary
+- Objective: Review the TradingAgents/public evidence adapter outputs and UI implications before exposing stock/company research evidence in the frontend.
 - Files expected to change:
   - `docs/shared/implementation_plan.md`
 - Dependencies: `P17-T4`
 - Implementation steps:
   1. Generate a focused Claude handoff prompt limited to TradingAgents adapter outputs, report mappings, tests, and this plan section.
-  2. Confirm TradingAgents is labeled as stock/company research evidence only.
+  2. Confirm TradingAgents is labeled as public stock/company research evidence only.
   3. Confirm account-level portfolio, collateral, option-risk, and final conclusions remain owned by custom agents and deterministic services.
 - Acceptance criteria:
-  - TradingAgents output cannot be mistaken for final portfolio-aware advice.
+  - Public research evidence cannot be mistaken for final portfolio-aware advice.
 - Tests to run:
   - Documentation/review task only; no tests unless fixes are accepted.
 - Rollback notes:
@@ -287,16 +151,16 @@ Phase goal: integrate TradingAgents only as optional asynchronous stock/company 
 
 - Task id: `P17-T6`
 - Title: Codex integration review for Phase 17
-- Objective: Verify TradingAgents adapter outputs preserve the async evidence boundary before frontend exposure.
+- Objective: Verify TradingAgents/public evidence adapter outputs preserve the async evidence boundary before frontend exposure.
 - Files expected to change:
   - `docs/shared/implementation_plan.md`
 - Dependencies: `P17-T5`
 - Implementation steps:
   1. Run backend tests.
-  2. Confirm TradingAgents adapter remains optional, async, and stock/company research only.
+  2. Confirm TradingAgents/public evidence adapters remain optional, async, and public stock/company research only.
   3. Confirm no private brokerage context enters mocked prompts or cache keys.
 - Acceptance criteria:
-  - TradingAgents integration is optional evidence, not the center of the product.
+  - TradingAgents/public research integration is optional evidence, not the center of the product.
   - Deterministic trade review works without TradingAgents installed.
 - Tests to run:
   - `cd backend && ./.venv/bin/python -m pytest`
@@ -306,7 +170,7 @@ Phase goal: integrate TradingAgents only as optional asynchronous stock/company 
 
 ## Phase 18 - Frontend Trade Review Workspace
 
-Phase goal: add the first user-facing trade review workspace for proposed stock, ETF, and options trades after the backend trade-review and custom-agent contracts are stable.
+Phase goal: add the first user-facing trade review workspace for proposed stock, ETF, and options trades after the backend trade-review, Phase 16A deterministic components, and Phase 16B orchestration contract are stable. Rich research/debate UI waits for Phase 17 contracts.
 
 ### P18-T1 - New Trade Review workspace shell
 
@@ -317,7 +181,7 @@ Phase goal: add the first user-facing trade review workspace for proposed stock,
   - `frontend/src/*`
   - `frontend/README.md`
   - `docs/shared/implementation_plan.md`
-- Dependencies: `P17-T6`
+- Dependencies: `P16A-T6`, `P16B-T1`
 - Implementation steps:
   1. Ask Claude Sonnet to design and implement a New Trade Review workspace using `frontend-design` and `finance-dashboard-ux-review`.
   2. Support stock, ETF, and option intent entry using synthetic/local-safe states.
@@ -325,6 +189,9 @@ Phase goal: add the first user-facing trade review workspace for proposed stock,
 - Acceptance criteria:
   - UI supports trade review without broker order execution.
   - No "you should buy/sell", guaranteed-return, or automated-management language.
+  - A typed sanitized trade-review read schema and forbidden-field tests exist before frontend consumes backend data.
+  - Coverage/collateral netting is either implemented or visibly caveated.
+  - Real market data is not required for local MVP demo; if the UI implies quote-current options review for external beta, a real REST snapshot provider is required first.
 - Tests to run:
   - `cd frontend && npm run typecheck`
   - `cd frontend && npm run lint`
@@ -362,18 +229,18 @@ Phase goal: add the first user-facing trade review workspace for proposed stock,
 
 - Task id: `P18-T3`
 - Title: optional research evidence display
-- Objective: Display cached or async TradingAgents stock/company research as evidence when available.
+- Objective: Display cached or async public stock/company research as evidence when available.
 - Files expected to change:
   - `frontend/src/*`
   - `frontend/README.md`
   - `docs/shared/implementation_plan.md`
-- Dependencies: `P18-T2`
+- Dependencies: `P18-T2`, `P17-T6`
 - Implementation steps:
   1. Render research evidence as optional and subordinate to deterministic review.
   2. Show pending, unavailable, stale, and budget-required states.
   3. Do not present research output as final portfolio-aware advice.
 - Acceptance criteria:
-  - TradingAgents evidence is visually separate from deterministic trade-review conclusions.
+  - TradingAgents/public research evidence is visually separate from deterministic trade-review conclusions.
   - Missing TradingAgents dependency is a graceful UI state.
 - Tests to run:
   - `cd frontend && npm run typecheck`

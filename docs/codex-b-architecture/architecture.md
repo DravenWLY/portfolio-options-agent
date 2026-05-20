@@ -2,7 +2,7 @@
 
 Status: design document only. No business logic, database code, frontend code, or TradingAgents changes are authorized by this document.
 
-This repository is intended to become a professional full-stack portfolio-aware trade review and risk copilot for manual investors. It should combine portfolio data, market context, deterministic risk calculations, trade-intent review, optional research evidence, custom portfolio-aware agents, and durable report history into manual decision support. The dashboard is the cockpit, not the whole product. SnapTrade, market data providers, and TradingAgents are inputs/components, not the center of the system.
+This repository is intended to become a professional full-stack TradingAgents-inspired, portfolio-aware trade review agent team for manual investors. It should combine portfolio data, market context, deterministic risk calculations, trade-intent review, optional public research evidence, custom portfolio-aware agents, and durable report history into manual decision support. TradingAgents-inspired does not mean TradingAgents-centered: the product center remains broker-aware `TradeIntent` review. The dashboard is the cockpit, not the whole product. SnapTrade, market data providers, and TradingAgents are inputs/components, not the center of the system.
 
 For context-efficient daily work, read `docs/shared/current_roadmap.md` first. Use `docs/shared/implementation_plan.md` for active and future tasks, `docs/shared/completed_phases_log.md` for archived verification history, and the role-specific folders under `docs/` for short Codex/Claude handoff briefs.
 
@@ -10,21 +10,22 @@ This is not financial advice. This project must not execute trades, store broker
 
 ## Product North Star
 
-The product north star is a portfolio-aware trade review and risk copilot for manual investors:
+The product north star is a TradingAgents-inspired, portfolio-aware trade review agent team for manual investors:
 
 ```text
 portfolio system of record
 + market data context
 + proposed stock / ETF / option TradeIntent
 + deterministic trade-review and risk calculations
-+ optional TradingAgents stock/company research
++ optional public stock/company research evidence
++ app-owned portfolio-aware agent team
 + durable report and agent history
 = manual trade review and decision support
 ```
 
 Before a user manually places a stock, ETF, or options trade, the system should help them understand how the proposed action affects portfolio context, cash, collateral, exposures, data freshness, and risk rules. It must not become only a SnapTrade dashboard, market data viewer, option-chain browser, wheel-strategy app, options-income app, CSP/covered-call screener, AI stock picker, automated trading system, or thin TradingAgents wrapper.
 
-The core boundary remains: Python calculates financial metrics; LLMs explain structured results, compare tradeoffs, and compose reports.
+The core boundary remains: Python calculates financial metrics; LLMs explain structured results, compare tradeoffs, and compose reports. TradingAgents-style research/debate can inspire the workflow, but app-owned deterministic services and actionability policy remain authoritative.
 
 Options remain the strongest wedge because option trades make portfolio impact, collateral, assignment, payoff, and data-freshness issues obvious. Covered calls and cash-secured puts are early high-value workflows, not the product identity. Long calls, long puts, stock buys/sells, ETF trades, collars, spreads, hedges, and future multi-leg strategies should fit the same trade-review architecture.
 
@@ -44,7 +45,8 @@ The core abstraction is `TradeIntent`, not wheel, CSP, or covered call. Core sys
 | Report and agent foundation | Build durable `report_threads`, `report_messages`, `agent_runs`, and `agent_steps` before TradingAgents integration | All future deterministic reports, custom agents, and TradingAgents outputs need a traceable home. |
 | Market data layer | Provider-agnostic interfaces and a manual/mock provider before real provider integration | Do not couple Fidelity account management to quote data. Every quote must carry provider, timestamp, and freshness. |
 | Broker portfolio sync | SnapTrade read-only as the primary broker portfolio sync path; manual input and Fidelity CSV import remain backup/fallback paths; long-term Akoya/Fidelity Access style permissioned data; Plaid Investments as fallback where coverage fits | Fidelity does not provide a simple public retail API. Broker holdings/cash freshness must be tracked separately from market quote freshness. No scraping, broker passwords, MFA bypass, or trading/order endpoints. |
-| TradingAgents integration | Optional dependency + adapter fallback after report/agent persistence exists. Local editable install for development; pinned Git/package extra for public users; no source copy, no submodule. | TradingAgents is a stock/company research evidence stream, not the account-level decision engine. |
+| Agent team orchestration | Split Phase 16 into 16A deterministic components and 16B portfolio-aware team orchestration | Current deterministic agents are a foundation; the actual agent-team workflow needs explicit stage order, context envelopes, run/step persistence, fallbacks, and actionability enforcement. |
+| TradingAgents integration | Optional dependency + adapter fallback after report/agent persistence exists. Local editable install for development; pinned Git/package extra for public users; no source copy, no submodule. | TradingAgents is a public stock/company research evidence stream, not the account-level decision engine. |
 | MVP | Multi-user/multi-account portfolio system of record + broker freshness + manual/CSV fallback + report/agent history + deterministic trade-review/risk analytics + thin review workspace | Small enough to build, strong enough to demonstrate backend, fintech, data modeling, AI app engineering, and product judgment. |
 
 ## System Overview
@@ -88,8 +90,8 @@ flowchart TD
 3. **Trade Intent Review Layer** - `TradeIntent`, `StockTradeIntent`, `ETFTradeIntent`, `OptionStrategyIntent`, and `OptionLeg` capture what the user is considering before they manually act.
 4. **Deterministic Trade/Risk Engine** - strategy-agnostic stock/ETF/options metrics, payoff scenarios, collateral, free cash, assignment/exercise scenarios, allocation/concentration impact, deterministic reports, and `risk_rule_violations`.
 5. **Strategy Evaluator Layer** - plug-in deterministic wrappers such as stock buy/sell/trim, ETF review, long call, long put, cash-secured put, and covered call first, then protective puts, collars, vertical spreads, ETF overlays, and hedge analysis later. Wheel lifecycle is a composition of historical intents and strategy outputs, not the core architecture.
-6. **Custom Portfolio-Aware Agents** - Portfolio Context Agent, Trade Review Agent, Collateral & Assignment Risk Agent, Allocation Risk Agent, Freshness/Guardrail Agent, and Report Composer Agent. These agents consume structured deterministic outputs.
-7. **TradingAgents Adapter** - optional asynchronous stock/company research evidence stream for news, sentiment, fundamentals, and bull/bear debate. It does not own account-level risk decisions and is not in the fast path.
+6. **Custom Portfolio-Aware Agents** - Phase 16A deterministic components such as Portfolio Context, Trade Review, Freshness/Guardrail, and Report Composer; Phase 16B app-owned agent-team orchestration with explicit stage order and context boundaries. These agents consume structured deterministic outputs and approved evidence.
+7. **TradingAgents/Public Research Evidence Adapter** - optional asynchronous public stock/company research evidence stream for news, sentiment, fundamentals, and bull/bear debate. It does not own account-level risk decisions and is not in the fast path.
 8. **Dashboard and Report History** - frontend cockpit, report threads, report messages, agent runs, agent steps, markdown reports, journal links, and later agent run monitor/report detail pages.
 
 ## Trade Intent Review Architecture
@@ -1010,6 +1012,23 @@ Streaming policy:
 - Do not stream the entire option market.
 - Store only useful snapshots or downsampled events unless a user explicitly records a session.
 
+### Market Data Timing Decision
+
+Architecture decision: see `docs/codex-b-architecture/adr/0003-market-data-timing-tradier-rest-snapshots.md`.
+
+Real market-data provider integration is not required before the local MVP demo. Manual/mock market data remains acceptable when outputs are clearly labelled as manual, synthetic, delayed, stale, or analysis-only where appropriate.
+
+Real backend REST snapshot market data is required before external paid beta or any polished UI/report that implies quote-current options review. The preferred first real provider candidate is Tradier for backend-only REST snapshots:
+
+- quotes;
+- option expirations;
+- option chains;
+- Greeks/IV where available.
+
+Before purchase or public beta, re-verify current Tradier pricing, licensing, OPRA/data rights, plan requirements, quote freshness, Greeks/IV behavior, redistribution limits, and API capabilities from official provider documentation.
+
+WebSocket/streaming real-time market data is deferred to Phase 19+ or paid beta only if users prove the need. Do not build an option-chain browser, screener, or market-data terminal for MVP.
+
 ## Section K - Fidelity and Broker Data Import
 
 Do not assume Fidelity has a public retail API for individual developers. The current priority is SnapTrade-first broker portfolio sync, with manual input and Fidelity CSV import retained as backup/fallback paths.
@@ -1210,11 +1229,110 @@ Import workflow:
 9. Reconcile against current account state.
 10. Allow manual correction.
 
+## Section K2 - Portfolio Snapshot Actionability Policy
+
+Architecture decision: see `docs/codex-b-architecture/adr/0001-portfolio-snapshot-actionability-policy.md`.
+
+Purpose: create one backend-owned policy decision that tells trade-review services, agents, reports, and future frontend views how to treat a proposed review's data readiness. The decision prevents fresh market quotes from making stale or unknown broker holdings, cash, collateral, or option positions sound current.
+
+The policy is not a broker sync service, market-data provider, financial calculator, LLM prompt, or frontend copy system. It consumes already-available freshness/provenance metadata and returns a safe readiness contract.
+
+Inputs:
+
+- Broker snapshot freshness: broker/account snapshot status, source as-of timestamp, received timestamp, last successful sync timestamp, and sync status.
+- Market quote freshness: aggregate quote status for the required symbols/contracts, quote timestamp range, received timestamp range, data mode, and provider status.
+- Source/provenance: `snaptrade`, `manual`, `csv`, or `synthetic_mock`.
+- Provider status/errors: sanitized broker and market categories, retryability, and remediation hints.
+- Timestamp metadata: policy evaluation time, policy version, source as-of times, and internally computed ages.
+- Optional user confirmation: confirmation state, scope, actor user id, confirmed timestamp, and expiration timestamp.
+
+Accepted `review_actionability_status` vocabulary:
+
+- `normal_review`
+- `analysis_only`
+- `manual_confirmation_required`
+- `blocked_stale_broker_snapshot`
+- `blocked_stale_market_quote`
+- `blocked_unknown_freshness`
+- `blocked_provider_error`
+
+The output must also preserve separate nested `broker_snapshot` and `market_quotes` objects. Do not replace them with one combined freshness field. Use top-level `review_actionability_status` for this policy so it cannot be confused with quote-level market-data actionability metadata.
+
+Status semantics:
+
+- `normal_review`: broker snapshot and market quotes both satisfy current policy; no provider errors. Language still remains manual decision support, not advice or execution readiness.
+- `analysis_only`: deterministic review may run and reports may be saved, but output must clearly say it is scenario analysis based on available data.
+- `manual_confirmation_required`: review uses manual, CSV, synthetic/mock, cached, delayed, EOD, or otherwise non-provider-verified inputs and needs explicit user confirmation before report generation. Confirmation permits `analysis_only`; it does not upgrade to `normal_review`.
+- `blocked_stale_broker_snapshot`: holdings, cash, collateral, or option positions are too stale for report/agent output.
+- `blocked_stale_market_quote`: required quote data is too stale for report/agent output.
+- `blocked_unknown_freshness`: required freshness metadata is missing or cannot be trusted.
+- `blocked_provider_error`: broker sync or market provider state failed in a way that prevents safe review.
+
+Consumption rules:
+
+- Backend trade-review services must evaluate this policy after portfolio context and market snapshot resolution and before final report composition.
+- Phase 16A/16B agents must consume the policy decision, not infer readiness from raw freshness fields. The Freshness/Guardrail Agent should explain the decision and reasons; other agents should use the status as a guardrail.
+- Future frontend trade-review UI must render broker snapshot freshness and market quote freshness separately, then render the actionability status as the review gate.
+- Reports must include the policy decision snapshot and approved language tier. Deterministic calculations, AI explanation, and optional research evidence remain separate sections.
+- TradingAgents research evidence must not affect this status. It may be stale or unavailable independently and must remain optional public ticker/company evidence.
+
+Persistence:
+
+- Compute current actionability on demand for dashboard, preflight, and trade-review submission previews.
+- Persist the policy decision snapshot when a trade review, report, agent run, or agent step is created.
+- Persist only safe metadata: policy version, review actionability status, reasons, safe source/freshness/timestamp fields, and confirmation metadata.
+- Do not persist or expose raw holdings, account values, cash balances, broker/provider account ids, raw provider payloads, secrets, trade journal entries, or account-specific thresholds in this policy snapshot.
+
+Safe API expectations:
+
+- Add a typed sanitized read schema before frontend work consumes this contract.
+- Return stable enums, safe timestamps, boolean capability flags, reason codes, severity, and remediation categories.
+- Do not return local threshold values, provider ids, raw errors, raw provider payloads, or private account values.
+- Tests must include status precedence and forbidden-field assertions.
+
 ## Section L - Agent Workflow
 
 The app should work when LLMs are disabled. Agent workflows enrich deterministic analytics; they do not replace them.
 
 Report and agent persistence should exist before TradingAgents integration. Durable `report_threads`, `report_messages`, `agent_runs`, and `agent_steps` prevent agent output from becoming another ephemeral CLI-style run. The first implementation should support deterministic/template markdown reports without LLM calls, TradingAgents calls, or external APIs.
+
+Architecture decision: see `docs/codex-b-architecture/adr/0002-tradingagents-inspired-portfolio-agent-team.md`.
+
+Phase 16 is split:
+
+- **Phase 16A - Deterministic Agent Components**: Portfolio Snapshot Actionability Policy, Portfolio Context Agent, Trade Review Agent, Freshness/Guardrail Agent, and Report Composer Agent. These are deterministic-first components and safe report helpers.
+- **Phase 16B - Portfolio-Aware Agent Team Orchestrator**: app-owned workflow layer that defines stage order, role context envelopes, actionability enforcement, run/step persistence, deterministic-vs-LLM boundaries, private-data boundaries, and fallback behavior when research, market providers, TradingAgents, or LLMs are unavailable.
+
+Portfolio Copilot role map:
+
+| Role | Priority | Context access | Responsibility |
+| --- | --- | --- | --- |
+| Portfolio Context Agent | MVP | Approved portfolio projection only | Summarize portfolio shape, freshness, and report-history references without raw holdings or balances. |
+| Trade Feasibility / Trade Review Agent | MVP | Deterministic review projection and actionability decision | Explain feasibility, deterministic trade-review outputs, blockers, and open questions. |
+| Risk / Concentration Agent | MVP behavior | Deterministic risk/concentration outputs | Interpret allocation, concentration, collateral, assignment/exercise, call-away, and rule violations. |
+| Freshness / Guardrail Agent | MVP | Actionability decision and safe freshness metadata | Enforce review language, blocked states, analysis-only status, and manual-confirmation requirements. |
+| Report Composer Agent | MVP | Approved prior agent outputs | Compose deterministic facts, guardrails, and approved interpretation into an educational report. |
+| Market Data Agent | P1 | Market quote/chain/Greeks metadata only | Summarize quote availability, data mode, provider status, and market quote freshness once real snapshots exist. |
+| News / Research Evidence Agent | P1 | Public ticker/company evidence only | Normalize public research evidence and cite evidence sources. |
+| Bull Case Agent | P1 | Public/sanitized evidence only | Present favorable public evidence and structured tradeoffs. |
+| Bear Case Agent | P1 | Public/sanitized evidence only | Present adverse public evidence and structured tradeoffs. |
+
+Forbidden by default for LLMs, TradingAgents, public evidence roles, analytics, docs, and tests: raw holdings, account values, cash balances, buying power, broker/provider account ids, provider connection ids, raw provider payloads, secrets, trade journal entries, and account-specific thresholds.
+
+Recommended Phase 16B stage order:
+
+1. Validate `TradeIntent`.
+2. Build approved portfolio context projection.
+3. Resolve market snapshot.
+4. Run deterministic trade/risk review.
+5. Evaluate Portfolio Snapshot Actionability Policy.
+6. Optionally retrieve public research evidence.
+7. Optionally run bull/bear/risk interpretation over sanitized/public evidence.
+8. Run freshness/guardrail review.
+9. Compose final educational report.
+10. Persist report, run, and step outputs.
+
+The orchestrator must degrade gracefully. If research, TradingAgents, real market providers, or LLMs are unavailable, it should still produce a deterministic report when actionability permits, with explicit unavailable/analysis-only/blocked states.
 
 | Step | Type | External API | LLM | Cacheable | Checkpointable | MVP |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -2102,12 +2220,12 @@ Tests:
 
 - Synthetic trade-intent, payoff/scenario, portfolio-impact, and risk-rule tests.
 
-### Phase 16 - Custom Portfolio-Aware Agent Orchestrator
+### Phase 16A - Deterministic Agent Components
 
 Goals:
 
-- Add workflow-first, deterministic-first custom agents that consume reviewed trade outputs.
-- Include Portfolio Context Agent, Trade Review Agent, Collateral & Assignment Risk Agent, Allocation Risk Agent, Freshness/Guardrail Agent, and Report Composer Agent.
+- Add safe deterministic-first agent components that consume reviewed trade outputs.
+- Include Portfolio Snapshot Actionability Policy, Portfolio Context Agent, Trade Review Agent, Freshness/Guardrail Agent, and Report Composer Agent.
 - Mock LLM provider boundaries by default.
 
 Files:
@@ -2125,18 +2243,52 @@ Acceptance:
 - Agents consume structured deterministic inputs.
 - Outputs persist to report/agent history.
 - LLM calls are mocked by default and receive only approved structured inputs.
+- This phase is a foundation only; it does not complete the TradingAgents-inspired agent-team orchestrator.
 
 Tests:
 
 - Workflow tests, mocked LLM tests, and report persistence tests.
 
-### Phase 17 - TradingAgents Adapter as Async Research Evidence
+### Phase 16B - Portfolio-Aware Agent Team Orchestrator
+
+Goals:
+
+- Define and implement the app-owned stage graph/workflow that turns Phase 16A components into a portfolio-aware agent team.
+- Enforce stage order, context envelopes, actionability gates, run/step persistence expectations, deterministic-vs-LLM boundaries, private-data boundaries, and fallback behavior.
+- Keep the orchestrator deterministic-first and able to produce a safe report when research, market providers, TradingAgents, or LLMs are unavailable.
+
+Files:
+
+- `backend/app/services/agents/orchestrator.py`
+- `backend/app/services/agents/context_envelopes.py`
+- `backend/tests/services/agents/test_orchestrator.py`
+- `backend/tests/services/agents/test_context_envelopes.py`
+- `docs/shared/implementation_plan.md`
+
+Risks:
+
+- Treating deterministic components as the full agent team.
+- Letting optional research/debate override deterministic review or actionability.
+- Leaking private portfolio context into public evidence roles or LLM prompts.
+
+Acceptance:
+
+- Orchestrator contract documents stage order and role inputs/outputs.
+- Agent runs/steps can be persisted or mapped to existing persistence models without raw private fields.
+- Research/LLM/market-provider unavailable states degrade to deterministic report, analysis-only, or blocked output as appropriate.
+- Phase 16 is not marked complete until 16B is implemented or explicitly deferred by PM/Architecture.
+
+Tests:
+
+- Synthetic orchestrator workflow tests, forbidden-field tests, actionability-gate tests, and fallback tests.
+
+### Phase 17 - TradingAgents/Public Research Evidence Adapter
 
 Goals:
 
 - Add optional TradingAgents dependency detection.
 - Add adapter interface, missing dependency fallback, mocked output parser, and report-message/agent-step mapping.
-- Run TradingAgents as optional asynchronous ticker/company research evidence, not the synchronous trade-review fast path.
+- Run TradingAgents or other public research providers as optional asynchronous ticker/company research evidence, not the synchronous trade-review fast path and not the portfolio-aware decision engine.
 
 Files:
 
@@ -2151,7 +2303,7 @@ Risks:
 
 Acceptance:
 
-- Adapter is stock/company research only.
+- Adapter is public stock/company research evidence only.
 - No source copy, submodule, or TradingAgents core edits.
 - Deterministic trade review works without TradingAgents installed.
 - Research evidence is cached by ticker/research type/model/prompt version where possible.
@@ -2166,7 +2318,8 @@ Goals:
 
 - Add New Trade Review workspace for stock, ETF, and options intents.
 - Show deterministic portfolio impact, cash impact, collateral/assignment impact where applicable, risk-rule violations, data freshness warnings, journal links, and report history.
-- Show TradingAgents or other research evidence only when available and clearly separated from deterministic conclusions.
+- Consume Phase 16A/16B outputs for the first safe workspace.
+- Show TradingAgents or other research evidence only after Phase 17 contracts are stable and clearly separated from deterministic conclusions.
 
 Files:
 
@@ -2183,6 +2336,8 @@ Acceptance:
 - UI distinguishes deterministic calculations, optional AI explanation, and optional research evidence.
 - UI shows broker freshness and market quote freshness separately.
 - No trade execution UI, broker order actions, "you should buy/sell" wording, or guaranteed-return language.
+- Phase 18 requires Phase 16A complete, Phase 16B architecture/task spec complete, a safe read schema with forbidden-field tests, and either coverage/collateral modelling fixes or visible caveats.
+- Real market data is not required for local MVP demo, but is required before external paid beta or any polished quote-current options review.
 
 Tests:
 

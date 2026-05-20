@@ -8,6 +8,8 @@ Last updated: 2026-05-20
 
 The MVP is a read-only pre-trade review workflow for self-directed investors who manually place trades outside the app. It proves that Portfolio Copilot can turn a portfolio snapshot plus a proposed stock/ETF/options trade into a deterministic, freshness-aware, educational review that helps the user understand portfolio impact before acting elsewhere.
 
+The broader product framing is a TradingAgents-inspired, portfolio-aware trade review agent team. For MVP, this means safe deterministic agent components and an app-owned agent-team orchestration contract, not autonomous trading, not one-shot stock research, and not a thin TradingAgents wrapper.
+
 ## In Scope
 
 | Area | MVP scope |
@@ -83,6 +85,11 @@ Required before user-facing AI explanations.
 
 Agents must consume only approved agent-safe projections and actionability decisions. They must not receive raw holdings, account values, cash balances, broker account ids, trade journal entries, account-specific thresholds, provider raw payloads, or secrets by default.
 
+Phase 16 is split:
+
+- Phase 16A: deterministic agent components such as Portfolio Context, Trade Review, Freshness/Guardrail, and Report Composer.
+- Phase 16B: portfolio-aware agent-team orchestrator that defines stage order, run/step persistence, actionability enforcement, private/public context boundaries, and fallback behavior when research or LLMs are unavailable.
+
 ### Gate 4 - Frontend Trade Review Workspace
 
 Required before a beta-style product demo.
@@ -96,9 +103,17 @@ The frontend must show:
 - Report history.
 - Clear read-only/manual-decision language.
 
+Phase 18 may use deterministic review plus Phase 16A/16B outputs for the first workspace. Rich public research/debate UI should wait for Phase 17 evidence contracts.
+
+### Gate 5 - Real Market Data For Paid Beta
+
+Real market-data provider integration is not required before a local MVP demo. It is required before external paid beta or any polished UI/report that implies quote-current options review.
+
+The preferred first real provider candidate is Tradier for backend-only REST snapshots: quotes, option expirations, option chains, and Greeks/IV where available. WebSocket/streaming real-time data is deferred to Phase 19+ or paid beta only if users prove the need.
+
 ## First Beta Scope
 
-The first beta can be useful with manual/CSV snapshots and synthetic/manual market data if the product labels outputs as analysis-only where appropriate. A paid beta should aim for read-only broker sync plus a clear refresh/confirm path, but real provider breadth is not required before validating the core pre-trade review job.
+The first local beta/demo can be useful with manual/CSV snapshots and synthetic/manual market data if the product labels outputs as analysis-only where appropriate. A paid beta should aim for read-only broker sync plus a clear refresh/confirm path and real REST snapshot market data for quote-current options review. Broad provider coverage and streaming are not required before validating the core pre-trade review job.
 
 ## Scope Admission Rule
 
@@ -111,11 +126,11 @@ Features that mainly improve discovery, screening, research breadth, automation,
 These do not block the current MVP direction:
 
 - Whether the first external beta requires broker sync or can start with manual/CSV snapshots.
-- Which real market-data provider is best for paid beta.
+- Final market-data provider purchase/licensing decision after rechecking current Tradier pricing, OPRA/data rights, and API capabilities.
 - How much AI explanation is acceptable before security/compliance review.
 - Exact pricing and packaging.
 - Whether advisors become a later segment.
 
 ## Current PM Decision
 
-The next implementation gate is Portfolio Snapshot Actionability Policy before Phase 16 agents continue producing polished account-specific outputs.
+Phase 16A deterministic components and Phase 16B portfolio-aware agent-team orchestration are complete. The next implementation gate is Phase 17 TradingAgents/Public Research Evidence Adapter, which must remain optional public ticker/company evidence and not become the portfolio-aware decision engine.

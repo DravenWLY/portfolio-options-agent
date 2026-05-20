@@ -32,7 +32,7 @@ A feature moves down when it:
 
 | Feature | Why it matters | Notes |
 | --- | --- | --- |
-| Portfolio Snapshot Actionability Policy | Prevents polished reports from sounding current when holdings, cash, collateral, or quotes are stale. | Next implementation gate before deeper Phase 16 agents. |
+| Portfolio Snapshot Actionability Policy | Prevents polished reports from sounding current when holdings, cash, collateral, or quotes are stale. | First Phase 16A gate before deterministic agent components. |
 | Broker freshness vs market quote freshness separation | Avoids the core trust failure of fresh prices with stale positions. | Must be visible in reports and UI. |
 | Stock/ETF trade review | Gives the product a broad core beyond options income. | One generic equity flow is enough for MVP. |
 | Covered call review | High-value options wedge with coverage and call-away risk. | Must caveat incomplete coverage netting if not fully modelled. |
@@ -41,6 +41,8 @@ A feature moves down when it:
 | Agent-safe projection boundary | Allows AI explanation without raw sensitive portfolio fields by default. | Required before user-facing AI explanations. |
 | Analysis-only language | Keeps stale/manual/EOD outputs useful without implying execution readiness. | Product copy is part of safety. |
 | Report history | Lets users compare review outputs and supports agent workflow traceability. | Keep thin for MVP. |
+| Phase 16A deterministic agent components | Provides safe agent-shaped report components without autonomous LLM behavior. | Complete. |
+| Phase 16B agent-team orchestration contract | Makes the TradingAgents-inspired team shape explicit before polished UI/research work. | Complete. |
 
 ## P1 - Important After P0 Is Stable
 
@@ -52,14 +54,18 @@ A feature moves down when it:
 | Optional AI report explanation | Improves comprehension of deterministic results. | Must stay behind projection and actionability gates. |
 | Manual confirmation workflow | Lets users proceed with analysis when data is stale/manual. | Needs careful copy and audit trail. |
 | Basic provider status and missing-data states | Reduces confusion when quotes or broker sync are unavailable. | Should stay operational, not dashboard-heavy. |
+| Market Data Agent / public evidence status role | Helps users understand quote/chain/Greeks availability once real snapshots exist. | Backend evidence/status role first; no market terminal. |
+| News / Research Evidence Agent | Adds public ticker/company context. | P1 after deterministic workflow and evidence contracts are stable. |
+| Bull Case and Bear Case Agents | Adds TradingAgents-inspired debate over public/sanitized evidence. | P1; not required for local MVP demo. |
+| Tradier REST snapshot adapter | Enables quote-current options review for paid beta. | Backend-only snapshots before paid beta; not needed for local MVP demo. |
 
 ## P2 - Useful Later
 
 | Feature | Why it matters | Reason to wait |
 | --- | --- | --- |
 | Long call and long put product surface | Supports more options use cases. | Less central to first portfolio-aware cash/collateral wedge. |
-| TradingAgents async research evidence | Adds public ticker/company context. | Should not distract from deterministic review or send account data. |
-| Real market-data provider adapter | Needed for richer paid beta. | Provider choice, licensing, and quote freshness require care. |
+| TradingAgents/Public Research Evidence Adapter | Adds optional public ticker/company context. | Should not distract from deterministic review or send account data. |
+| Streaming market data | Useful only if users need actively updating quote views. | Explicitly deferred to Phase 19+ or paid beta proof; avoid terminal/screener drift. |
 | Broker activities/transactions layer | Enables history, assignments, expirations, and wheel lifecycle later. | Current-position review is the first job. |
 | Wheel lifecycle tracking | Could help advanced options users. | Risks narrowing product into options income too early. |
 | Advisor or shared-account workflows | Potential future segment. | Not the first user. |
@@ -76,6 +82,7 @@ A feature moves down when it:
 - Mobile app.
 - PDF export.
 - Real-time streaming market terminal.
+- WebSocket/streaming market data before Phase 19+ or proven paid-beta need.
 
 ## Competitor Findings Handling
 
@@ -90,11 +97,11 @@ Claude C competitor findings should be converted into product decisions using th
 
 Codex B Architecture:
 
-- Define actionability/readiness contracts and ADRs for freshness, agent-safe projection, and TradingAgents-as-async-evidence.
+- Keep Phase 17 public-evidence-only and maintain ADRs for agent-team and market-data timing.
 
 Codex C Backend:
 
-- Implement Portfolio Snapshot Actionability Policy as the next backend gate with synthetic tests and no real broker data.
+- Start Phase 17 from optional dependency detection and public research evidence contracts; do not send private portfolio context to TradingAgents or public evidence roles.
 
 Claude A Frontend:
 

@@ -4,9 +4,9 @@ This is the short context file for routine Codex and Claude reviews. Prefer this
 
 ## Product North Star
 
-`portfolio-options-agent` is a portfolio-aware trade review and risk copilot for manual investors. It combines broker portfolio state, market context, proposed stock/ETF/option trade intents, deterministic trade-review and risk calculations, strategy-extensible evaluators, custom portfolio-aware agents, optional TradingAgents stock/company research evidence, and durable report history.
+`portfolio-options-agent` is a TradingAgents-inspired, portfolio-aware trade review agent team for manual investors. It combines broker portfolio state, market context, proposed stock/ETF/option trade intents, deterministic trade-review and risk calculations, strategy-extensible evaluators, app-owned portfolio-aware agents, optional TradingAgents/public stock-company research evidence, and durable report history.
 
-The dashboard is the cockpit, not the whole product. SnapTrade, market data providers, and TradingAgents are inputs/components, not the center. Options remain a strong wedge, but wheel/CSP/covered-call workflows are not the product boundary.
+TradingAgents-inspired does not mean TradingAgents-centered. The product center remains broker-aware `TradeIntent` review. The dashboard is the cockpit, not the whole product. SnapTrade, market data providers, and TradingAgents are inputs/components, not the center. Options remain a strong wedge, but wheel/CSP/covered-call workflows are not the product boundary.
 
 ## Safety Boundary
 
@@ -37,52 +37,45 @@ The dashboard is the cockpit, not the whole product. SnapTrade, market data prov
 - Phase 13: generic options metrics and portfolio risk engine plus frontend deterministic risk review slice.
 - Phase 14: TradeIntent foundation for proposed stock, ETF, and options trade review.
 - Phase 15: deterministic trade review engine MVP with payoff, portfolio impact, risk integration, strategy wrappers, deterministic report, and agent-safe projection.
+- Phase 16: deterministic agent components plus portfolio-aware agent-team orchestrator, including actionability policy, context envelopes, run/step mapping, and privacy-safe fallbacks.
 
 Detailed verification history lives in `docs/shared/completed_phases_log.md`.
 
-## Active Phase
+## Active Phases
 
-Phase 16 - Custom Portfolio-Aware Agent Orchestrator.
+Phase 17 - TradingAgents/Public Research Evidence Adapter.
 
-Goal: build workflow-first, deterministic-first agents that consume structured trade-review outputs and optionally ask an LLM to explain, summarize, or debate already-computed facts.
-
-Scope:
-
-- Portfolio Context Agent, Trade Review Agent, Freshness/Guardrail Agent, and Report Composer Agent.
-- Workflow-first, deterministic-first; LLM boundary mocked by default.
-- Use Phase 15's `to_agent_safe_projection` boundary for trade-review outputs by default.
-- No private brokerage data sent to LLMs by default.
-
-Out of scope:
-
-- Letting LLMs calculate financial metrics from scratch.
-- Sending holdings, account values, cash, broker account ids, journal entries, or account-specific risk thresholds to LLMs by default.
-- TradingAgents integration.
-- Frontend trade-review workspace.
-- Broker order execution, automatic trading, or trade execution UI.
+- Optional public ticker/company research evidence only.
+- Not in the fast trade-review path.
+- Not the portfolio-aware decision engine.
+- No holdings, account values, cash, broker ids, journal entries, or account-specific thresholds sent by default.
+- P1 roles include News/Research Evidence Agent, Bull Case Agent, and Bear Case Agent over public/sanitized evidence.
 
 ## Next Phases
-
-Phase 17 - TradingAgents Adapter as Async Research Evidence.
-
-- Optional stock/company research evidence only.
-- Not in the fast trade-review path.
-- No holdings, account values, cash, broker ids, journal entries, or account-specific thresholds sent by default.
 
 Phase 18 - Frontend Trade Review Workspace.
 
 - New Trade Review route for hypothetical stock/ETF/option intents.
-- Deterministic trade-review report UI.
-- Optional research evidence display after backend contracts are stable.
+- Deterministic trade-review report UI using completed Phase 16 outputs.
+- Optional research evidence display only after Phase 17 contracts are stable.
 
 Before Phase 18:
 
+- Phase 16 complete.
 - Add a typed sanitized trade-review read schema and forbidden-field test.
 - Either implement coverage-aware covered-call/CSP portfolio netting or visibly caveat that coverage/collateral netting is not fully modelled.
+- Real market data is not required for local MVP demo, but real REST snapshot market data is required before external paid beta or any polished UI/report that implies quote-current options review.
 
-Phase 19+ - TradingAgents Evidence UI and broader workflow polish.
+Phase 19+ - Streaming Market Data, TradingAgents Evidence UI, and broader workflow polish.
 
 - Add async research evidence display after backend adapter and safety boundaries are stable.
+- Add WebSocket/streaming market data only if paid-beta users prove the need. Do not build an option-chain browser, screener, or market-data terminal for MVP.
+
+Market data timing:
+
+- Manual/mock market data remains acceptable for local MVP demo with clear analysis-only labeling where appropriate.
+- Tradier is the preferred first real provider candidate for backend-only REST snapshots: quotes, option expirations, option chains, and Greeks/IV where available.
+- Before purchase/public beta, recheck current Tradier pricing, licensing, OPRA/data rights, and API capabilities.
 
 Future Broker Activities / Transactions layer.
 

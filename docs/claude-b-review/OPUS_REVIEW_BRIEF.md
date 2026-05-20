@@ -4,7 +4,7 @@ Use this short brief for high-stakes Claude Opus reviews. Prefer this over loadi
 
 ## Project Direction
 
-This project is a read-only, portfolio-aware trade review and risk copilot for manual investors. It is not a SnapTrade dashboard, market-data viewer, option-chain browser, options-income app, AI stock picker, automated trading system, or thin TradingAgents wrapper.
+This project is a TradingAgents-inspired, portfolio-aware trade review agent team for manual investors. It remains centered on broker-aware `TradeIntent` review, not TradingAgents itself. It is not a SnapTrade dashboard, market-data viewer, option-chain browser, options-income app, AI stock picker, automated trading system, or thin TradingAgents wrapper.
 
 The system combines:
 
@@ -43,19 +43,21 @@ Completed foundation:
 - Generic option/risk services.
 - TradeIntent foundation for stock, ETF, and options intents.
 - Deterministic trade-review engine with payoff, portfolio impact, risk integration, strategy wrappers, deterministic report, and agent-safe projection.
+- Phase 16 deterministic agent components and portfolio-aware agent-team orchestrator with actionability gates, context envelopes, run/step mapping, and privacy-safe unavailable-state fallbacks.
 - Product docs for PRD, MVP scope, feature priority, and metrics.
 
 ## Active Roadmap
 
-Current active phase: Phase 16 - Custom Portfolio-Aware Agent Orchestrator.
+Current active phase:
+
+- Phase 17 - TradingAgents/Public Research Evidence Adapter as optional async public ticker/company evidence only.
 
 Immediate review concern:
 
-- Portfolio Snapshot Actionability Policy should be first-class before polished account-specific agent reports. Fresh quotes plus stale broker positions can produce confidently wrong cash, collateral, coverage, assignment, concentration, or allocation conclusions.
+- Phase 17 must not become the portfolio-aware decision engine and must not receive private portfolio context by default. Portfolio impact, collateral, option risk, actionability, and final report composition remain app-owned.
 
 Next likely phases:
 
-- Phase 17 - TradingAgents Adapter as async research evidence only.
 - Phase 18 - Frontend Trade Review Workspace after backend contracts and safety gates are stable.
 
 ## What Opus Should Review

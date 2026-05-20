@@ -2,9 +2,9 @@
 
 ## Project Goal
 
-Portfolio Copilot is a broker-connected, read-only portfolio-aware trade review and risk copilot for manual investors. It connects to broker portfolio snapshots through SnapTrade or future provider adapters, normalizes stock/ETF/options holdings, runs deterministic portfolio/risk calculations, and produces educational review/report outputs.
+Portfolio Copilot is a TradingAgents-inspired, broker-connected, read-only portfolio-aware trade review agent team for manual investors. It connects to broker portfolio snapshots through SnapTrade or future provider adapters, normalizes stock/ETF/options holdings, runs deterministic portfolio/risk calculations, and produces educational review/report outputs.
 
-The product is not an automated trading system, broker scraper, market-data terminal, option-chain browser, or thin TradingAgents wrapper. Human users remain responsible for any real trades placed outside the app.
+TradingAgents-inspired does not mean TradingAgents-centered. The product center remains broker-aware `TradeIntent` review. The product is not an automated trading system, broker scraper, market-data terminal, option-chain browser, or thin TradingAgents wrapper. Human users remain responsible for any real trades placed outside the app.
 
 ## Source of Truth
 

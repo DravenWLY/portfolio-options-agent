@@ -6,7 +6,9 @@ Last updated: 2026-05-20
 
 ## Product Summary
 
-Portfolio Copilot is a read-only, portfolio-aware trade review and risk copilot for self-directed investors who manually place trades outside the app. Before a user places a stock, ETF, covered call, or cash-secured put trade in their broker, the app reviews a proposed `TradeIntent` against the user's portfolio snapshot, cash/collateral state, concentration exposure, assignment or call-away exposure, risk rules, and data freshness. Deterministic services calculate the facts; AI may explain only approved structured outputs.
+Portfolio Copilot is a TradingAgents-inspired, portfolio-aware trade review agent team for manual investors. It is TradingAgents-inspired, not TradingAgents-centered: the product center remains broker-aware `TradeIntent` review, not one-shot ticker research or automated trading.
+
+Before a user places a stock, ETF, covered call, or cash-secured put trade in their broker, the app reviews a proposed `TradeIntent` against the user's portfolio snapshot, cash/collateral state, concentration exposure, assignment or call-away exposure, risk rules, and data freshness. Deterministic services calculate the facts; AI may explain only approved structured outputs and public evidence.
 
 ## Target User
 
@@ -141,6 +143,9 @@ The MVP is useful when:
 - First target segment: active self-directed retail investors using stocks, ETFs, covered calls, and cash-secured puts manually.
 - First paid/useful wedge: portfolio-aware pre-trade review, not brokerage dashboarding or screening.
 - Next implementation gate: Portfolio Snapshot Actionability Policy before polished Phase 16 agent outputs.
+- Phase 16 should be split into Phase 16A deterministic agent components and Phase 16B portfolio-aware agent-team orchestration.
+- TradingAgents is optional public ticker/company research evidence, not the final portfolio-aware decision engine.
+- Tradier is the preferred first real market-data provider candidate for backend-only REST snapshots before external paid beta; WebSocket/streaming real-time data is deferred.
 - MVP trade-review surface: equity buy/sell/trim, single-leg covered call, and single-leg cash-secured put.
 - Long calls and long puts may exist in backend capability but are not first MVP UX priorities.
 

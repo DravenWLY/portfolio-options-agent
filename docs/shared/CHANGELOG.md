@@ -4,6 +4,9 @@ This changelog is for human-readable project changes. It should summarize meanin
 
 ## Unreleased
 
+- Archived completed Phase 16A/16B into `docs/shared/completed_phases_log.md` and made Phase 17 the active implementation phase.
+- Added ADR 0002 and ADR 0003 for the TradingAgents-inspired portfolio-aware agent-team architecture, Phase 16A/16B split, Phase 17 public research evidence boundary, and Tradier-first REST snapshot market-data timing.
+- Added ADR 0001 and P16-T0 for the Portfolio Snapshot Actionability Policy so broker snapshot freshness, market quote freshness, and report/agent language are gated by one backend-owned contract.
 - Added a multi-agent operating model for PM, architecture, backend, frontend, review, competitor intelligence, DevOps, and security roles.
 - Added PM and architecture handoff docs so future agents can start from repo context instead of chat memory.
 - Added lightweight DevOps and security/compliance draft checklists for later production-readiness work.

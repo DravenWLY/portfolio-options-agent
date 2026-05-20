@@ -9,7 +9,9 @@ Do not implement code. Do not edit backend/frontend files unless explicitly aske
 
 Product context:
 
-Portfolio Copilot is a broker-connected, read-only portfolio-aware trade review and risk copilot for self-directed/manual investors. It connects to broker portfolio snapshots through SnapTrade or future provider adapters, supports manual/CSV fallback, normalizes stocks/ETFs/options positions, runs deterministic portfolio/risk calculations, and produces educational review/report outputs.
+Portfolio Copilot is a TradingAgents-inspired, broker-connected, read-only portfolio-aware trade review agent team for self-directed/manual investors. It connects to broker portfolio snapshots through SnapTrade or future provider adapters, supports manual/CSV fallback, normalizes stocks/ETFs/options positions, runs deterministic portfolio/risk calculations, and produces educational review/report outputs.
+
+TradingAgents-inspired does not mean TradingAgents-centered. The product center remains broker-aware `TradeIntent` review, not one-shot ticker research or automated trading.
 
 The product should not become only a SnapTrade dashboard, option-chain browser, market-data viewer, wheel-strategy app, CSP/covered-call screener, options-income app, AI stock picker, automated trading system, or thin TradingAgents wrapper.
 
@@ -48,7 +50,7 @@ Immediate PM decisions to make:
 
 1. Define the first paid/useful MVP in one paragraph.
 2. Choose the first target user segment narrowly enough to guide UI and roadmap.
-3. Decide whether the next implementation gate is Portfolio Snapshot Actionability Policy before Phase 16 agents.
+3. Preserve the Phase 16 split: Phase 16A deterministic agent components and Phase 16B portfolio-aware agent-team orchestration.
 4. Define the minimum trade-review flows for MVP: stock buy/sell/trim, ETF review, long call/put, covered call, cash-secured put, or a smaller subset.
 5. Define product language for stale broker snapshots and analysis-only outputs.
 6. Define success metrics for local MVP and eventual paid beta.
@@ -64,7 +66,7 @@ Prioritization guidance:
 
 - Prefer narrow vertical slices that prove portfolio-aware review value.
 - Prefer deterministic calculation correctness and data freshness clarity over impressive AI text.
-- Delay real provider breadth, advanced option strategies, TradingAgents, and production deployment until the MVP promise is sharper.
+- Delay real provider breadth, streaming market data, advanced option strategies, TradingAgents/public research evidence UI, and production deployment until the MVP promise is sharper.
 - Prevent scope creep by requiring each feature to improve the core pre-trade review decision.
 
 Deliverable for your first session:

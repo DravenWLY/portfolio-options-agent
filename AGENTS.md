@@ -51,20 +51,20 @@ This project may connect to real read-only brokerage data through SnapTrade. Tre
 
 ## Implementation Loop Rule
 
-- For multi-step work, maintain `docs/implementation_plan.md`.
-- Each task in `docs/implementation_plan.md` must include task id, objective, expected files, dependencies, implementation steps, acceptance criteria, tests, rollback notes, and status.
+- For multi-step work, maintain `docs/shared/implementation_plan.md`.
+- Each task in `docs/shared/implementation_plan.md` must include task id, objective, expected files, dependencies, implementation steps, acceptance criteria, tests, rollback notes, and status.
 - Implement only one task at a time unless explicitly told otherwise.
-- After each task, update `docs/implementation_plan.md`.
+- After each task, update `docs/shared/implementation_plan.md`.
 - Stop for review after each task.
 
 ## Context Efficiency Rules
 
-- Prefer `docs/current_roadmap.md` for high-level project direction.
-- Prefer `docs/agent_context/codex_working_context.md` before implementation tasks.
-- Prefer `docs/agent_context/opus_review_brief.md` for high-stakes Claude Opus reviews.
-- Keep `docs/implementation_plan.md` focused on active and future tasks.
-- Keep completed verification history in `docs/completed_phases_log.md`.
-- Do not load `docs/completed_phases_log.md` unless historical verification details are directly relevant.
+- Prefer `docs/shared/current_roadmap.md` for high-level project direction.
+- Prefer `docs/codex-c-backend/WORKING_CONTEXT.md` before implementation tasks.
+- Prefer `docs/claude-b-review/OPUS_REVIEW_BRIEF.md` for high-stakes Claude Opus reviews.
+- Keep `docs/shared/implementation_plan.md` focused on active and future tasks.
+- Keep completed verification history in `docs/shared/completed_phases_log.md`.
+- Do not load `docs/shared/completed_phases_log.md` unless historical verification details are directly relevant.
 - Do not ask Claude or another review agent to perform broad repo-wide reviews by default.
 - For Claude review prompts, provide a strict read whitelist with only the current task docs, changed files, and directly related tests.
 - Use Opus only for high-risk architecture, finance semantics, schema/migration, broker/security, or disagreement-resolution reviews.
@@ -118,7 +118,7 @@ This project may connect to real read-only brokerage data through SnapTrade. Tre
 - Do not build multiple phases in one pass.
 - Do not implement frontend, backend, database, agent adapter, and market data all at once.
 - Prefer small sequential tasks:
-  1. `docs/implementation_plan.md`
+  1. `docs/shared/implementation_plan.md`
   2. Docker Compose Postgres
   3. backend config loading
   4. SQLAlchemy session

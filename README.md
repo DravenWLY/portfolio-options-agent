@@ -78,12 +78,14 @@ TradingAgents should not receive account holdings, account values, cash balances
 
 ## Documentation Map
 
-- `docs/architecture.md` - product and technical architecture.
-- `docs/current_roadmap.md` - short current direction and active phase.
-- `docs/implementation_plan.md` - active and future task plan.
-- `docs/completed_phases_log.md` - archived completed phase history and verification notes.
-- `docs/deferred_items.md` - known non-blocking follow-up work.
-- `docs/agent_context/` - short Codex and Claude handoff briefs for context-efficient reviews.
+- `docs/README.md` - documentation map and role-folder layout.
+- `docs/shared/current_roadmap.md` - short current direction and active phase.
+- `docs/codex-a-product/PRD.md` - PM definition of the MVP product promise.
+- `docs/codex-b-architecture/architecture.md` - product and technical architecture.
+- `docs/shared/implementation_plan.md` - active and future task plan.
+- `docs/shared/completed_phases_log.md` - archived completed phase history and verification notes.
+- `docs/shared/deferred_items.md` - known non-blocking follow-up work.
+- `docs/codex-c-backend/WORKING_CONTEXT.md` - short backend implementation context.
 
 ## Relationship to `../TradingAgents`
 

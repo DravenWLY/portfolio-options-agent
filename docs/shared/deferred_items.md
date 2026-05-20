@@ -1,6 +1,6 @@
 # Deferred Items
 
-This file tracks known non-blocking work so active plans can stay small. Do not treat these as authorized implementation tasks until they are pulled into `docs/implementation_plan.md`.
+This file tracks known non-blocking work so active plans can stay small. Do not treat these as authorized implementation tasks until they are pulled into `docs/shared/implementation_plan.md`.
 
 ## Storage and Migration Hardening
 
@@ -56,7 +56,7 @@ This file tracks known non-blocking work so active plans can stay small. Do not 
 ## Documentation
 
 - Update `README.md` after roadmap realignment.
-- Split `docs/architecture.md` if it continues growing:
+- Split `docs/codex-b-architecture/architecture.md` if it continues growing:
   - `product_architecture.md`
   - `technical_architecture.md`
   - `agent_architecture.md`

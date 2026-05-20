@@ -4,7 +4,7 @@ Status: design document only. No business logic, database code, frontend code, o
 
 This repository is intended to become a professional full-stack portfolio-aware trade review and risk copilot for manual investors. It should combine portfolio data, market context, deterministic risk calculations, trade-intent review, optional research evidence, custom portfolio-aware agents, and durable report history into manual decision support. The dashboard is the cockpit, not the whole product. SnapTrade, market data providers, and TradingAgents are inputs/components, not the center of the system.
 
-For context-efficient daily work, read `docs/current_roadmap.md` first. Use `docs/implementation_plan.md` for active and future tasks, `docs/completed_phases_log.md` for archived verification history, and `docs/agent_context/` for short Codex/Claude handoff briefs.
+For context-efficient daily work, read `docs/shared/current_roadmap.md` first. Use `docs/shared/implementation_plan.md` for active and future tasks, `docs/shared/completed_phases_log.md` for archived verification history, and the role-specific folders under `docs/` for short Codex/Claude handoff briefs.
 
 This is not financial advice. This project must not execute trades, store broker login credentials, scrape Fidelity, bypass MFA, promise returns, or present generated output as guaranteed investment guidance.
 
@@ -177,7 +177,7 @@ The current `portfolio-options-agent` scaffold contains:
 README.md
 AGENTS.md
 .gitignore
-docs/architecture.md
+docs/codex-b-architecture/architecture.md
 backend/
   README.md
   requirements.txt
@@ -211,7 +211,7 @@ scripts/README.md
 
 `AGENTS.md` correctly instructs future coding agents to prefer adapters over TradingAgents core edits, avoid API keys and real account data, avoid broker scraping and automatic trading, keep examples synthetic, and list changed files/tests after edits.
 
-The prior `docs/architecture.md` was intentionally a placeholder and is replaced by this design.
+The prior `docs/codex-b-architecture/architecture.md` was intentionally a placeholder and is replaced by this design.
 
 ### Existing Backend
 
@@ -1645,7 +1645,7 @@ Goals:
 
 Files/modules:
 
-- `docs/architecture.md`
+- `docs/codex-b-architecture/architecture.md`
 - future `docs/tradingagents_adapter.md`
 
 Risks:

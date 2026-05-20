@@ -1,12 +1,14 @@
-# Codex Working Context
+# Codex C Backend Working Context
 
-Use this file as the short implementation context before starting work.
+Use this file as the short backend implementation context before starting work. The previous generic agent-context folder was removed; role-specific briefs now live under agent folders.
 
 ## Current Active Phase
 
-Phase 12 - Market Data Contracts and Manual Provider.
+Phase 16 - Custom Portfolio-Aware Agent Orchestrator.
 
-Goal: define provider-agnostic quote and option-chain interfaces, keeping broker freshness strictly separate from market quote freshness. Introduce a manual/mock provider — no real market API calls by default.
+Goal: build workflow-first, deterministic-first agents that consume structured trade-review outputs and optionally ask an LLM to explain, summarize, or debate already-computed facts.
+
+Important near-term architecture concern: before agents produce polished account-specific outputs, broker portfolio snapshot freshness/actionability should be explicit. Fresh market quotes plus stale broker holdings can create confidently wrong cash, collateral, coverage, assignment, concentration, or allocation conclusions.
 
 ## Current Backend Foundation
 
@@ -26,12 +28,16 @@ Implemented:
   - `agent_steps`
   - report create/list/detail APIs
   - deterministic markdown report output
+- Market data contracts and manual/mock provider.
+- Generic option/risk services.
+- TradeIntent foundation for stock, ETF, and options intents.
+- Deterministic trade-review engine with payoff, portfolio impact, risk integration, strategy wrappers, deterministic report, and agent-safe projection.
 
 ## Implementation Rules
 
 - Work one task at a time.
-- Read only the current task section from `docs/implementation_plan.md`.
-- Do not load `docs/completed_phases_log.md` unless historical verification details are required.
+- Read only the current task section from `docs/shared/implementation_plan.md`.
+- Do not load `docs/shared/completed_phases_log.md` unless historical verification details are required.
 - Do not read `.env` or private configs.
 - Do not modify `../TradingAgents`.
 - Do not add real account data, API keys, broker CSVs, or private strategy thresholds.
@@ -52,7 +58,7 @@ cd backend && ./.venv/bin/alembic upgrade head
 
 ## Completed Frontend Foundation (Phase 11)
 
-Phase 11 delivered the full dashboard shell. All P11-T1 through P11-T7 are done.
+Phase 11 delivered the full dashboard shell and local security hardening. All Phase 11 tasks are done.
 
 Delivered:
 - React/Vite shell, user/account selector, portfolio summary.
@@ -63,13 +69,12 @@ Delivered:
 
 Not included (deferred to later phases): market quote UI, option screener, TradingAgents UI, trade execution UI.
 
-## Phase 12 Scope
+## Phase 16 Scope
 
-- `backend/app/services/market_data/` — MarketDataProvider and OptionDataProvider interfaces.
-- Quote freshness model (`freshness_scope="market_quote"`, separate from broker freshness).
-- Market quote response models.
-- Manual/mock provider (deterministic, no real API calls).
-- Mocked market data tests.
-- Import-boundary test: market_data must not import from broker_import.
+- Custom agents consume structured deterministic outputs; they do not compute metrics from scratch.
+- LLM boundary remains mocked by default.
+- Use Phase 15's agent-safe projection for trade-review outputs by default.
+- No private brokerage data is sent to LLMs by default.
+- TradingAgents remains out of the fast path.
 
-Not in Phase 12: real provider integrations, frontend market quote UI, option screener, TradingAgents.
+Not in Phase 16: TradingAgents integration, frontend trade-review workspace, real market provider integration, broker order execution, automatic trading, or trade execution UI.

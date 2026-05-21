@@ -89,7 +89,7 @@ Route: `/market-data` — a thin read-only status slice for Phase 12.
 - Copy is conservative: provider-not-connected, manual/mock only, not live
   pricing, no guaranteed-return / trade-execution language.
 
-## Trade Review Workspace (P18A-T3)
+## Trade Review Workspace (P18A-T3, P18B-T1/T2 verified)
 
 Route: `/trade-review` — first visible Trade Review Workspace.
 
@@ -108,6 +108,9 @@ Route: `/trade-review` — first visible Trade Review Workspace.
   are visually separated; no order/execute/cancel/disconnect UI; no
   guaranteed-return or recommendation language; no `localStorage`/
   `sessionStorage` of portfolio or review data.
+- Phase 18B verification keeps the same safe contract: the workspace shell and
+  deterministic report UI are present, while optional public research evidence
+  remains deferred until Phase 17 contracts are reactivated.
 
 ## Architecture notes
 

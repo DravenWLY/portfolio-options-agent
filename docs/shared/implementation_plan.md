@@ -30,12 +30,13 @@ market quote freshness.
 ## Recently Completed
 
 Phase 18A - Frontend Trade Review Workspace Readiness is complete and archived in `docs/shared/completed_phases_log.md`.
+Phase 18B - Frontend Trade Review Workspace Expansion is complete and archived in `docs/shared/completed_phases_log.md`; P18B-T3 remains deferred pending Phase 17 reactivation.
 
 ## Phase 17 - TradingAgents/Public Research Evidence Adapter (temporarily frozen)
 
 Phase goal: integrate TradingAgents and/or other public research sources only as optional asynchronous public stock/company research evidence. TradingAgents must stay out of the fast trade-review path, must not become the portfolio-aware decision engine, and must not receive user brokerage holdings, account values, cash, broker account ids, trade journal entries, or account-specific risk thresholds by default.
 
-PM decision on 2026-05-20: freeze deep Phase 17 implementation while the team focuses on the visible trade-review workspace path. Phase 18A is complete; continue to keep these tasks frozen during Phase 18B unless Codex A PM explicitly reactivates them.
+PM decision on 2026-05-20: freeze deep Phase 17 implementation while the team focuses on the visible trade-review workspace path. Phase 18A and Phase 18B are complete; continue to keep these tasks frozen unless Codex A PM explicitly reactivates them.
 
 ### P17-T1 - optional dependency detection
 
@@ -172,111 +173,6 @@ PM decision on 2026-05-20: freeze deep Phase 17 implementation while the team fo
   - `cd backend && ./.venv/bin/python -m pytest`
 - Rollback notes:
   - Reopen P17-T5 if integration issues are found.
-- Status: `not_started`
-
-## Phase 18B - Frontend Trade Review Workspace Expansion
-
-Phase goal: expand the first Phase 18A workspace after the safe read contract, first UI slice, and review gates pass. Rich research/debate UI still waits for Phase 17 contracts.
-
-### P18B-T1 - New Trade Review workspace shell expansion
-
-- Task id: `P18B-T1`
-- Title: New Trade Review workspace shell
-- Objective: Add a read-only frontend route for creating and reviewing hypothetical trade intents.
-- Files expected to change:
-  - `frontend/src/*`
-  - `frontend/README.md`
-  - `docs/shared/implementation_plan.md`
-- Dependencies: `P18A-T5`
-- Implementation steps:
-  1. Ask Claude Sonnet to design and implement a New Trade Review workspace using `frontend-design` and `finance-dashboard-ux-review`.
-  2. Support stock, ETF, and option intent entry using synthetic/local-safe states.
-  3. Clearly label review/scenario analysis and avoid order-ticket UX.
-- Acceptance criteria:
-  - UI supports trade review without broker order execution.
-  - No "you should buy/sell", guaranteed-return, or automated-management language.
-  - A typed sanitized trade-review read schema and forbidden-field tests exist before frontend consumes backend data.
-  - Coverage/collateral netting is either implemented or visibly caveated.
-  - Real market data is not required for local MVP demo; if the UI implies quote-current options review for external beta, a real REST snapshot provider is required first.
-- Tests to run:
-  - `cd frontend && npm run typecheck`
-  - `cd frontend && npm run lint`
-  - `cd frontend && npm run build`
-- Rollback notes:
-  - Revert trade review workspace files and docs.
-- Status: `not_started`
-
-### P18B-T2 - deterministic trade review report UI
-
-- Task id: `P18B-T2`
-- Title: deterministic trade review report UI
-- Objective: Render deterministic trade-review report sections, portfolio impact, cash/collateral impact, risk-rule violations, data freshness warnings, and journal/report links.
-- Files expected to change:
-  - `frontend/src/*`
-  - `frontend/README.md`
-  - `docs/shared/implementation_plan.md`
-- Dependencies: `P18B-T1`
-- Implementation steps:
-  1. Display deterministic calculations separately from AI explanation.
-  2. Show broker freshness and market quote freshness separately.
-  3. Show risk-rule violations by severity with text and icon, not color alone.
-- Acceptance criteria:
-  - UI distinguishes deterministic facts, optional AI explanation, and optional research evidence.
-  - No trade execution UI.
-- Tests to run:
-  - `cd frontend && npm run typecheck`
-  - `cd frontend && npm run lint`
-  - `cd frontend && npm run build`
-- Rollback notes:
-  - Revert report UI files and docs.
-- Status: `not_started`
-
-### P18B-T3 - optional research evidence display
-
-- Task id: `P18B-T3`
-- Title: optional research evidence display
-- Objective: Display cached or async public stock/company research as evidence when available.
-- Files expected to change:
-  - `frontend/src/*`
-  - `frontend/README.md`
-  - `docs/shared/implementation_plan.md`
-- Dependencies: `P18B-T2`, `P17-T6`
-- Implementation steps:
-  1. Render research evidence as optional and subordinate to deterministic review.
-  2. Show pending, unavailable, stale, and budget-required states.
-  3. Do not present research output as final portfolio-aware advice.
-- Acceptance criteria:
-  - TradingAgents/public research evidence is visually separate from deterministic trade-review conclusions.
-  - Missing TradingAgents dependency is a graceful UI state.
-- Tests to run:
-  - `cd frontend && npm run typecheck`
-  - `cd frontend && npm run lint`
-  - `cd frontend && npm run build`
-- Rollback notes:
-  - Revert evidence UI files and docs.
-- Status: `not_started`
-
-### P18B-T4 - Codex integration review for Phase 18B
-
-- Task id: `P18B-T4`
-- Title: Codex integration review for Phase 18B
-- Objective: Verify the frontend trade-review workspace preserves read-only, deterministic-first, portfolio-aware boundaries.
-- Files expected to change:
-  - `docs/shared/implementation_plan.md`
-- Dependencies: `P18B-T3`
-- Implementation steps:
-  1. Run backend and frontend tests.
-  2. Confirm no order tickets, broker actions, or execution affordances were added.
-  3. Confirm UI remains broader than options income, CSP, covered call, or wheel strategy.
-- Acceptance criteria:
-  - Phase 18B ships safe workspace expansion without breaking Phase 18A boundaries.
-- Tests to run:
-  - `cd backend && ./.venv/bin/python -m pytest`
-  - `cd frontend && npm run typecheck`
-  - `cd frontend && npm run lint`
-  - `cd frontend && npm run build`
-- Rollback notes:
-  - Reopen P18B-T3 if integration issues are found.
 - Status: `not_started`
 
 ## Future Layer - Broker Activities, Transactions, and Strategy Memory

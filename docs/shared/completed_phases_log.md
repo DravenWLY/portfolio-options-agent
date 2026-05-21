@@ -4731,3 +4731,168 @@ Explicitly out of Phase 18A:
     Phase 18A runtime safety boundary. Recommended follow-up: lift the shared
     forbidden frontend-read key set into `app/services/privacy.py` and import it
     from both mapper and schema validators.
+
+## Phase 18B - Frontend Trade Review Workspace Expansion
+
+Phase goal: expand the first Phase 18A workspace after the safe read contract, first UI slice, and review gates pass. Rich research/debate UI still waits for Phase 17 contracts.
+
+### P18B-T0 - frontend-read privacy guard unification
+
+- Task id: `P18B-T0`
+- Title: frontend-read privacy guard unification
+- Objective: Resolve the P18A-T2 deferred fast-follow by moving the frontend-read forbidden-field vocabulary into a shared privacy constant consumed by both the Phase 18A mapper input guard and final response validator.
+- Files expected to change:
+  - `backend/app/services/privacy.py`
+  - `backend/app/schemas/trade_review_workspace.py`
+  - `backend/app/services/trade_review/frontend_read.py`
+  - `backend/tests/services/trade_review/test_frontend_read.py`
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P18A-T2`
+- Implementation steps:
+  1. Add a shared `FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS` constant in `app.services.privacy`.
+  2. Import the shared constant from the workspace read schema validator and frontend-read mapper input guard.
+  3. Add synthetic regression coverage for provider contract identifiers and raw account-value keys.
+- Acceptance criteria:
+  - Mapper input guards and final response validators use the same frontend-read forbidden-field source of truth.
+  - Phase 18A API/schema behavior remains unchanged.
+  - No frontend fields, real providers, DB persistence, broker actions, LLM calls, TradingAgents integration, screeners, or market-terminal behavior are added.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_frontend_read.py tests/api/test_trade_review_workspace.py -q`
+  - `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_actionability.py tests/services/agents/ -q`
+  - `cd backend && ./.venv/bin/python -m pytest -q`
+- Rollback notes:
+  - Revert the shared privacy constant and restore the previous local schema/mapper forbidden-field sets.
+- Verification notes:
+  - Changed `backend/app/services/privacy.py` to define shared `FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS` from the private-context keys plus frontend-read-only provider-contract/account-value fields.
+  - Changed `backend/app/schemas/trade_review_workspace.py` and `backend/app/services/trade_review/frontend_read.py` to consume the shared constant, removing the duplicated local/inline sets.
+  - Added synthetic regression checks in `backend/tests/services/trade_review/test_frontend_read.py` for mapper rejection of `provider_contract_id` and final payload rejection of `raw_account_values`.
+  - Test results: `18 passed in 0.13s` for `tests/services/trade_review/test_frontend_read.py tests/api/test_trade_review_workspace.py -q`; `79 passed in 0.14s` for `tests/services/trade_review/test_actionability.py tests/services/agents/ -q`; full backend suite `417 passed, 92 skipped, 1 deselected in 1.27s`; `git diff --check` passed.
+- Status: `done`
+
+### P18B-T1 - New Trade Review workspace shell expansion
+
+- Task id: `P18B-T1`
+- Title: New Trade Review workspace shell
+- Objective: Add a read-only frontend route for creating and reviewing hypothetical trade intents.
+- Files expected to change:
+  - `frontend/src/*`
+  - `frontend/README.md`
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P18A-T5`
+- Implementation steps:
+  1. Ask Claude Sonnet to design and implement a New Trade Review workspace using `frontend-design` and `finance-dashboard-ux-review`.
+  2. Support stock, ETF, and option intent entry using synthetic/local-safe states.
+  3. Clearly label review/scenario analysis and avoid order-ticket UX.
+- Acceptance criteria:
+  - UI supports trade review without broker order execution.
+  - No "you should buy/sell", guaranteed-return, or automated-management language.
+  - A typed sanitized trade-review read schema and forbidden-field tests exist before frontend consumes backend data.
+  - Coverage/collateral netting is either implemented or visibly caveated.
+  - Real market data is not required for local MVP demo; if the UI implies quote-current options review for external beta, a real REST snapshot provider is required first.
+- Tests to run:
+  - `cd frontend && npm run typecheck`
+  - `cd frontend && npm run lint`
+  - `cd frontend && npm run build`
+- Rollback notes:
+  - Revert trade review workspace files and docs.
+- Verification notes:
+  - Existing Phase 18A route `/trade-review` already provides the P18B-T1 shell in `frontend/src/pages/TradeReviewPage.tsx`, `frontend/src/components/trade-review/TradeReviewForm.tsx`, `frontend/src/api/tradeReviews.ts`, and `frontend/src/types/tradeReview.ts`.
+  - Supported synthetic/manual preview flows are stock buy, stock/ETF sell-or-trim, covered call, and cash-secured put; the UI calls only `POST /trade-reviews/preview` through the existing `/api` proxy.
+  - Safety review before Claude B: source inspection confirms no order ticket, broker execution, broker disconnect/delete, TradingAgents, LLM, real provider, localStorage/sessionStorage, or direct broker/market API path was introduced.
+  - Coverage/collateral caveats remain visible: covered-call coverage is not fully netted and CSP collateral uses a generic deterministic rule.
+  - Test results: `npm run typecheck` passed; `npm run lint` passed with zero warnings; `npm run build` passed with 85 modules transformed in 792ms.
+- Status: `done`
+
+### P18B-T2 - deterministic trade review report UI
+
+- Task id: `P18B-T2`
+- Title: deterministic trade review report UI
+- Objective: Render deterministic trade-review report sections, portfolio impact, cash/collateral impact, risk-rule violations, data freshness warnings, and journal/report links.
+- Files expected to change:
+  - `frontend/src/*`
+  - `frontend/README.md`
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P18B-T1`
+- Implementation steps:
+  1. Display deterministic calculations separately from AI explanation.
+  2. Show broker freshness and market quote freshness separately.
+  3. Show risk-rule violations by severity with text and icon, not color alone.
+- Acceptance criteria:
+  - UI distinguishes deterministic facts, optional AI explanation, and optional research evidence.
+  - No trade execution UI.
+- Tests to run:
+  - `cd frontend && npm run typecheck`
+  - `cd frontend && npm run lint`
+  - `cd frontend && npm run build`
+- Rollback notes:
+  - Revert report UI files and docs.
+- Verification notes:
+  - Existing `frontend/src/components/trade-review/TradeReviewResults.tsx` renders the sanitized `TradeReviewWorkspaceRead` response into separate sections for actionability, broker-vs-market freshness, intent summary, portfolio impact, cash/collateral impact, concentration/allocation impact, options exposure, scenario payoff, risk-rule violations, missing/stale data warnings, caveats, agent orchestration status, and analysis-only report output.
+  - Deterministic and narrative sections remain visually separated; the UI labels deterministic Python output, renders backend values verbatim, and does not recompute severity or financial calculations client-side.
+  - The analysis-only report section is labelled narrative/not actionable; optional research evidence remains out of scope because Phase 17 is still frozen.
+  - Test results: same frontend verification as P18B-T1 (`typecheck`, `lint`, and `build`) passed.
+- Status: `done`
+
+### P18B-T3 - optional research evidence display
+
+- Task id: `P18B-T3`
+- Title: optional research evidence display
+- Objective: Display cached or async public stock/company research as evidence when available.
+- Files expected to change:
+  - `frontend/src/*`
+  - `frontend/README.md`
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P18B-T2`, `P17-T6`
+- Implementation steps:
+  1. Render research evidence as optional and subordinate to deterministic review.
+  2. Show pending, unavailable, stale, and budget-required states.
+  3. Do not present research output as final portfolio-aware advice.
+- Acceptance criteria:
+  - TradingAgents/public research evidence is visually separate from deterministic trade-review conclusions.
+  - Missing TradingAgents dependency is a graceful UI state.
+- Tests to run:
+  - `cd frontend && npm run typecheck`
+  - `cd frontend && npm run lint`
+  - `cd frontend && npm run build`
+- Rollback notes:
+  - Revert evidence UI files and docs.
+- Verification notes:
+  - Not started by design. Phase 17 TradingAgents/Public Research Evidence contracts remain frozen, so P18B-T3 should wait for PM/architecture reactivation before any evidence UI is added.
+- Status: `not_started`
+
+### P18B-T4 - Codex integration review for Phase 18B
+
+- Task id: `P18B-T4`
+- Title: Codex integration review for Phase 18B
+- Objective: Verify the frontend trade-review workspace preserves read-only, deterministic-first, portfolio-aware boundaries.
+- Files expected to change:
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P18B-T2` (`P18B-T3` deferred -- Phase 17 TradingAgents/Public Research Evidence frozen by PM decision 2026-05-20)
+- Implementation steps:
+  1. Run backend and frontend tests.
+  2. Confirm no order tickets, broker actions, or execution affordances were added.
+  3. Confirm UI remains broader than options income, CSP, covered call, or wheel strategy.
+- Acceptance criteria:
+  - Phase 18B ships safe workspace expansion without breaking Phase 18A boundaries.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest`
+  - `cd frontend && npm run typecheck`
+  - `cd frontend && npm run lint`
+  - `cd frontend && npm run build`
+- Rollback notes:
+  - Reopen P18B-T3 if integration issues are found.
+- Verification notes:
+  - Prerequisite dependency-line fix applied: P18B-T4 now depends on `P18B-T2`, with `P18B-T3` explicitly deferred because Phase 17 TradingAgents/Public Research Evidence remains frozen by PM decision 2026-05-20. P18B-T3 status and notes were left untouched.
+  - Backend/frontend seam remains intact. `frontend/src/types/tradeReview.ts` mirrors `backend/app/schemas/trade_review_workspace.py` field names for the trade-review workspace schema; Decimal fields remain serialized as strings; no new `SupportedTradeReviewFlow` values, top-level response fields, or actionability vocabulary changes were found.
+  - Privacy-guard unification verified: `backend/app/services/privacy.py` defines `FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS` from `FORBIDDEN_PRIVATE_CONTEXT_KEYS` plus provider-contract/provider-symbol and account-value/raw-account-value keys; both the schema validator and mapper input guard import the same constant. `grep -n FORBIDDEN` shows no local duplicate forbidden-key set in `trade_review_workspace.py` or `frontend_read.py`.
+  - Four layered defenses remain in place: Pydantic `extra="forbid"` on the workspace schemas, mapper `_reject_forbidden_input(...)`, final `model_validator(mode="after")` payload validation, and FastAPI `response_model=TradeReviewWorkspaceRead` route revalidation.
+  - Regression coverage for `provider_contract_id` and `raw_account_values` exists in `backend/tests/services/trade_review/test_frontend_read.py`.
+  - Frontend integration boundary remains single-path: the trade-review slice calls `tradeReviewsApi.preview(...)`, which posts only to `/api/trade-reviews/preview`; Vite still strips `/api` and injects `X-Local-Access-Token` server-side when configured. No direct broker, market-data, LLM, TradingAgents, or external provider fetches were found.
+  - Backend preview path remains synthetic/stateless: no DB writes, broker sync, real market-provider call, LLM call, TradingAgents call, broker action, or route expansion was introduced.
+  - Safety re-check passed: no execution affordances beyond explicit negative safety-copy comments/labels; no advice/guaranteed-return wording; no frontend financial formatting/recalculation in `TradeReviewResults.tsx`; `Number(...)` appears only in form shape-validation predicates; no portfolio/review/broker/credential storage calls in the trade-review slice.
+  - Workspace breadth preserved: all six `SupportedTradeReviewFlow` values remain available through the stock/ETF and option form grouping; the UI has not narrowed into a CSP/covered-call or wheel-only workflow. Broker snapshot freshness and market quote freshness still render in distinct parallel columns, and covered-call/CSP caveats remain inline.
+  - Tests run: `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_frontend_read.py tests/api/test_trade_review_workspace.py -q` -> `18 passed in 0.08s`; `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_actionability.py tests/services/agents/ -q` -> `79 passed in 0.07s`; `cd backend && ./.venv/bin/python -m pytest -q` -> `417 passed, 92 skipped, 1 deselected in 0.80s` with expected DB-backed skips because the configured database is unavailable or not marked safe for destructive tests.
+  - Frontend checks run: `cd frontend && npm run typecheck`, `npm run lint`, and `npm run build` all passed. Build output: `dist/index.html` 0.50 kB / gzip 0.32 kB, `dist/assets/index-zwQ71BVe.css` 2.72 kB / gzip 1.09 kB, `dist/assets/index-DXBO-Qg4.js` 293.17 kB / gzip 79.81 kB.
+  - Live click-through was not rerun for P18B-T4; this gate relied on static integration checks plus the backend/frontend command suite because the P18B T0-T2 scope did not change the runtime route or UI network path from the previously clicked-through Phase 18A workspace.
+  - Recommendation: PASS. Phase 18B is closed over the completed T0-T2 + T4 scope; P18B-T3 remains a tracked future task pending Phase 17 reactivation.
+- Status: `done`

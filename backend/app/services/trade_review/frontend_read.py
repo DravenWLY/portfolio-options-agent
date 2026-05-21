@@ -35,7 +35,7 @@ from app.schemas.trade_review_workspace import (
 )
 from app.services.agents.orchestrator import AgentTeamOrchestrationResult, DEFAULT_AGENT_WORKFLOW_STAGES
 from app.services.agents.report_composer import ReportComposerAgentOutput
-from app.services.privacy import FORBIDDEN_PRIVATE_CONTEXT_KEYS, find_forbidden_keys
+from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.trade_review.actionability import evaluate_portfolio_snapshot_actionability
 from app.services.trade_review.context import PortfolioReviewContext
 from app.services.trade_review.models import (
@@ -546,8 +546,7 @@ def _default_preview_market_quotes() -> MarketQuotesMetadata:
 def _reject_forbidden_input(payload: object, *, label: str) -> None:
     forbidden = find_forbidden_keys(
         payload,
-        forbidden_keys=FORBIDDEN_PRIVATE_CONTEXT_KEYS
-        | {"provider_contract_id", "provider_contract_ids", "provider_symbol", "provider_symbols"},
+        forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS,
     )
     if forbidden:
         blocked = ", ".join(sorted(forbidden))

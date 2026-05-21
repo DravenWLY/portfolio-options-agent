@@ -245,6 +245,30 @@ def test_workspace_read_rejects_forbidden_private_fields_and_prohibited_language
             actionability=_normal_actionability(),
         )
 
+    with pytest.raises(ValueError, match="forbidden private fields"):
+        build_trade_review_workspace_read(
+            projection=_projection(
+                intent_summary={
+                    "intent_id": "bad-2",
+                    "asset_class": "option",
+                    "intent_type": "option_strategy",
+                    "status": "ready_for_review",
+                    "strategy_type": "covered_call",
+                    "underlying_symbol": "XYZ",
+                    "legs": (
+                        {
+                            **_option_leg(option_type="call", leg_action="sell_to_open"),
+                            "provider_contract_id": "provider-contract-private",
+                        },
+                    ),
+                }
+            ),
+            actionability=_normal_actionability(),
+        )
+
+    with pytest.raises(ValueError, match="forbidden private fields"):
+        validate_trade_review_workspace_payload({"raw_account_values": {"total": "12345"}})
+
     with pytest.raises(ValueError, match="prohibited phrase"):
         validate_trade_review_workspace_payload({"message": "You should buy this now."})
 

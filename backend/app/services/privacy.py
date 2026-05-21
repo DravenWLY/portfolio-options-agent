@@ -49,6 +49,15 @@ FORBIDDEN_PRIVATE_CONTEXT_KEYS = FORBIDDEN_REPORT_FACT_KEYS | {
     "portal_url",
 }
 
+FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS = FORBIDDEN_PRIVATE_CONTEXT_KEYS | {
+    "provider_contract_id",
+    "provider_contract_ids",
+    "provider_symbol",
+    "provider_symbols",
+    "account_values",
+    "raw_account_values",
+}
+
 
 def find_forbidden_keys(
     value: object,

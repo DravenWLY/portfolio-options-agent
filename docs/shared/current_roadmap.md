@@ -39,17 +39,18 @@ TradingAgents-inspired does not mean TradingAgents-centered. The product center 
 - Phase 15: deterministic trade review engine MVP with payoff, portfolio impact, risk integration, strategy wrappers, deterministic report, and agent-safe projection.
 - Phase 16: deterministic agent components plus portfolio-aware agent-team orchestrator, including actionability policy, context envelopes, run/step mapping, and privacy-safe fallbacks.
 - Phase 18A: first visible Trade Review Workspace readiness, including the sanitized backend read contract, synthetic preview endpoint, first read-only frontend workspace, and integration review.
+- Phase 18B: frontend Trade Review Workspace expansion over the T0-T2 + T4 scope, including frontend-read privacy guard unification, deterministic report UI, and Codex integration review. P18B-T3 research-evidence display remains deferred pending Phase 17 reactivation.
 
 Detailed verification history lives in `docs/shared/completed_phases_log.md`.
 
 ## Active Phases
 
-Phase 18B - Frontend Trade Review Workspace expansion.
+Awaiting Codex A PM decision for the next active vertical slice.
 
-- Expand the completed Phase 18A workspace in small vertical slices.
-- Keep the workspace read-only, deterministic-first, and actionability/freshness-aware.
-- Preserve the approved Phase 18A frontend read contract unless Codex B/Codex C explicitly revise the backend schema first.
-- Optional research evidence display still waits for Phase 17 contracts and must remain subordinate to deterministic review.
+- Phase 18A and Phase 18B are complete.
+- Keep the Trade Review Workspace read-only, deterministic-first, and actionability/freshness-aware.
+- Preserve the approved Phase 18A/18B frontend read contract unless Codex B/Codex C explicitly revise the backend schema first.
+- Recommended next PM discussion: whether to start a Phase 18C real portfolio-backed trade-review workspace slice before reactivating Phase 17.
 
 Temporarily frozen: deep Phase 17 TradingAgents/Public Research Evidence Adapter implementation.
 
@@ -59,12 +60,14 @@ Temporarily frozen: deep Phase 17 TradingAgents/Public Research Evidence Adapter
 
 ## Next Phases
 
-Phase 18B - Frontend Trade Review Workspace expansion.
+Candidate Phase 18C - Real portfolio-backed Trade Review Workspace.
 
-- Expand the first Phase 18A workspace after the safe read contract, first UI slice, and review gates pass.
+- PM decision required before implementation starts.
+- Likely direction: replace or supplement the synthetic preview with a safe backend path that uses an existing sanitized portfolio snapshot/manual portfolio context, the actionability policy, and deterministic trade-review outputs.
+- Keep this deterministic-first and read-only: no TradingAgents, no LLM, no real market-data dependency, no broker actions, no order UI.
 - Optional research evidence display waits for Phase 17 contracts and must remain subordinate to deterministic review.
 
-Before expanding beyond the Phase 18A workspace:
+Before expanding beyond the Phase 18B workspace:
 
 - Keep Phase 17 frozen unless Codex A PM explicitly reactivates it.
 - Resolve backend contract fast-follows before asking frontend to consume new fields.

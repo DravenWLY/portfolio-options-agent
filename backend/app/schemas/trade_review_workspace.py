@@ -8,7 +8,7 @@ from app.schemas.actionability import (
     PortfolioActionabilityDecision,
     ReviewActionabilityStatus,
 )
-from app.services.privacy import FORBIDDEN_PRIVATE_CONTEXT_KEYS, find_forbidden_keys
+from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.risk.violations import RiskSeverity
 
 
@@ -22,14 +22,6 @@ SupportedTradeReviewFlow: TypeAlias = Literal[
 ]
 WorkspaceCaveatSeverity: TypeAlias = Literal["info", "warning", "blocker"]
 
-FORBIDDEN_TRADE_REVIEW_WORKSPACE_FIELDS = FORBIDDEN_PRIVATE_CONTEXT_KEYS | {
-    "provider_contract_id",
-    "provider_contract_ids",
-    "provider_symbol",
-    "provider_symbols",
-    "account_values",
-    "raw_account_values",
-}
 PROHIBITED_TRADE_REVIEW_WORKSPACE_PHRASES = (
     "you should",
     "i recommend",
@@ -272,7 +264,7 @@ class TradeReviewWorkspaceRead(BaseModel):
 def validate_trade_review_workspace_payload(payload: object) -> None:
     """Reject private broker fields and advice-like wording in frontend payloads."""
 
-    forbidden = find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_FIELDS)
+    forbidden = find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
     if forbidden:
         blocked = ", ".join(sorted(forbidden))
         raise ValueError(f"trade review workspace payload contains forbidden private fields: {blocked}")

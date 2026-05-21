@@ -4377,3 +4377,357 @@ Phase goal: define and implement the app-owned stage graph/workflow that turns P
   - Confirmed orchestrator-created envelopes preserve exact stage order, actionability gate semantics, broker/market freshness separation, and sanitized run/step persistence mapping.
   - Deferred note: before real Market Data Agent work, align `resolve_market_snapshot` envelope metadata with a public/sanitized market quote context or a new `market_quote_context` envelope type.
   - Phase 16B accepted as complete; Phase 17 may start.
+
+## Phase 18A - Frontend Trade Review Workspace Readiness
+
+Phase goal: make the first visible Trade Review Workspace possible without waiting for TradingAgents research/debate evidence or real market-data provider integration. Phase 18A uses completed Phase 16 deterministic/actionability/orchestration outputs through a sanitized frontend read contract.
+
+Architecture contract: `docs/codex-b-architecture/PHASE_18A_FRONTEND_READINESS_CONTRACT.md`.
+
+Allowed Phase 18A flows:
+
+- Stock/ETF buy.
+- Stock/ETF sell or trim.
+- Covered call.
+- Cash-secured put.
+
+Explicitly out of Phase 18A:
+
+- TradingAgents/Public Research Evidence implementation or UI.
+- Real market-data provider integration.
+- Broker order placement, order cancellation, broker disconnect/delete, broker scraping, Fidelity credential storage, or MFA bypass.
+- Option-chain browser, screener, market-data terminal, automated recommendations, "you should buy/sell" language, guaranteed-return language, or raw brokerage/private data exposure.
+
+### P18A-T0 - sanitized trade-review workspace read contract
+
+- Task id: `P18A-T0`
+- Title: sanitized trade-review workspace read contract
+- Objective: Add the typed backend read schema, mapper/projection, and tests that Claude A can safely build the first Trade Review Workspace against.
+- Files expected to change:
+  - `backend/app/schemas/trade_review_workspace.py`
+  - `backend/app/services/trade_review/frontend_read.py`
+  - `backend/tests/services/trade_review/test_frontend_read.py`
+  - `docs/shared/implementation_plan.md`
+- Dependencies: Phase 16 complete.
+- Implementation steps:
+  1. Define a single frontend-safe `TradeReviewWorkspaceRead` response shape for deterministic review plus Phase 16 actionability/orchestration summaries.
+  2. Map existing deterministic trade-review report data, `PortfolioActionabilityDecision`, and Phase 16 orchestration summaries into safe read sections.
+  3. Include separate broker snapshot freshness and market quote freshness metadata.
+  4. Include trade intent summary, portfolio impact, cash/collateral impact, concentration/allocation impact, options assignment/exercise/call-away exposure, deterministic risk-rule violations, missing/stale data warnings, and analysis-only report output.
+  5. Add coverage/collateral modelling caveat fields unless coverage/collateral netting is fully modelled.
+  6. Recursively reject forbidden private fields from every response shape.
+- Acceptance criteria:
+  - Response schema omits raw holdings, account values, raw cash balances, broker/provider account ids, provider contract ids, raw provider payloads, secrets, trade journal entries, and account-specific thresholds.
+  - Schema supports stock/ETF buy, stock/ETF sell or trim, covered call, and cash-secured put.
+  - Actionability vocabulary matches Phase 16 and preserves separate `broker_snapshot` and `market_quotes` objects.
+  - Derived impact values are safe owner-facing review outputs; raw current holdings, raw current cash, total account value, and full position lists are not exposed.
+  - Tests cover all four flows, stale/manual/analysis-only states, forbidden-field rejection, and prohibited advice/guarantee language.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_frontend_read.py`
+  - `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_actionability.py tests/services/agents/`
+  - `cd backend && ./.venv/bin/python -m pytest`
+- Rollback notes:
+  - Remove the safe read schema/mapper/tests; frontend work must remain blocked until a replacement contract exists.
+- Verification notes:
+  - Implemented schema/mapper-only frontend-readiness contract in `backend/app/schemas/trade_review_workspace.py` and `backend/app/services/trade_review/frontend_read.py`; no FastAPI route, migrations, frontend code, real providers, TradingAgents, LLM calls, or broker actions were added.
+  - `TradeReviewWorkspaceRead` supports Phase 18A flows: `stock_buy`, `stock_sell_trim`, `etf_buy`, `etf_sell_trim`, `covered_call`, and `cash_secured_put`; the mapper consumes the agent-safe `TradeReviewAgentProjection`, not the raw `TradeReviewReport`, to avoid internal account ids and absolute account/cash values.
+  - Actionability is carried through the Phase 16 `PortfolioActionabilityDecision` with separate `broker_snapshot` and `market_quotes`; orchestration output is summarized as stage order/status/unavailable reasons only, without envelopes, prompts, or private context payloads.
+  - Deterministic sections include trade intent summary, safe portfolio impact, derived cash/collateral impact, concentration/allocation placeholder, options assignment/exercise exposure, risk-rule violations, missing/stale warnings, scenario payoff summary, optional analysis-only report output, and caveats.
+  - Codex B blocker remediation: `RiskRuleViolationSummaryRead` no longer exposes raw `threshold`; mapper emits safe `policy_label` when a backend violation had a threshold, and tests assert numeric/account-specific threshold values are omitted.
+  - Coverage/collateral caveats are explicit: covered-call stock coverage is `not_fully_modelled`, and cash-secured-put collateral is `generic_rule_only` until future netting/broker-specific modelling lands.
+  - `backend/tests/services/trade_review/test_frontend_read.py` covers all Phase 18A flows, stale/manual/analysis-only actionability, orchestration summary shape, recursive forbidden-field rejection, and prohibited advice/guarantee language.
+  - Latest test results after Codex B blocker remediation: `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_frontend_read.py tests/api/test_trade_review_workspace.py -q` -> `18 passed in 0.21s`; `cd backend && ./.venv/bin/python -m pytest tests/api/test_trade_review_workspace.py tests/services/trade_review/test_frontend_read.py tests/services/trade_review/test_actionability.py tests/services/agents/ -q` -> `97 passed in 0.33s`; `cd backend && ./.venv/bin/python -m pytest -q` -> `417 passed, 92 skipped, 1 deselected in 1.85s` with expected DB-unavailable/destructive-test skips.
+- Status: `done`
+
+### P18A-T1 - optional preview/read API endpoint
+
+- Task id: `P18A-T1`
+- Title: optional preview/read API endpoint
+- Objective: Expose the sanitized read schema through the smallest backend API route needed for Claude A, if existing route patterns make it clean.
+- Files expected to change:
+  - `backend/app/api/routes/trade_reviews.py` or equivalent existing route module
+  - `backend/app/main.py` only if a new router must be registered
+  - `backend/tests/api/test_trade_review_workspace.py`
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P18A-T0`
+- Implementation steps:
+  1. Prefer a small `POST /api/trade-reviews/preview` or equivalent that returns `TradeReviewWorkspaceRead`.
+  2. Keep the route deterministic and mock/manual-provider friendly; do not call real brokers, real market providers, TradingAgents, or LLMs.
+  3. Accept only the minimum request fields needed to validate the proposed trade intent and selected app account context.
+  4. Do not return app account ids, broker account ids, provider ids, raw holdings, raw balances, raw provider payloads, or secrets in the response.
+- Acceptance criteria:
+  - Claude A has a stable route/contract to consume, or Codex C documents why schema/mapper-only is the safer stopping point.
+  - API tests use synthetic data only.
+  - Error states are safe and do not expose raw backend/provider errors.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest tests/api/test_trade_review_workspace.py`
+  - `cd backend && ./.venv/bin/python -m pytest`
+- Rollback notes:
+  - Remove the route/tests while keeping schema/mapper if still useful.
+- Verification notes:
+  - Added a small protected `POST /trade-reviews/preview` route in `backend/app/api/routes/trade_reviews.py` and registered it in `backend/app/main.py`.
+  - The route is stateless and synthetic/manual-provider friendly: it does not use the database, app accounts, real broker sync, real market providers, TradingAgents, LLMs, or broker actions.
+  - Added `TradeReviewWorkspacePreviewRequest` and `TradeReviewPreviewOptionLeg` to `backend/app/schemas/trade_review_workspace.py`; request validation enforces stock/ETF versus option-flow shapes before deterministic preview construction.
+  - Codex B blocker remediation: preview requests no longer accept `broker_snapshot`, `market_quotes`, or `user_confirmation`; the server owns preview freshness/actionability and always uses synthetic/manual analysis-only inputs, so callers cannot submit fresh/live/actionable metadata to produce `normal_review`.
+  - `build_trade_review_workspace_preview` in `backend/app/services/trade_review/frontend_read.py` constructs internal synthetic trade intents, evaluates deterministic payoff/impact/risk, applies the Phase 16 actionability policy with server-owned preview metadata, and returns only `TradeReviewWorkspaceRead`.
+  - `backend/tests/api/test_trade_review_workspace.py` covers sanitized stock preview response, stock sell/trim, ETF buy/trim, covered-call preview, cash-secured-put caveat response, rejection of client-supplied fresh/live/actionable metadata, mismatched-shape 422 validation, and local access guard 401 behavior.
+  - Latest test results after Codex B blocker remediation: `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_frontend_read.py tests/api/test_trade_review_workspace.py -q` -> `18 passed in 0.21s`; `cd backend && ./.venv/bin/python -m pytest tests/api/test_trade_review_workspace.py tests/services/trade_review/test_frontend_read.py tests/services/trade_review/test_actionability.py tests/services/agents/ -q` -> `97 passed in 0.33s`; `cd backend && ./.venv/bin/python -m pytest -q` -> `417 passed, 92 skipped, 1 deselected in 1.85s` with expected DB-unavailable/destructive-test skips.
+- Status: `done`
+
+### P18A-T2 - Claude B backend-contract review
+
+- Task id: `P18A-T2`
+- Title: Claude B backend-contract review
+- Objective: Review the Phase 18A backend read contract before Claude A frontend implementation.
+- Files expected to change:
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P18A-T0`; `P18A-T1` if implemented.
+- Implementation steps:
+  1. Provide Claude B a strict read whitelist: Phase 18A contract doc, changed schema/mapper/route files, and direct tests.
+  2. Ask for findings first, ordered by severity.
+  3. Focus review on forbidden private fields, stale-data/actionability semantics, safe copy, route boundaries, and test coverage.
+- Acceptance criteria:
+  - Claude B returns PASS or all blockers are fixed.
+  - Claude A remains blocked until backend contract review passes or Codex B explicitly accepts residual risk.
+- Tests to run:
+  - Review task only; no tests unless fixes are accepted.
+- Rollback notes:
+  - Reopen P18A-T0/T1 if the review blocks.
+- Status: `done`
+- Verification notes (2026-05-19, Claude B, retroactive):
+  - This gate was discovered to have been skipped — P18A-T3 (Claude A) was
+    implemented before P18A-T2 ran. Review was performed retroactively
+    against the same read whitelist: contract doc, schema, mapper, route,
+    and direct tests. No contract regression was found that would have
+    altered the P18A-T3 frontend implementation.
+  - Verdict: PASS. No blockers.
+  - One Important issue: the mapper's input-time forbidden-key guard
+    (`backend/app/services/trade_review/frontend_read.py:546-554`) is
+    narrower than the final-output validator
+    (`backend/app/schemas/trade_review_workspace.py:25-32`); it omits
+    `account_values` and `raw_account_values`. Defense in depth catches
+    the gap at the `model_validator(mode="after")` boundary, so this is
+    not a leak — but the layered guard is not self-consistent. Recommend
+    unifying via a shared constant in `app/services/privacy.py`. Tracked
+    as a fast-follow.
+  - Verified four layered defenses: Pydantic `extra="forbid"`, mapper
+    input guard `_reject_forbidden_input`,
+    `validate_trade_review_workspace_payload` on the `model_validator`,
+    and FastAPI `response_model` re-validation on the route return.
+  - Verified actionability semantics intact: broker vs market freshness
+    remain scope-separated; precedence inherited unchanged from Phase 16
+    ADR-0001.
+  - Verified route boundary: single POST `/trade-reviews/preview`,
+    protected by `X-Local-Access-Token` via `main.py:20`; no DB / broker /
+    market provider / LLM / TradingAgents / orchestrator calls in the
+    preview path.
+  - Verified test coverage: 18 focused tests pass
+    (`tests/services/trade_review/test_frontend_read.py` +
+    `tests/api/test_trade_review_workspace.py`); all six
+    `SupportedTradeReviewFlow` values exercised end-to-end;
+    account-specific risk-rule threshold values proven excluded
+    (injected `777777` not present in the serialized read); orchestration
+    step envelopes proven excluded.
+  - Tests run: `cd backend && ./.venv/bin/python -m pytest
+    tests/services/trade_review/test_frontend_read.py
+    tests/api/test_trade_review_workspace.py -q` → 18 passed in 0.10s.
+  - Deferred polish: prohibited-phrase guard is fixed-substring (won't
+    catch paraphrases such as "must buy", "definitely sell"); no focused
+    unit test for the `report_output is not None` branch of the mapper;
+    preview is intentionally hard-wired to `manual_confirmation_required`
+    (worth noting in the route docstring). None block Phase 18A.
+
+### P18A-T3 - first visible Trade Review Workspace UI
+
+- Task id: `P18A-T3`
+- Title: first visible Trade Review Workspace UI
+- Objective: Ask Claude A to implement the first read-only frontend workspace against the approved sanitized backend contract.
+- Files expected to change:
+  - `frontend/src/*`
+  - `frontend/README.md`
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P18A-T2`
+- Implementation steps:
+  1. Add a route and workspace for the four allowed Phase 18A flows.
+  2. Render deterministic facts, actionability, broker freshness, market quote freshness, missing/stale warnings, risk-rule violations, and analysis-only report output.
+  3. Keep deterministic facts, optional agent explanation, and future public research evidence visually separate.
+  4. Add loading, empty, error, stale, blocked, analysis-only, and manual-confirmation-required states.
+- Acceptance criteria:
+  - UI uses only the sanitized backend read contract and does not invent fields.
+  - UI contains no order ticket, execution controls, broker destructive actions, advice wording, or guaranteed-return language.
+  - UI does not compute financial metrics client-side.
+  - UI does not store portfolio/review data in localStorage/sessionStorage.
+- Tests to run:
+  - `cd frontend && npm run typecheck`
+  - `cd frontend && npm run lint`
+  - `cd frontend && npm run build`
+- Rollback notes:
+  - Revert Phase 18A frontend files.
+- Status: `done` (Claude A implementation 2026-05-18; P18A-T4 PASS by Claude B 2026-05-19; P18A-T2 PASS by Claude B 2026-05-19 retroactive; P18A-T5 PASS by Codex B 2026-05-20)
+- Verification notes (2026-05-18):
+  - Files added: `frontend/src/types/tradeReview.ts` (exact mirror of
+    `backend/app/schemas/trade_review_workspace.py` + actionability sub-shapes;
+    omits broker/private keys), `frontend/src/api/tradeReviews.ts`,
+    `frontend/src/components/trade-review/TradeReviewForm.tsx`,
+    `frontend/src/components/trade-review/TradeReviewResults.tsx`,
+    `frontend/src/pages/TradeReviewPage.tsx`. Edited: `frontend/src/App.tsx`
+    (`/trade-review` route), `frontend/src/components/layout/Sidebar.tsx`
+    (nav entry), `frontend/README.md`.
+  - Calls `POST /trade-reviews/preview` only (via the `/api` proxy);
+    no other backend route, no SnapTrade/market-data/LLM/TradingAgents API,
+    no `.env`/DB/secret access; no `localStorage`/`sessionStorage` of
+    portfolio or review data; no order/execute/cancel/disconnect controls.
+  - Frontend performs no financial computation; values render verbatim.
+    Severity/actionability paired with icon + text (never color-only).
+    Broker snapshot and market quote freshness shown as separate scopes.
+    Covered-call coverage caveat and CSP generic-rule caveat surfaced inline.
+    Deterministic facts, agent orchestration status, and analysis-only
+    narrative are kept visually separate (per the structural-sections-first
+    requirement; raw markdown only behind a `<details>` toggle).
+  - Required states implemented: idle/loading/error/empty + per-payload
+    actionability (normal_review / analysis_only / manual_confirmation_required
+    / blocked_*). Form-level validation errors shown.
+  - Build/tests:
+    - `cd frontend && npm run typecheck` — passed (0 errors).
+    - `cd frontend && npm run lint` — passed (0 warnings, --max-warnings 0).
+    - `cd frontend && npm run build` — passed (`index-DXBO-Qg4.js`, 293 kB).
+  - No interactive browser click-through was performed (no dev server/display
+    in this environment); state coverage verified via code paths and build.
+  - Not marked `done`: pending P18A-T4 (Claude B frontend safety/quality
+    review) and P18A-T5 (Codex B integration review).
+
+### P18A-T4 - Claude B frontend safety and quality review
+
+- Task id: `P18A-T4`
+- Title: Claude B frontend safety and quality review
+- Objective: Review the first Trade Review Workspace before Codex B integration sign-off.
+- Files expected to change:
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P18A-T3`
+- Implementation steps:
+  1. Review frontend safety language, no execution controls, stale-data clarity, private-data leakage, UX clarity, and implementation quality.
+  2. Confirm broker snapshot freshness and market quote freshness are visually distinct.
+  3. Confirm deterministic calculations, agent text, and future research evidence are structurally separate.
+- Acceptance criteria:
+  - Claude B returns PASS or all blockers are fixed before Codex B final integration review.
+- Tests to run:
+  - Review task only; no tests unless fixes are accepted.
+- Rollback notes:
+  - Reopen P18A-T3 if the review blocks.
+- Status: `done`
+- Verification notes (2026-05-19, Claude B):
+  - Verdict: PASS. No blockers, no important issues.
+  - Contract fidelity: `frontend/src/types/tradeReview.ts` mirrors
+    `backend/app/schemas/trade_review_workspace.py` 1:1 (modulo Decimal→
+    string); no forbidden private fields (`account_id`,
+    `provider_account_id`, `provider_contract_id`, `provider_symbol`,
+    `raw_payload`, `raw_metadata`, `secret_ref`, `total_cash`,
+    `free_cash`, `buying_power`, …) appear in the slice.
+  - Safety language: no order ticket / execute / cancel / disconnect /
+    delete / option-chain browser / screener / market terminal /
+    automated recommendation surfaces; banned phrases ("you should",
+    "safe to trade", "ready to trade", "guaranteed", "i recommend",
+    "recommend buying/selling") absent from all new files.
+  - Freshness scoping: broker snapshot and market quotes rendered as
+    distinct parallel columns; backend severity asymmetry preserved.
+  - Severity & actionability never color-only: icon + label paired for
+    every severity (info | warning | violation | blocker) and every
+    `ReviewActionabilityStatus`; states covered: idle / loading / error /
+    empty / validation, plus per-payload normal_review / analysis_only /
+    manual_confirmation_required / blocked_*.
+  - Layered separation: deterministic facts, agent orchestration
+    (status only, distinct left-border), and analysis-only narrative
+    (separate left-border) are visually and structurally separated; raw
+    markdown collapsed behind a `<details>` toggle; no LLM-generated text
+    leaks into deterministic surfaces.
+  - Covered-call and CSP caveats surfaced inline when applicable.
+  - No frontend computation: numeric values rendered verbatim from the
+    backend; form sends Decimals as strings (no float drift).
+  - Storage hygiene: no `localStorage` / `sessionStorage` of portfolio,
+    review, broker, credential, token, or account data (grep clean).
+  - Visual / UX: no hardcoded colors in new components (all CSS
+    variables); cockpit-style density preserved; sidebar nav entry
+    behaves correctly.
+  - Build health: `cd frontend && npm run typecheck && npm run lint
+    --max-warnings 0 && npm run build` all clean (293 kB main chunk,
+    80 kB gzipped, 85 modules).
+  - Plan discipline: P18A-T3 was correctly left `in_progress` by
+    Claude A (not self-marked `done`); files changed match plan's
+    "Files expected to change".
+  - Click-through deferred to P18A-T5 (Codex B integration review),
+    where the dev stack is the natural place to exercise the full
+    actionability state matrix against the live preview endpoint.
+  - Deferred polish (non-blocking, optional fast-follow):
+    decimal-regex tightening in `TradeReviewForm.tsx:245-254`;
+    `min={today}` on the date input at `:79,178`; distinct `blocker`
+    chip token at `TradeReviewResults.tsx:35-36`; unique React keys
+    for severity groups at `TradeReviewResults.tsx:124,409,450,480`.
+
+### P18A-T5 - Codex B integration review
+
+- Task id: `P18A-T5`
+- Title: Codex B integration review
+- Objective: Verify the Phase 18A frontend/backend seam before calling the first workspace ready.
+- Files expected to change:
+  - `docs/shared/implementation_plan.md`
+- Dependencies: `P18A-T4`
+- Implementation steps:
+  1. Run relevant backend and frontend checks.
+  2. Confirm the UI consumes only the approved safe read contract.
+  3. Confirm no scope drift into Phase 17, market terminal, screener, broker action, or advice language.
+- Acceptance criteria:
+  - Phase 18A is safe to demo locally as deterministic/manual-decision-support only.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest`
+  - `cd frontend && npm run typecheck`
+  - `cd frontend && npm run lint`
+  - `cd frontend && npm run build`
+- Rollback notes:
+  - Reopen P18A-T3/T4 if integration issues are found.
+- Status: `done` (Codex B PASS 2026-05-20; Phase 18A complete)
+- Verification notes (2026-05-20):
+  - Backend focused check passed:
+    `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review tests/api/test_trade_review_workspace.py -q`
+    -> `76 passed in 0.21s`.
+  - Frontend checks passed:
+    `cd frontend && npm run typecheck && npm run lint && npm run build`.
+    Build output: `dist/index.html` 0.50 kB / gzip 0.32 kB,
+    `dist/assets/index-zwQ71BVe.css` 2.72 kB / gzip 1.09 kB,
+    `dist/assets/index-DXBO-Qg4.js` 293.17 kB / gzip 79.81 kB.
+  - Live stack click-through used backend `127.0.0.1:8000` and frontend
+    `127.0.0.1:5173`. Verified idle, loading/reset behavior, backend-unavailable
+    error state, success state, stock-buy rendering, covered-call caveat rendering
+    (`not_fully_modelled` / coverage caveat), and cash-secured-put caveat
+    rendering (`generic_rule_only` / generic deterministic collateral caveat).
+  - Runtime endpoint sweep covered all six Phase 18A flows:
+    `stock_buy`, `stock_sell_trim`, `etf_buy`, `etf_sell_trim`, `covered_call`,
+    and `cash_secured_put`. The synthetic preview naturally produced only
+    `manual_confirmation_required`; the remaining six `ReviewActionabilityStatus`
+    branches remain structurally covered by the typed union and
+    `ActionabilityBanner` branch table in `TradeReviewResults.tsx`.
+  - Runtime JSON scan across the six synthetic preview responses found no
+    forbidden private/raw keys, including account/provider ids, holdings,
+    positions, raw payload/metadata, cash/buying-power fields, account values,
+    trade journal fields, or raw threshold values.
+  - Network/storage audit: workspace submissions hit local
+    `POST /api/trade-reviews/preview` / backend `POST /trade-reviews/preview`.
+    No SnapTrade, Fidelity, market-data provider, TradingAgents, LLM, broker
+    action, or external provider calls were observed from the trade-review
+    workspace path. A global dev account-selector `/api/users` call failed
+    locally because the DB-backed account selector was unavailable; this is
+    outside the Phase 18A workspace contract and did not affect preview
+    rendering. DevTools storage inspection showed no portfolio/review/broker/
+    credential keys; only expected POA UI keys plus unrelated pre-existing
+    browser keys were present.
+  - Rendered DOM language stayed educational/read-only: no `you should`,
+    `I recommend`, buy/sell recommendation, safe/ready-to-trade, order
+    submission, execution, or guaranteed-return wording. Existing order/broker
+    language is explicitly negative (`No orders are placed`, `No broker action
+    is taken`).
+  - P18A-T2 carry-over issue decision: close as a deferred fast-follow, not a
+    P18A blocker. The mapper's input-time forbidden-key guard is still narrower
+    than the final output validator for `account_values` / `raw_account_values`,
+    but the response model and recursive final-output validator provide the
+    Phase 18A runtime safety boundary. Recommended follow-up: lift the shared
+    forbidden frontend-read key set into `app/services/privacy.py` and import it
+    from both mapper and schema validators.

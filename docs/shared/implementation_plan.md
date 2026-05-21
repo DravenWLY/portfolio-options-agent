@@ -1,6 +1,6 @@
 # Implementation Plan
 
-Active and future implementation tasks only. Completed Phase 1-16 history lives in `docs/shared/completed_phases_log.md`. High-level review context lives in `docs/shared/current_roadmap.md`; role-specific briefs live in the agent folders under `docs/`.
+Active and future implementation tasks only. Completed phase history lives in `docs/shared/completed_phases_log.md`. High-level review context lives in `docs/shared/current_roadmap.md`; role-specific briefs live in the agent folders under `docs/`.
 
 Default reading rule: load this file for the current phase and next phase only. Avoid loading `docs/shared/completed_phases_log.md` unless a task explicitly needs historical verification details.
 
@@ -27,9 +27,15 @@ surface for the completed capability. Every frontend slice must stay read-only,
 show loading/empty/error/stale states, and distinguish broker freshness from
 market quote freshness.
 
-## Phase 17 - TradingAgents/Public Research Evidence Adapter
+## Recently Completed
+
+Phase 18A - Frontend Trade Review Workspace Readiness is complete and archived in `docs/shared/completed_phases_log.md`.
+
+## Phase 17 - TradingAgents/Public Research Evidence Adapter (temporarily frozen)
 
 Phase goal: integrate TradingAgents and/or other public research sources only as optional asynchronous public stock/company research evidence. TradingAgents must stay out of the fast trade-review path, must not become the portfolio-aware decision engine, and must not receive user brokerage holdings, account values, cash, broker account ids, trade journal entries, or account-specific risk thresholds by default.
+
+PM decision on 2026-05-20: freeze deep Phase 17 implementation while the team focuses on the visible trade-review workspace path. Phase 18A is complete; continue to keep these tasks frozen during Phase 18B unless Codex A PM explicitly reactivates them.
 
 ### P17-T1 - optional dependency detection
 
@@ -168,20 +174,20 @@ Phase goal: integrate TradingAgents and/or other public research sources only as
   - Reopen P17-T5 if integration issues are found.
 - Status: `not_started`
 
-## Phase 18 - Frontend Trade Review Workspace
+## Phase 18B - Frontend Trade Review Workspace Expansion
 
-Phase goal: add the first user-facing trade review workspace for proposed stock, ETF, and options trades after the backend trade-review, Phase 16A deterministic components, and Phase 16B orchestration contract are stable. Rich research/debate UI waits for Phase 17 contracts.
+Phase goal: expand the first Phase 18A workspace after the safe read contract, first UI slice, and review gates pass. Rich research/debate UI still waits for Phase 17 contracts.
 
-### P18-T1 - New Trade Review workspace shell
+### P18B-T1 - New Trade Review workspace shell expansion
 
-- Task id: `P18-T1`
+- Task id: `P18B-T1`
 - Title: New Trade Review workspace shell
 - Objective: Add a read-only frontend route for creating and reviewing hypothetical trade intents.
 - Files expected to change:
   - `frontend/src/*`
   - `frontend/README.md`
   - `docs/shared/implementation_plan.md`
-- Dependencies: `P16A-T6`, `P16B-T1`
+- Dependencies: `P18A-T5`
 - Implementation steps:
   1. Ask Claude Sonnet to design and implement a New Trade Review workspace using `frontend-design` and `finance-dashboard-ux-review`.
   2. Support stock, ETF, and option intent entry using synthetic/local-safe states.
@@ -200,16 +206,16 @@ Phase goal: add the first user-facing trade review workspace for proposed stock,
   - Revert trade review workspace files and docs.
 - Status: `not_started`
 
-### P18-T2 - deterministic trade review report UI
+### P18B-T2 - deterministic trade review report UI
 
-- Task id: `P18-T2`
+- Task id: `P18B-T2`
 - Title: deterministic trade review report UI
 - Objective: Render deterministic trade-review report sections, portfolio impact, cash/collateral impact, risk-rule violations, data freshness warnings, and journal/report links.
 - Files expected to change:
   - `frontend/src/*`
   - `frontend/README.md`
   - `docs/shared/implementation_plan.md`
-- Dependencies: `P18-T1`
+- Dependencies: `P18B-T1`
 - Implementation steps:
   1. Display deterministic calculations separately from AI explanation.
   2. Show broker freshness and market quote freshness separately.
@@ -225,16 +231,16 @@ Phase goal: add the first user-facing trade review workspace for proposed stock,
   - Revert report UI files and docs.
 - Status: `not_started`
 
-### P18-T3 - optional research evidence display
+### P18B-T3 - optional research evidence display
 
-- Task id: `P18-T3`
+- Task id: `P18B-T3`
 - Title: optional research evidence display
 - Objective: Display cached or async public stock/company research as evidence when available.
 - Files expected to change:
   - `frontend/src/*`
   - `frontend/README.md`
   - `docs/shared/implementation_plan.md`
-- Dependencies: `P18-T2`, `P17-T6`
+- Dependencies: `P18B-T2`, `P17-T6`
 - Implementation steps:
   1. Render research evidence as optional and subordinate to deterministic review.
   2. Show pending, unavailable, stale, and budget-required states.
@@ -250,27 +256,27 @@ Phase goal: add the first user-facing trade review workspace for proposed stock,
   - Revert evidence UI files and docs.
 - Status: `not_started`
 
-### P18-T4 - Codex integration review for Phase 18
+### P18B-T4 - Codex integration review for Phase 18B
 
-- Task id: `P18-T4`
-- Title: Codex integration review for Phase 18
+- Task id: `P18B-T4`
+- Title: Codex integration review for Phase 18B
 - Objective: Verify the frontend trade-review workspace preserves read-only, deterministic-first, portfolio-aware boundaries.
 - Files expected to change:
   - `docs/shared/implementation_plan.md`
-- Dependencies: `P18-T3`
+- Dependencies: `P18B-T3`
 - Implementation steps:
   1. Run backend and frontend tests.
   2. Confirm no order tickets, broker actions, or execution affordances were added.
   3. Confirm UI remains broader than options income, CSP, covered call, or wheel strategy.
 - Acceptance criteria:
-  - Phase 18 ships a safe portfolio-aware trade review workspace.
+  - Phase 18B ships safe workspace expansion without breaking Phase 18A boundaries.
 - Tests to run:
   - `cd backend && ./.venv/bin/python -m pytest`
   - `cd frontend && npm run typecheck`
   - `cd frontend && npm run lint`
   - `cd frontend && npm run build`
 - Rollback notes:
-  - Reopen P18-T3 if integration issues are found.
+  - Reopen P18B-T3 if integration issues are found.
 - Status: `not_started`
 
 ## Future Layer - Broker Activities, Transactions, and Strategy Memory

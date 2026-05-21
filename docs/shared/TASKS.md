@@ -4,10 +4,10 @@ This file is a lightweight task index. The detailed task specs remain in `docs/s
 
 ## Current State
 
-- Completed foundation: Phases 1-16.
-- Active roadmap phase: Phase 17 - TradingAgents/Public Research Evidence Adapter.
+- Completed foundation: Phases 1-16 and Phase 18A.
+- Active roadmap phase: Phase 18B - Frontend Trade Review Workspace expansion.
 - Current safety foundation: broker portfolio snapshot freshness/actionability is explicit, Phase 16 agent components consume it, and Phase 16B enforces private/public context boundaries.
-- Current architecture concern: Phase 17 must remain optional public ticker/company evidence only, not the portfolio-aware decision engine.
+- Current architecture concern: expand the completed Phase 18A workspace without breaking the sanitized read contract, freshness/actionability separation, read-only manual-review scope, or Phase 17 freeze.
 
 ## Current Primary Owners
 
@@ -24,11 +24,12 @@ This file is a lightweight task index. The detailed task specs remain in `docs/s
 
 Do not treat this list as authorization to implement. Each item needs an approved task spec before code changes.
 
-1. Backend: start Phase 17 optional dependency detection for TradingAgents/Public Research Evidence Adapter.
-2. Backend: keep Phase 17 public ticker/company evidence only; do not send private portfolio context to TradingAgents or public evidence roles.
-3. Frontend: wait for safe read schema and Phase 17 evidence contracts before rich research/debate UI; the first trade-review workspace can consume completed Phase 16 outputs.
-4. Market data: keep real provider integration deferred for local MVP; plan Tradier REST snapshots before external paid beta or quote-current options review.
-5. Security: formalize broker-data handling policy before any hosted deployment.
+1. Backend fast-follow: unify the frontend-read forbidden-field key set in `app/services/privacy.py` before new response fields are added.
+2. Architecture: keep `docs/codex-b-architecture/PHASE_18A_FRONTEND_READINESS_CONTRACT.md` as the baseline frontend/backend boundary until a Phase 18B contract revision exists.
+3. Frontend: expand the read-only Trade Review Workspace only after backend contract implications are clear.
+4. Review: ask Claude B to check frontend safety language, stale-data clarity, no execution controls, private-data leakage, UX clarity, and implementation quality for any Phase 18B UI changes.
+5. Market data: keep real provider integration deferred for local MVP; plan Tradier REST snapshots before external paid beta or quote-current options review.
+6. Phase 17: keep TradingAgents/Public Research Evidence optional and frozen unless PM explicitly reactivates it.
 
 ## Routine Task Checklist
 

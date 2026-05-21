@@ -89,11 +89,33 @@ Route: `/market-data` — a thin read-only status slice for Phase 12.
 - Copy is conservative: provider-not-connected, manual/mock only, not live
   pricing, no guaranteed-return / trade-execution language.
 
+## Trade Review Workspace (P18A-T3)
+
+Route: `/trade-review` — first visible Trade Review Workspace.
+
+- Supported flows: **Stock/ETF buy**, **Stock/ETF sell or trim**, **Covered call**,
+  **Cash-secured put** (Phase 18A scope).
+- Calls `POST /trade-reviews/preview` via the `/api` Vite proxy. The endpoint is
+  **synthetic and stateless**: no DB, no broker sync, no market-data provider,
+  no TradingAgents, no LLMs, no broker actions.
+- Renders the sanitized `TradeReviewWorkspaceRead` verbatim — the frontend
+  performs **no** financial computation and **never invents** backend fields.
+- Broker snapshot freshness and market quote freshness are shown as **separate
+  scopes**; the backend severity asymmetry is presented as-is.
+- Covered-call coverage is **not fully netted** and CSP collateral uses a
+  **generic deterministic rule** — both caveats are surfaced inline.
+- Deterministic facts, agent orchestration status, and analysis-only narrative
+  are visually separated; no order/execute/cancel/disconnect UI; no
+  guaranteed-return or recommendation language; no `localStorage`/
+  `sessionStorage` of portfolio or review data.
+
 ## Architecture notes
 
 - `src/components/layout/` — AppShell, TopBar, Sidebar (fixed chrome)
 - `src/components/broker/` — Broker connection UI components (P11-T7)
 - `src/components/marketdata/` — Market data status slice (P12-T9)
+- `src/components/risk/` — Deterministic risk review slice (P13-T8)
+- `src/components/trade-review/` — Trade Review Workspace (P18A-T3)
 - `src/pages/` — top-level page components
 - `src/styles/globals.css` — CSS custom properties (design tokens), global resets
 - `src/api/` — fetch wrappers per domain

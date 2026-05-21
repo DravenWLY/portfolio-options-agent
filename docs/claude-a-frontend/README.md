@@ -6,9 +6,12 @@ Current frontend guidance still lives in:
 
 - `docs/shared/current_roadmap.md`
 - `docs/shared/AI_TEAM.md`
+- `docs/codex-b-architecture/PHASE_18A_FRONTEND_READINESS_CONTRACT.md`
 - `frontend/README.md`
 
-Do not add speculative frontend task specs before backend contracts exist.
+Do not add speculative frontend fields before backend contracts exist.
+
+Current Phase 18A rule: Claude A should wait for Codex C to deliver the sanitized trade-review workspace read contract before implementing the first visible Trade Review Workspace. The workspace must stay read-only, consume completed Phase 16 deterministic/actionability outputs through the safe contract, and exclude TradingAgents research UI, option-chain browser/screener behavior, broker actions, advice language, and guaranteed-return language.
 
 ## Claude Code Skills
 

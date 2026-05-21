@@ -38,32 +38,37 @@ TradingAgents-inspired does not mean TradingAgents-centered. The product center 
 - Phase 14: TradeIntent foundation for proposed stock, ETF, and options trade review.
 - Phase 15: deterministic trade review engine MVP with payoff, portfolio impact, risk integration, strategy wrappers, deterministic report, and agent-safe projection.
 - Phase 16: deterministic agent components plus portfolio-aware agent-team orchestrator, including actionability policy, context envelopes, run/step mapping, and privacy-safe fallbacks.
+- Phase 18A: first visible Trade Review Workspace readiness, including the sanitized backend read contract, synthetic preview endpoint, first read-only frontend workspace, and integration review.
 
 Detailed verification history lives in `docs/shared/completed_phases_log.md`.
 
 ## Active Phases
 
-Phase 17 - TradingAgents/Public Research Evidence Adapter.
+Phase 18B - Frontend Trade Review Workspace expansion.
 
-- Optional public ticker/company research evidence only.
-- Not in the fast trade-review path.
-- Not the portfolio-aware decision engine.
-- No holdings, account values, cash, broker ids, journal entries, or account-specific thresholds sent by default.
-- P1 roles include News/Research Evidence Agent, Bull Case Agent, and Bear Case Agent over public/sanitized evidence.
+- Expand the completed Phase 18A workspace in small vertical slices.
+- Keep the workspace read-only, deterministic-first, and actionability/freshness-aware.
+- Preserve the approved Phase 18A frontend read contract unless Codex B/Codex C explicitly revise the backend schema first.
+- Optional research evidence display still waits for Phase 17 contracts and must remain subordinate to deterministic review.
+
+Temporarily frozen: deep Phase 17 TradingAgents/Public Research Evidence Adapter implementation.
+
+- Phase 17 remains optional public ticker/company evidence only.
+- It must not become the main sprint, fast-path decision engine, or source of portfolio-aware conclusions.
+- No holdings, account values, cash, broker ids, journal entries, or account-specific thresholds are sent by default.
 
 ## Next Phases
 
-Phase 18 - Frontend Trade Review Workspace.
+Phase 18B - Frontend Trade Review Workspace expansion.
 
-- New Trade Review route for hypothetical stock/ETF/option intents.
-- Deterministic trade-review report UI using completed Phase 16 outputs.
-- Optional research evidence display only after Phase 17 contracts are stable.
+- Expand the first Phase 18A workspace after the safe read contract, first UI slice, and review gates pass.
+- Optional research evidence display waits for Phase 17 contracts and must remain subordinate to deterministic review.
 
-Before Phase 18:
+Before expanding beyond the Phase 18A workspace:
 
-- Phase 16 complete.
-- Add a typed sanitized trade-review read schema and forbidden-field test.
-- Either implement coverage-aware covered-call/CSP portfolio netting or visibly caveat that coverage/collateral netting is not fully modelled.
+- Keep Phase 17 frozen unless Codex A PM explicitly reactivates it.
+- Resolve backend contract fast-follows before asking frontend to consume new fields.
+- Coverage-aware covered-call/CSP portfolio netting may be implemented later, but until then the visible caveats must remain.
 - Real market data is not required for local MVP demo, but real REST snapshot market data is required before external paid beta or any polished UI/report that implies quote-current options review.
 
 Phase 19+ - Streaming Market Data, TradingAgents Evidence UI, and broader workflow polish.

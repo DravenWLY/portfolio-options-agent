@@ -4,11 +4,11 @@ Use this file as the short backend implementation context before starting work. 
 
 ## Current Active Phase
 
-Phase 17 - TradingAgents/Public Research Evidence Adapter.
+Phase 18B - Frontend Trade Review Workspace expansion.
 
-Phase 17 goal: add optional public ticker/company research evidence plumbing without making TradingAgents the portfolio-aware decision engine.
+Phase 18A is complete and archived. The current backend role is to preserve and extend the sanitized trade-review workspace contract only when Phase 18B needs explicit backend support.
 
-Important architecture concern: Phase 17 must remain optional, async, public-evidence-only, and absent from the fast deterministic trade-review path. Do not send raw holdings, account values, cash, broker account ids, provider ids, trade journal entries, account-specific thresholds, or other private portfolio context to TradingAgents/public evidence roles by default.
+Important architecture concern: Claude A must continue to consume a safe backend contract rather than raw deterministic report, portfolio, broker, or agent-run internals. Deep Phase 17 TradingAgents/Public Research Evidence implementation is temporarily frozen.
 
 ## Current Backend Foundation
 
@@ -33,6 +33,7 @@ Implemented:
 - TradeIntent foundation for stock, ETF, and options intents.
 - Deterministic trade-review engine with payoff, portfolio impact, risk integration, strategy wrappers, deterministic report, and agent-safe projection.
 - Phase 16 deterministic agent components and portfolio-aware agent-team orchestrator with actionability enforcement, context envelopes, run/step mapping, privacy-safe fallbacks, and no TradingAgents/LLM/provider calls by default.
+- Phase 18A sanitized trade-review workspace read contract, synthetic preview endpoint, first read-only frontend workspace, and integration review.
 
 ## Implementation Rules
 
@@ -70,12 +71,14 @@ Delivered:
 
 Not included (deferred to later phases): market quote UI, option screener, TradingAgents UI, trade execution UI.
 
-## Phase 17 Scope
+## Phase 18B Backend Scope
 
-- Detect optional TradingAgents availability lazily; app features must work without it installed.
-- Define public ticker/company research interfaces and mocked parsers only.
-- Keep account-level portfolio, collateral, option-risk, actionability, and final conclusions owned by app services and Phase 16 orchestrator outputs.
-- Send only sanitized public research context where possible.
-- Do not import TradingAgents during FastAPI startup.
+The default Phase 18B owner is frontend/UX, but backend must handle contract fast-follows before new frontend fields are consumed.
 
-Not in Phase 17: frontend trade-review workspace, real market provider integration, broker order execution, automatic trading, trade execution UI, or private portfolio context in public evidence prompts/cache keys.
+Known backend fast-follow:
+
+- Unify the frontend-read forbidden-field key set in `app/services/privacy.py`.
+- Import that shared constant from both the Phase 18A mapper and schema validators.
+- Keep synthetic tests proving forbidden private/raw keys remain rejected/omitted.
+
+Not in Phase 18B backend support unless explicitly approved: frontend implementation, TradingAgents/Public Research Evidence work, real market provider integration, broker order execution, broker order cancellation, broker disconnect/delete flows, automatic trading, broker scraping, Fidelity credential storage, MFA bypass, option-chain browser, screener, or private portfolio/raw brokerage exposure.

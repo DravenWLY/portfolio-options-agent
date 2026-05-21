@@ -133,4 +133,6 @@ These do not block the current MVP direction:
 
 ## Current PM Decision
 
-Phase 16A deterministic components and Phase 16B portfolio-aware agent-team orchestration are complete. The next implementation gate is Phase 17 TradingAgents/Public Research Evidence Adapter, which must remain optional public ticker/company evidence and not become the portfolio-aware decision engine.
+Phase 16A deterministic components and Phase 16B portfolio-aware agent-team orchestration are complete. Deep Phase 17 TradingAgents/Public Research Evidence Adapter implementation is temporarily frozen so the next active delivery focus can shift to Phase 18A: the first visible Trade Review Workspace.
+
+Phase 18A should use completed Phase 16 outputs and deterministic trade-review results through a sanitized frontend read contract. It should not wait for TradingAgents research/debate evidence or real market-data provider integration.

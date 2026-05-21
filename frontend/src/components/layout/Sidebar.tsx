@@ -43,6 +43,7 @@ export default function Sidebar() {
           <NavItem label="Broker" icon="⊛" to="/broker" collapsed={sidebarCollapsed} />
           <NavItem label="Market Data" icon="◷" to="/market-data" collapsed={sidebarCollapsed} />
           <NavItem label="Risk Review" icon="◭" to="/risk" collapsed={sidebarCollapsed} />
+          <NavItem label="Trade Review" icon="◰" to="/trade-review" collapsed={sidebarCollapsed} />
           <NavItem label="Reports" icon="⊙" to="#reports" collapsed={sidebarCollapsed} />
         </ul>
       </div>

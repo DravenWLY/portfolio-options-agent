@@ -43,13 +43,15 @@ A feature moves down when it:
 | Report history | Lets users compare review outputs and supports agent workflow traceability. | Keep thin for MVP. |
 | Phase 16A deterministic agent components | Provides safe agent-shaped report components without autonomous LLM behavior. | Complete. |
 | Phase 16B agent-team orchestration contract | Makes the TradingAgents-inspired team shape explicit before polished UI/research work. | Complete. |
+| Phase 18A sanitized trade-review read contract | Lets frontend consume completed Phase 16 outputs without raw brokerage/private fields or speculative fields. | Next active backend gate before Claude A UI. |
+| Phase 18A first Trade Review Workspace | Converts backend value into a visible product workflow. | Next active UI slice after safe read contract. |
 
 ## P1 - Important After P0 Is Stable
 
 | Feature | Why it matters | Deferral reason |
 | --- | --- | --- |
-| Frontend Trade Review Workspace | Converts backend value into a usable product flow. | Should wait for actionability and safe read contracts. |
-| Typed sanitized trade-review read schema | Prevents leaking internal/private fields to frontend or agents. | Required before broad UI exposure. |
+| Frontend Trade Review Workspace expansion | Converts backend value into a broader product flow. | Phase 18A first slice comes first. |
+| Typed sanitized trade-review read schema extensions | Prevents leaking internal/private fields to frontend or agents. | First Phase 18A contract is P0; extensions are P1. |
 | Coverage/collateral netting improvements | Makes covered call and CSP labels more trustworthy. | Could be caveated temporarily, but should be fixed before paid beta. |
 | Optional AI report explanation | Improves comprehension of deterministic results. | Must stay behind projection and actionability gates. |
 | Manual confirmation workflow | Lets users proceed with analysis when data is stale/manual. | Needs careful copy and audit trail. |
@@ -64,7 +66,7 @@ A feature moves down when it:
 | Feature | Why it matters | Reason to wait |
 | --- | --- | --- |
 | Long call and long put product surface | Supports more options use cases. | Less central to first portfolio-aware cash/collateral wedge. |
-| TradingAgents/Public Research Evidence Adapter | Adds optional public ticker/company context. | Should not distract from deterministic review or send account data. |
+| TradingAgents/Public Research Evidence Adapter | Adds optional public ticker/company context. | Temporarily frozen while Phase 18A proves deterministic review UX; should not distract from deterministic review or send account data. |
 | Streaming market data | Useful only if users need actively updating quote views. | Explicitly deferred to Phase 19+ or paid beta proof; avoid terminal/screener drift. |
 | Broker activities/transactions layer | Enables history, assignments, expirations, and wheel lifecycle later. | Current-position review is the first job. |
 | Wheel lifecycle tracking | Could help advanced options users. | Risks narrowing product into options income too early. |
@@ -97,12 +99,12 @@ Claude C competitor findings should be converted into product decisions using th
 
 Codex B Architecture:
 
-- Keep Phase 17 public-evidence-only and maintain ADRs for agent-team and market-data timing.
+- Keep Phase 18A focused on the sanitized trade-review workspace contract and frontend/backend boundary. Keep Phase 17 public-evidence-only and frozen unless PM reactivates it.
 
 Codex C Backend:
 
-- Start Phase 17 from optional dependency detection and public research evidence contracts; do not send private portfolio context to TradingAgents or public evidence roles.
+- Implement the Phase 18A sanitized trade-review workspace read contract, mapper, and forbidden-field tests before Claude A starts UI work.
 
 Claude A Frontend:
 
-- Design the first trade review workspace only after backend contracts are ready. The UI must show deterministic facts, freshness state, analysis-only state, and read-only manual-decision language.
+- Design the first trade review workspace only after the Phase 18A backend contract is ready. The UI must show deterministic facts, freshness state, analysis-only state, and read-only manual-decision language.

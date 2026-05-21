@@ -12,7 +12,8 @@ The app is layered around portfolio-aware trade review:
 6. Deterministic trade/risk engine: payoff, portfolio impact, risk rule integration, strategy wrappers, deterministic report.
 7. Phase 16A deterministic agent components: actionability, portfolio context, trade review explanation, freshness/guardrail, and report composition.
 8. Phase 16B portfolio-aware agent-team orchestrator: app-owned stage graph, role context envelopes, actionability enforcement, run/step persistence, and fallbacks.
-9. Phase 17 TradingAgents/Public Research Evidence Adapter: async public ticker/company research evidence only.
+9. Phase 18A frontend-readiness contract: sanitized deterministic trade-review read contract and first visible workspace boundary.
+10. Phase 17 TradingAgents/Public Research Evidence Adapter: async public ticker/company research evidence only, temporarily frozen.
 
 ## Backend / Frontend Boundaries
 
@@ -65,13 +66,13 @@ Recommended ADRs:
 
 - Portfolio snapshot actionability metadata now has an ADR and is implemented as the first Phase 16A contract/service slice before deterministic agent components produce polished account-specific outputs.
 - Broker provider freshness may need fields such as provider plan mode, provider sync time, broker as-of time, endpoint source, and user confirmation state.
-- Trade-review read schemas for frontend/API exposure remain deferred before the frontend trade-review workspace.
+- Trade-review read schemas for frontend/API exposure are implemented for Phase 18A; future Phase 18B changes should extend them only through explicit backend contracts and tests.
 - Covered-call/CSP coverage/collateral netting is not deeply modelled yet.
 - Broker activities/transactions are future layer only.
 
-## Current Phase 17 / 18 Sequence
+## Current Phase 18B Sequence
 
-Phase 16A and Phase 16B are complete and archived in `docs/shared/completed_phases_log.md`.
+Phase 16A, Phase 16B, and Phase 18A are complete and archived in `docs/shared/completed_phases_log.md`.
 
 Completed Phase 16 delivered:
 
@@ -79,14 +80,28 @@ Completed Phase 16 delivered:
 - the app-owned portfolio-aware agent-team orchestrator with stage order, actionability gate enforcement, context-envelope role compatibility, run/step mapping, and unavailable-state fallbacks;
 - backend-only synthetic tests and no frontend route, DB persistence, TradingAgents import, real market provider call, LLM call, or broker action.
 
-Phase 17 is now **TradingAgents/Public Research Evidence Adapter**. It remains optional, async, public ticker/company evidence only, and not the final portfolio-aware decision engine.
+Deep Phase 17 implementation is temporarily frozen by PM decision. TradingAgents/Public Research Evidence remains optional, async, public ticker/company evidence only, and not the final portfolio-aware decision engine.
 
-Phase 18 depends on:
+The active delivery focus is **Phase 18B - Frontend Trade Review Workspace expansion**.
 
-- Phase 16 complete;
-- typed sanitized trade-review read schema and forbidden-field tests;
-- coverage/collateral caveat or modelling fix;
+Phase 18B depends on:
+
+- Phase 18A complete;
+- preserving the typed sanitized trade-review read schema and forbidden-field tests unless a new backend contract explicitly revises them;
+- keeping coverage/collateral caveats visible until deeper modelling is implemented;
 - real market data only before external paid beta or polished quote-current options review, not before local MVP demo.
+
+Architecture contract: `docs/codex-b-architecture/PHASE_18A_FRONTEND_READINESS_CONTRACT.md`.
+
+Phase 18A already provided the minimum backend contract/support:
+
+- a safe `TradeReviewWorkspaceRead` response schema;
+- a mapper/projection from deterministic trade-review report, `PortfolioActionabilityDecision`, and Phase 16 orchestration summaries;
+- synthetic tests for stock/ETF buy, stock/ETF sell/trim, covered call, and cash-secured put;
+- recursive forbidden-field tests;
+- a small synthetic preview/read route.
+
+Before Phase 18B frontend expansion consumes new fields, Codex C should handle backend fast-follows or contract extensions first. Current known backend fast-follow: unify the frontend-read forbidden-field key set in `app/services/privacy.py` and import it from both the mapper and schema validators.
 
 ## Portfolio Snapshot Actionability Handoff
 
@@ -128,10 +143,11 @@ Recommended first backend slice:
 
 ## Recommended First Tasks for Codex B
 
-1. Review Phase 17 TradingAgents/Public Research Evidence Adapter work for public-evidence-only boundaries.
-2. Define minimum trade-review read schema requirements before Phase 18.
-3. Keep public research/debate evidence visually and structurally subordinate to deterministic review and actionability.
-4. Keep real market-data provider integration deferred until external paid beta or quote-current options review requires it.
+1. Keep Phase 18A centered on the sanitized trade-review read contract and first workspace.
+2. Review Codex C's safe read schema/mapper for forbidden fields, freshness/actionability semantics, and deterministic-vs-agent separation.
+3. Review Claude A's frontend for API contract alignment, stale-data clarity, no execution controls, no advice wording, and no raw private-data exposure.
+4. Keep public research/debate evidence visually and structurally subordinate to deterministic review and actionability.
+5. Keep real market-data provider integration deferred until external paid beta or quote-current options review requires it.
 
 ## Engineering Framework Sections To Apply First
 

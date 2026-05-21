@@ -7,6 +7,7 @@ import DashboardPage from "./pages/DashboardPage";
 import BrokerConnectionPage from "./pages/BrokerConnectionPage";
 import MarketDataPage from "./pages/MarketDataPage";
 import RiskReviewPage from "./pages/RiskReviewPage";
+import TradeReviewPage from "./pages/TradeReviewPage";
 
 /**
  * App root.
@@ -29,6 +30,7 @@ export default function App() {
               <Route path="/broker" element={<BrokerConnectionPage />} />
               <Route path="/market-data" element={<MarketDataPage />} />
               <Route path="/risk" element={<RiskReviewPage />} />
+              <Route path="/trade-review" element={<TradeReviewPage />} />
             </Routes>
           </AppShell>
         </AccountProvider>

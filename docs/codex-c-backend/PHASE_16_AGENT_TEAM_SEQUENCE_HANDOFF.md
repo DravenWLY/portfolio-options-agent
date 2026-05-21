@@ -59,11 +59,11 @@ Recommended stage order:
 
 TradingAgents and any other public research adapters are optional async public ticker/company research evidence. They are not the portfolio-aware decision engine and must not receive raw/private brokerage context by default.
 
-### Phase 18 - Frontend Trade Review Workspace
+### Phase 18A - Frontend Trade Review Workspace Readiness
 
-First workspace may use deterministic review plus Phase 16A/16B outputs. Rich public research/debate UI waits for Phase 17 contracts.
+First workspace may use deterministic review plus Phase 16A/16B outputs through the sanitized read contract defined in `docs/codex-b-architecture/PHASE_18A_FRONTEND_READINESS_CONTRACT.md`. Deep Phase 17 work is now temporarily frozen; rich public research/debate UI waits.
 
-Phase 18 depends on:
+Phase 18A depends on:
 
 - Phase 16 complete;
 - typed sanitized trade-review read schema and forbidden-field tests;

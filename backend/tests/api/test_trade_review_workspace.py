@@ -658,3 +658,161 @@ def test_user_readiness_requires_local_access(app) -> None:
     response = client.get("/users/11111111-1111-1111-1111-111111111111/readiness")
 
     assert response.status_code == 401
+
+
+def test_user_portfolio_contexts_returns_sanitized_synthetic_context_list(client: TestClient) -> None:
+    response = client.get("/users/11111111-1111-1111-1111-111111111111/portfolio-contexts")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload) == {"data_mode", "demo_notice", "items"}
+    assert payload["data_mode"] == "synthetic_demo"
+    assert payload["demo_notice"] == "demo · not yet connected"
+    assert len(payload["items"]) == 3
+
+    first = payload["items"][0]
+    assert first["context_reference"] == "ctx_demo_latest"
+    assert first["context_label"] == "Latest demo portfolio context"
+    assert first["source_kind"] == "manual"
+    assert first["portfolio_shape"] == {"stock_position_count": 2, "option_position_count": 1}
+    assert first["cash_state"] == "available"
+    assert first["cash_state_label"] == "Cash state available"
+    assert first["broker_snapshot_freshness"]["freshness_scope"] == "broker_snapshot"
+    assert first["market_quote_freshness"]["freshness_scope"] == "market_quote"
+    assert first["market_data_unavailable"] is False
+    assert first["actionability_preview"]["review_actionability_status"] == "manual_confirmation_required"
+    assert "stock_buy" in first["available_flows"]
+    assert "demo_context" in first["caveat_codes"]
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_user_portfolio_contexts_supports_empty_list_state(client: TestClient) -> None:
+    response = client.get("/users/00000000-0000-0000-0000-000000000000/portfolio-contexts")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "data_mode": "synthetic_demo",
+        "demo_notice": "demo · not yet connected",
+        "items": [],
+    }
+
+
+def test_user_portfolio_context_latest_returns_detail_with_demo_metadata(client: TestClient) -> None:
+    response = client.get("/users/11111111-1111-1111-1111-111111111111/portfolio-context/latest")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload) == {"data_mode", "demo_notice", "context"}
+    assert payload["data_mode"] == "synthetic_demo"
+    assert payload["demo_notice"] == "demo · not yet connected"
+    assert payload["context"]["context_reference"] == "ctx_demo_latest"
+    assert payload["context"]["source_kind"] == "manual"
+    assert payload["context"]["broker_snapshot_freshness"]["freshness_scope"] == "broker_snapshot"
+    assert payload["context"]["market_quote_freshness"]["freshness_scope"] == "market_quote"
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_user_portfolio_context_detail_preserves_stale_broker_and_market_separation(client: TestClient) -> None:
+    response = client.get("/users/11111111-1111-1111-1111-111111111111/portfolio-context/ctx_demo_stale")
+
+    assert response.status_code == 200
+    context = response.json()["context"]
+    assert context["context_reference"] == "ctx_demo_stale"
+    assert context["source_kind"] == "broker_snapshot"
+    assert context["broker_snapshot_freshness"]["freshness_scope"] == "broker_snapshot"
+    assert context["broker_snapshot_freshness"]["status"] == "stale"
+    assert context["broker_snapshot_freshness"]["is_blocking"] is True
+    assert context["market_quote_freshness"]["freshness_scope"] == "market_quote"
+    assert context["market_quote_freshness"]["status"] == "manual_review"
+    assert context["actionability_preview"]["review_actionability_status"] == "blocked_stale_broker_snapshot"
+    assert "broker_snapshot_stale" in context["caveat_codes"]
+
+
+def test_user_portfolio_context_detail_handles_unavailable_market_data(client: TestClient) -> None:
+    response = client.get("/users/11111111-1111-1111-1111-111111111111/portfolio-context/ctx_demo_missing")
+
+    assert response.status_code == 200
+    context = response.json()["context"]
+    assert context["source_kind"] == "csv"
+    assert context["market_quote_freshness"] is None
+    assert context["market_data_unavailable"] is True
+    assert context["actionability_preview"]["review_actionability_status"] == "blocked_unknown_freshness"
+    assert "market_data_unavailable" in context["caveat_codes"]
+
+
+def test_user_portfolio_context_detail_handles_unavailable_context(client: TestClient) -> None:
+    response = client.get("/users/11111111-1111-1111-1111-111111111111/portfolio-context/ctx_demo_empty")
+
+    assert response.status_code == 200
+    context = response.json()["context"]
+    assert context["source_kind"] == "synthetic_demo"
+    assert context["portfolio_shape"] == {"stock_position_count": 0, "option_position_count": 0}
+    assert context["cash_state"] == "unavailable"
+    assert context["market_data_unavailable"] is True
+    assert context["available_flows"] == []
+
+
+def test_user_portfolio_context_detail_returns_not_found_for_unknown_opaque_reference(client: TestClient) -> None:
+    response = client.get("/users/11111111-1111-1111-1111-111111111111/portfolio-context/ctx_unknown_123")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "context_reference",
+    (
+        "provider_account_id_123",
+        "ctx_provider_123",
+        "ctx_account_123",
+        "ctx_cash_12345",
+    ),
+)
+def test_user_portfolio_context_detail_rejects_non_opaque_context_references(
+    client: TestClient,
+    context_reference: str,
+) -> None:
+    response = client.get(f"/users/11111111-1111-1111-1111-111111111111/portfolio-context/{context_reference}")
+
+    assert response.status_code == 422
+
+
+def test_user_portfolio_contexts_do_not_expose_private_fields_or_execution_language(client: TestClient) -> None:
+    response = client.get("/users/33333333-3333-3333-3333-333333333333/portfolio-contexts")
+
+    assert response.status_code == 200
+    payload = response.json()
+    rendered = repr(payload).lower()
+    forbidden_text = (
+        "raw_holdings",
+        "raw_positions",
+        "position_quantity",
+        "cash_balance",
+        "buying_power",
+        "account_value",
+        "account_id",
+        "broker_id",
+        "provider_id",
+        "provider_account_id",
+        "raw_csv",
+        "raw_provider_payload",
+        "threshold",
+        "prompt",
+        "llm_response",
+        "provider_trace",
+        "safe to trade",
+        "ready to trade",
+        "you should",
+        "guaranteed",
+        "place order",
+        "execute",
+    )
+    assert not any(text in rendered for text in forbidden_text)
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_user_portfolio_contexts_requires_local_access(app) -> None:
+    client = TestClient(app)
+
+    response = client.get("/users/11111111-1111-1111-1111-111111111111/portfolio-contexts")
+
+    assert response.status_code == 401

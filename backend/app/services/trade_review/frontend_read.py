@@ -24,6 +24,12 @@ from app.schemas.trade_review_workspace import (
     BrokerSnapshotReadinessRead,
     MarketQuoteReadinessRead,
     PortfolioContextSelectionRequest,
+    PortfolioContextActionabilityPreviewRead,
+    PortfolioContextDetailRead,
+    PortfolioContextFreshnessRead,
+    PortfolioContextListRead,
+    PortfolioContextRead,
+    PortfolioContextShapeRead,
     PortfolioContextSummaryRead,
     PortfolioImpactSummaryRead,
     ReviewReadinessRead,
@@ -42,6 +48,7 @@ from app.schemas.trade_review_workspace import (
     TradeReviewPortfolioPreviewRequest,
     WorkspaceCaveatRead,
     WorkspaceOptionLegSummaryRead,
+    validate_portfolio_context_reference,
     validate_trade_review_workspace_payload,
 )
 from app.services.agents.orchestrator import AgentTeamOrchestrationResult, DEFAULT_AGENT_WORKFLOW_STAGES
@@ -318,6 +325,67 @@ def get_review_readiness_for_user(
     return read
 
 
+def list_portfolio_contexts_for_user(
+    user_id: object,
+    *,
+    generated_at: datetime | None = None,
+) -> PortfolioContextListRead:
+    """Return sanitized standalone portfolio-context cards for a user."""
+
+    user_reference = str(user_id)
+    if user_reference == _DEMO_EMPTY_USER_REFERENCE:
+        return PortfolioContextListRead(
+            data_mode="synthetic_demo",
+            demo_notice=_PHASE20B_DEMO_NOTICE,
+            items=(),
+        )
+
+    generated = generated_at or datetime.now(UTC)
+    read = PortfolioContextListRead(
+        data_mode="synthetic_demo",
+        demo_notice=_PHASE20B_DEMO_NOTICE,
+        items=tuple(_portfolio_context_catalog(generated).values()),
+    )
+    validate_trade_review_workspace_payload(read.model_dump(mode="python"))
+    return read
+
+
+def get_latest_portfolio_context_for_user(
+    user_id: object,
+    *,
+    generated_at: datetime | None = None,
+) -> PortfolioContextDetailRead:
+    """Return the latest sanitized portfolio-context detail."""
+
+    user_reference = str(user_id)
+    generated = generated_at or datetime.now(UTC)
+    if user_reference == _DEMO_EMPTY_USER_REFERENCE:
+        context = _empty_portfolio_context_read(generated)
+    else:
+        context = _portfolio_context_catalog(generated)[_LATEST_CONTEXT_REFERENCE]
+    return _portfolio_context_detail(context)
+
+
+def get_portfolio_context_for_user(
+    user_id: object,
+    context_reference: str,
+    *,
+    generated_at: datetime | None = None,
+) -> PortfolioContextDetailRead:
+    """Return one sanitized portfolio-context detail by opaque reference."""
+
+    reference = validate_portfolio_context_reference(context_reference)
+    generated = generated_at or datetime.now(UTC)
+    if reference == _NO_CONTEXT_REFERENCE:
+        return _portfolio_context_detail(_empty_portfolio_context_read(generated))
+    if str(user_id) == _DEMO_EMPTY_USER_REFERENCE:
+        raise LookupError("portfolio context not found")
+    catalog = _portfolio_context_catalog(generated)
+    if reference not in catalog:
+        raise LookupError("portfolio context not found")
+    return _portfolio_context_detail(catalog[reference])
+
+
 def build_trade_review_workspace_preview(
     payload: TradeReviewWorkspacePreviewRequest,
     *,
@@ -381,6 +449,208 @@ def build_trade_review_workspace_preview(
         supported_flow=payload.supported_flow,
         generated_at=generated,
     )
+
+
+def _portfolio_context_detail(context: PortfolioContextRead) -> PortfolioContextDetailRead:
+    read = PortfolioContextDetailRead(
+        data_mode="synthetic_demo",
+        demo_notice=_PHASE20B_DEMO_NOTICE,
+        context=context,
+    )
+    validate_trade_review_workspace_payload(read.model_dump(mode="python"))
+    return read
+
+
+def _portfolio_context_catalog(generated_at: datetime) -> dict[str, PortfolioContextRead]:
+    return {
+        _LATEST_CONTEXT_REFERENCE: _portfolio_context_read(
+            context_reference=_LATEST_CONTEXT_REFERENCE,
+            context_label="Latest demo portfolio context",
+            source_kind="manual",
+            stock_position_count=2,
+            option_position_count=1,
+            cash_state="available",
+            broker_status="fresh",
+            broker_as_of_label="Demo manual snapshot",
+            broker_display_label="Broker snapshot requires manual review",
+            broker_reason_codes=("broker_snapshot_manual_review",),
+            broker_is_blocking=False,
+            market_status="manual_review",
+            market_as_of_label="Demo market quotes require review",
+            market_display_label="Market quote freshness requires review",
+            market_reason_codes=("market_quote_manual_review",),
+            market_is_blocking=False,
+            actionability_status="manual_confirmation_required",
+            overall_review_mode="manual_confirmation_required",
+            actionability_display_label="Manual confirmation required",
+            actionability_is_blocking=False,
+            available_flows=_all_supported_flows(),
+            caveat_codes=("demo_context", "market_quote_manual_review"),
+        ),
+        _STALE_CONTEXT_REFERENCE: _portfolio_context_read(
+            context_reference=_STALE_CONTEXT_REFERENCE,
+            context_label="Stale demo broker snapshot context",
+            source_kind="broker_snapshot",
+            stock_position_count=2,
+            option_position_count=1,
+            cash_state="available",
+            broker_status="stale",
+            broker_as_of_label="Demo broker snapshot is stale",
+            broker_display_label="Broker snapshot is stale",
+            broker_reason_codes=("broker_snapshot_stale",),
+            broker_is_blocking=True,
+            market_status="manual_review",
+            market_as_of_label="Demo market quotes require review",
+            market_display_label="Market quote freshness requires review",
+            market_reason_codes=("market_quote_manual_review",),
+            market_is_blocking=False,
+            actionability_status="blocked_stale_broker_snapshot",
+            overall_review_mode="blocked",
+            actionability_display_label="Blocked by stale broker snapshot",
+            actionability_is_blocking=True,
+            available_flows=_all_supported_flows(),
+            caveat_codes=("demo_context", "broker_snapshot_stale", "market_quote_manual_review"),
+        ),
+        _MISSING_MARKET_CONTEXT_REFERENCE: _portfolio_context_read(
+            context_reference=_MISSING_MARKET_CONTEXT_REFERENCE,
+            context_label="Demo context with unavailable market data",
+            source_kind="csv",
+            stock_position_count=2,
+            option_position_count=1,
+            cash_state="available",
+            broker_status="fresh",
+            broker_as_of_label="Demo imported snapshot",
+            broker_display_label="Broker snapshot available for demo",
+            broker_reason_codes=("broker_snapshot_demo",),
+            broker_is_blocking=False,
+            market_status=None,
+            market_as_of_label=None,
+            market_display_label=None,
+            market_reason_codes=(),
+            market_is_blocking=True,
+            actionability_status="blocked_unknown_freshness",
+            overall_review_mode="blocked",
+            actionability_display_label="Blocked by unavailable market data",
+            actionability_is_blocking=True,
+            available_flows=("stock_buy", "stock_sell_trim", "etf_buy", "etf_sell_trim"),
+            caveat_codes=("demo_context", "market_data_unavailable"),
+        ),
+    }
+
+
+def _empty_portfolio_context_read(generated_at: datetime) -> PortfolioContextRead:
+    return _portfolio_context_read(
+        context_reference=_NO_CONTEXT_REFERENCE,
+        context_label="No portfolio context available",
+        source_kind="synthetic_demo",
+        stock_position_count=0,
+        option_position_count=0,
+        cash_state="unavailable",
+        broker_status="unknown",
+        broker_as_of_label="No demo broker snapshot",
+        broker_display_label="Broker snapshot unavailable",
+        broker_reason_codes=("broker_snapshot_unavailable",),
+        broker_is_blocking=True,
+        market_status=None,
+        market_as_of_label=None,
+        market_display_label=None,
+        market_reason_codes=(),
+        market_is_blocking=True,
+        actionability_status="blocked_unknown_freshness",
+        overall_review_mode="blocked",
+        actionability_display_label="Blocked until portfolio context is available",
+        actionability_is_blocking=True,
+        available_flows=(),
+        caveat_codes=("context_unavailable", "market_data_unavailable"),
+    )
+
+
+def _portfolio_context_read(
+    *,
+    context_reference: str,
+    context_label: str,
+    source_kind: str,
+    stock_position_count: int,
+    option_position_count: int,
+    cash_state: str,
+    broker_status: str,
+    broker_as_of_label: str | None,
+    broker_display_label: str,
+    broker_reason_codes: tuple[str, ...],
+    broker_is_blocking: bool,
+    market_status: str | None,
+    market_as_of_label: str | None,
+    market_display_label: str | None,
+    market_reason_codes: tuple[str, ...],
+    market_is_blocking: bool,
+    actionability_status: str,
+    overall_review_mode: str,
+    actionability_display_label: str,
+    actionability_is_blocking: bool,
+    available_flows: tuple[SupportedTradeReviewFlow, ...],
+    caveat_codes: tuple[str, ...],
+) -> PortfolioContextRead:
+    market_quote_freshness = None
+    if market_status is not None:
+        market_quote_freshness = PortfolioContextFreshnessRead(
+            freshness_scope="market_quote",
+            status=market_status,
+            as_of_label=market_as_of_label,
+            display_label=market_display_label or "Market quote freshness unavailable",
+            reason_codes=market_reason_codes,
+            is_blocking=market_is_blocking,
+        )
+    read = PortfolioContextRead(
+        context_reference=context_reference,
+        context_label=context_label,
+        source_kind=source_kind,
+        portfolio_shape=PortfolioContextShapeRead(
+            stock_position_count=stock_position_count,
+            option_position_count=option_position_count,
+        ),
+        cash_state=cash_state,
+        cash_state_label=_cash_state_label(cash_state),
+        broker_snapshot_freshness=PortfolioContextFreshnessRead(
+            freshness_scope="broker_snapshot",
+            status=broker_status,
+            as_of_label=broker_as_of_label,
+            display_label=broker_display_label,
+            reason_codes=broker_reason_codes,
+            is_blocking=broker_is_blocking,
+        ),
+        market_quote_freshness=market_quote_freshness,
+        market_data_unavailable=market_quote_freshness is None,
+        actionability_preview=PortfolioContextActionabilityPreviewRead(
+            review_actionability_status=actionability_status,
+            overall_review_mode=overall_review_mode,
+            display_label=actionability_display_label,
+            is_blocking=actionability_is_blocking,
+        ),
+        available_flows=available_flows,
+        caveat_codes=caveat_codes,
+    )
+    validate_trade_review_workspace_payload(read.model_dump(mode="python"))
+    return read
+
+
+def _all_supported_flows() -> tuple[SupportedTradeReviewFlow, ...]:
+    return (
+        "stock_buy",
+        "stock_sell_trim",
+        "etf_buy",
+        "etf_sell_trim",
+        "covered_call",
+        "cash_secured_put",
+    )
+
+
+def _cash_state_label(cash_state: str) -> str:
+    labels = {
+        "available": "Cash state available",
+        "unavailable": "Cash state unavailable",
+        "not_exposed": "Cash state not exposed",
+    }
+    return labels[cash_state]
 
 
 def build_trade_review_workspace_portfolio_preview(

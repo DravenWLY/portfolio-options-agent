@@ -25,6 +25,7 @@ SupportedTradeReviewFlow: TypeAlias = Literal[
 WorkspaceCaveatSeverity: TypeAlias = Literal["info", "warning", "blocker"]
 PortfolioContextSelectionMode: TypeAlias = Literal["latest_available", "selected_context"]
 PortfolioContextSource: TypeAlias = Literal["snaptrade", "manual", "csv", "synthetic_mock"]
+PortfolioContextSourceKind: TypeAlias = Literal["broker_snapshot", "manual", "csv", "synthetic_demo"]
 PortfolioCashState: TypeAlias = Literal["available", "unavailable", "not_exposed"]
 TradeReviewReportStatus: TypeAlias = Literal["preview_only", "saved", "generated", "unavailable"]
 TradeReviewListSourceMode: TypeAlias = Literal["synthetic_preview", "portfolio_preview", "saved_review"]
@@ -68,6 +69,18 @@ PROHIBITED_TRADE_REVIEW_WORKSPACE_PHRASES = (
     "safe to trade",
     "ready to trade",
 )
+
+
+def validate_portfolio_context_reference(context_reference: str) -> str:
+    """Validate opaque app-owned portfolio-context references."""
+
+    ref = context_reference.strip()
+    if ref != context_reference or _OPAQUE_CONTEXT_REFERENCE_RE.fullmatch(ref) is None:
+        raise ValueError("context_reference must be an opaque app-generated context reference")
+    lowered = ref.lower()
+    if any(token in lowered for token in _FORBIDDEN_CONTEXT_REFERENCE_TOKENS):
+        raise ValueError("context_reference must not contain broker, account, provider, or private-data hints")
+    return ref
 
 
 class WorkspaceOptionLegSummaryRead(BaseModel):
@@ -147,12 +160,7 @@ class PortfolioContextSelectionRequest(BaseModel):
             return self
         if self.context_reference is None:
             raise ValueError("selected_context requires context_reference")
-        ref = self.context_reference.strip()
-        if ref != self.context_reference or _OPAQUE_CONTEXT_REFERENCE_RE.fullmatch(ref) is None:
-            raise ValueError("context_reference must be an opaque app-generated context reference")
-        lowered = ref.lower()
-        if any(token in lowered for token in _FORBIDDEN_CONTEXT_REFERENCE_TOKENS):
-            raise ValueError("context_reference must not contain broker, account, provider, or private-data hints")
+        validate_portfolio_context_reference(self.context_reference)
         return self
 
 
@@ -367,6 +375,82 @@ class TradeReviewListRead(BaseModel):
 
     @model_validator(mode="after")
     def list_payload_must_be_safe(self) -> "TradeReviewListRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class PortfolioContextShapeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    stock_position_count: int = Field(ge=0)
+    option_position_count: int = Field(ge=0)
+
+
+class PortfolioContextFreshnessRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    freshness_scope: Literal["broker_snapshot", "market_quote"]
+    status: ReadinessSnapshotStatus
+    as_of_label: str | None = None
+    display_label: str
+    reason_codes: tuple[str, ...]
+    is_blocking: bool
+
+
+class PortfolioContextActionabilityPreviewRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    review_actionability_status: ReviewActionabilityStatus
+    overall_review_mode: ReviewReadinessMode
+    display_label: str
+    is_blocking: bool
+
+
+class PortfolioContextRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    context_reference: str
+    context_label: str
+    source_kind: PortfolioContextSourceKind
+    portfolio_shape: PortfolioContextShapeRead
+    cash_state: PortfolioCashState
+    cash_state_label: str
+    broker_snapshot_freshness: PortfolioContextFreshnessRead
+    market_quote_freshness: PortfolioContextFreshnessRead | None = None
+    market_data_unavailable: bool
+    actionability_preview: PortfolioContextActionabilityPreviewRead
+    available_flows: tuple[SupportedTradeReviewFlow, ...]
+    caveat_codes: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def context_payload_must_be_safe(self) -> "PortfolioContextRead":
+        validate_portfolio_context_reference(self.context_reference)
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class PortfolioContextListRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    data_mode: Phase20BDataMode
+    demo_notice: str | None = None
+    items: tuple[PortfolioContextRead, ...]
+
+    @model_validator(mode="after")
+    def context_list_payload_must_be_safe(self) -> "PortfolioContextListRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class PortfolioContextDetailRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    data_mode: Phase20BDataMode
+    demo_notice: str | None = None
+    context: PortfolioContextRead
+
+    @model_validator(mode="after")
+    def context_detail_payload_must_be_safe(self) -> "PortfolioContextDetailRead":
         validate_trade_review_workspace_payload(self.model_dump(mode="python"))
         return self
 

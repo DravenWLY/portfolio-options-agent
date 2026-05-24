@@ -4,11 +4,20 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.schemas.trade_review_workspace import ReviewReadinessRead, RiskAlertListRead, TradeReviewListRead
+from app.schemas.trade_review_workspace import (
+    PortfolioContextDetailRead,
+    PortfolioContextListRead,
+    ReviewReadinessRead,
+    RiskAlertListRead,
+    TradeReviewListRead,
+)
 from app.schemas.user import UserCreate, UserRead
 from app.services import users as user_service
 from app.services.trade_review.frontend_read import (
+    get_latest_portfolio_context_for_user,
+    get_portfolio_context_for_user,
     get_review_readiness_for_user,
+    list_portfolio_contexts_for_user,
     list_recent_trade_reviews_for_user,
     list_risk_alerts_for_user,
 )
@@ -53,3 +62,29 @@ def get_user_readiness(user_id: UUID) -> ReviewReadinessRead:
     """Return a sanitized aggregate review-readiness summary for a user."""
 
     return get_review_readiness_for_user(user_id)
+
+
+@router.get("/{user_id}/portfolio-contexts", response_model=PortfolioContextListRead)
+def list_user_portfolio_contexts(user_id: UUID) -> PortfolioContextListRead:
+    """Return sanitized standalone portfolio-context cards for a user."""
+
+    return list_portfolio_contexts_for_user(user_id)
+
+
+@router.get("/{user_id}/portfolio-context/latest", response_model=PortfolioContextDetailRead)
+def get_user_latest_portfolio_context(user_id: UUID) -> PortfolioContextDetailRead:
+    """Return the latest sanitized portfolio-context detail for a user."""
+
+    return get_latest_portfolio_context_for_user(user_id)
+
+
+@router.get("/{user_id}/portfolio-context/{context_reference}", response_model=PortfolioContextDetailRead)
+def get_user_portfolio_context(user_id: UUID, context_reference: str) -> PortfolioContextDetailRead:
+    """Return one sanitized portfolio-context detail by opaque reference."""
+
+    try:
+        return get_portfolio_context_for_user(user_id, context_reference)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Portfolio context not found") from exc

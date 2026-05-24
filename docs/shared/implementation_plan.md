@@ -65,6 +65,14 @@ Claude A guidance while Phase 20B is partially implemented:
 - Do not create ad hoc API clients for proposed P20B paths until Codex C implements and Codex B reviews the backend contract.
 - Do not hide missing backend work behind realistic account names, realistic dollar precision, or personal policy strings.
 
+Ordered near-term work after P20B-T4:
+
+1. Add a safe Dashboard account-summary backend contract (`P20B-T7`) so the Modern Desk can bring back current account information without frontend-invented portfolio values.
+2. Wire Dashboard cards to completed P20B contracts (`P20C-T1`): readiness, risk alerts, recent reviews, portfolio context, and the future account summary. Keep demo labels visible for synthetic data.
+3. Build a dedicated Agent Console realtime architecture (`Phase 21A`) before adding chat/follow-up controls. The prototype layout is approved as direction, but realtime transcript, direct-to-agent, broadcast, and quick questions need backend contracts first.
+4. Redesign Settings as a sectioned page (`P20C-T3`) after settings contracts are approved; do not add broker destructive actions or provider credential controls.
+5. Refine Trade Review and Reports after their backend contracts are stable.
+
 ### P20B-T1 - persisted trade review list contract
 
 - Task id: `P20B-T1`
@@ -274,7 +282,14 @@ Claude A guidance while Phase 20B is partially implemented:
   - manual/CSV/broker/synthetic-demo source labeling
   - latest unavailable / empty state
   - broker freshness and market quote freshness remain distinct
-- Status: `not_started`.
+- Status: `done`
+- Verification notes:
+  - 2026-05-24 Codex C added standalone portfolio-context read schemas: `PortfolioContextListRead`, `PortfolioContextDetailRead`, `PortfolioContextRead`, freshness/actionability preview shapes, and opaque context-reference validation reuse.
+  - Added protected `GET /users/{uid}/portfolio-contexts`, `GET /users/{uid}/portfolio-context/latest`, and `GET /users/{uid}/portfolio-context/{ctx_ref}`. Current source is explicitly demo-only with `data_mode="synthetic_demo"` and `demo_notice="demo · not yet connected"`.
+  - Response fields are sanitized display contracts only: opaque context references, source kind, portfolio-shape counts, cash-state labels, separate broker snapshot and market quote freshness, actionability preview, available flows, and caveat codes. No raw holdings, positions, quantities, cash balances, buying power, account values, account/provider ids, raw payloads, thresholds, prompts, LLM responses, or provider traces are exposed.
+  - Added synthetic list/latest/detail/unknown-reference/unavailable-context tests, opaque-reference rejection tests, source-labeling checks, forbidden-field/wording sweep, and broker-vs-market freshness separation checks.
+  - Tests: `cd backend && ./.venv/bin/python -m pytest tests/api/test_trade_review_workspace.py tests/services/trade_review/test_frontend_read.py -q` -> `64 passed in 0.21s`.
+  - 2026-05-24 Claude A consumed P20B-T4 in the Portfolio Context page. Files changed: `frontend/src/types/portfolioContext.ts` (new TS types mirroring backend schemas), `frontend/src/api/portfolioContext.ts` (new API client for the three approved endpoints), `frontend/src/pages/PortfolioContextPage.tsx` (rewired from static demo data to backend-backed list+detail with loading/error/empty/success states). Demo labeling preserved via `DemoChip` whenever `data_mode === "synthetic_demo"`. Broker snapshot freshness and market quote freshness rendered as separate panels. Market-data-unavailable state shows a distinct blocked indicator. No forbidden phrases, no localStorage/sessionStorage writes, no unapproved endpoints. typecheck: pass. lint --max-warnings 0: pass. build: pass. No horizontal overflow at 1024/1280/1440. Old `DEMO_PORTFOLIO_SOURCES` and `DEMO_CONTEXT_REFS_TABLE` static constants are no longer imported by the page.
 
 ### P20B-T5 - reports list + detail contracts
 
@@ -353,6 +368,139 @@ Claude A guidance while Phase 20B is partially implemented:
   - no token/secret/provider fields
   - neutral fallback behavior
 - Status: `not_started` (blocked on auth / session design).
+
+### P20B-T7 - dashboard account summary contract
+
+- Task id: `P20B-T7`
+- Title: dashboard account summary contract
+- Objective: Add a sanitized, display-ready account/portfolio summary contract for the Modern Desk dashboard so the UI can show current account information without inventing frontend values.
+- Proposed endpoint: `GET /users/{uid}/dashboard-account-summary`
+- Frontend consumers:
+  - Dashboard account summary / hero strip.
+  - Possible TopBar account/status summary later if PM approves.
+- Expected safe response fields:
+  - `data_mode`: `synthetic_demo` or `persisted`
+  - `demo_notice` while synthetic
+  - `generated_at`
+  - `summary_reference` opaque id
+  - `source_label`
+  - `broker_snapshot_freshness` with `freshness_scope="broker_snapshot"`
+  - `market_quote_freshness` or `market_data_unavailable`
+  - `portfolio_shape` counts only
+  - optional display-safe account summary labels such as `total_value_label`, `cash_label`, `stock_exposure_label`, `option_exposure_label`, only if backend owns and redacts/formats them
+  - `cash_state`
+  - `caveat_codes`
+  - `display_sections` or similar backend-owned grouping labels for the dashboard
+- Explicitly forbidden:
+  - account ids, broker ids, provider ids, provider account ids
+  - raw holdings, raw positions, lots, tax lots, or quantities
+  - raw cash balances, buying power, account values, or exact allocation vectors unless intentionally transformed into display-safe labels by this contract
+  - raw provider payloads or raw CSV rows
+  - account-specific thresholds
+  - prompts, LLM responses, provider traces
+  - execution/advice wording
+- Backend notes:
+  - This contract may expose user-visible account summary labels because the dashboard is a private user surface, but those labels must not become agent prompt inputs by default.
+  - Keep raw private data out of the frontend response. Prefer backend-owned display labels over raw numeric fields unless PM/Codex B explicitly approves a value field.
+  - Preserve broker snapshot freshness and market quote freshness as separate concepts.
+  - Current implementation may be synthetic-demo first, but must carry list/detail-level `data_mode` and `demo_notice`.
+- Tests required:
+  - forbidden-field sweep
+  - demo metadata
+  - broker freshness vs market quote freshness separation
+  - empty/unavailable state
+  - no advice/execution/guarantee wording
+  - local access guard
+- Status: `not_started`.
+
+## Phase 20C - Modern Portfolio Desk frontend wiring and refinements
+
+Phase goal: wire completed Phase 20B contracts into the Modern Portfolio Desk UI and refine page-level information architecture without changing backend contracts or inventing fields.
+
+Shared Phase 20C rules:
+
+- Claude A may consume only Codex B-reviewed backend contracts.
+- Keep `demo · not yet connected` labels visible whenever backend `data_mode` is `synthetic_demo`.
+- Do not compute account values, cash, allocation, collateral, risk counts, or readiness in the frontend.
+- Do not add execution controls, broker destructive actions, provider credential controls, or live LLM/provider controls.
+- Preserve separate broker snapshot freshness, market quote freshness, and agent/provider readiness.
+
+### P20C-T1 - dashboard backend wiring
+
+- Task id: `P20C-T1`
+- Title: dashboard backend wiring
+- Objective: Replace Dashboard static demo cards with reviewed P20B backend contracts while preserving Modern Desk visual fidelity.
+- Dependencies:
+  - `P20B-T1A`
+  - `P20B-T2`
+  - `P20B-T3`
+  - `P20B-T4`
+  - `P20B-T7` for account summary cards; until then, account summary remains visibly demo/not connected.
+- Expected frontend behavior:
+  - consume recent reviews, risk alerts, readiness, portfolio context, and account summary only from reviewed API clients;
+  - show loading, empty, error, and success states;
+  - keep demo labels visible for synthetic-demo responses;
+  - render account/portfolio summary labels only if backend provides them.
+- Status: `not_started`.
+
+### P20C-T2 - Agent Console prototype-aligned static layout
+
+- Task id: `P20C-T2`
+- Title: Agent Console prototype-aligned static layout
+- Objective: Move the existing Agent Console response into the approved prototype information architecture without adding realtime or chat behavior before backend support exists.
+- Dependencies:
+  - existing Phase 19A/19B/19C Agent Console endpoint
+  - Codex B architecture note for the prototype layout
+- Expected layout:
+  - top trade/run summary
+  - left agent status rail
+  - middle transcript-like role output stream
+  - right deterministic evidence rail
+  - bottom follow-up composer shown as disabled/not yet active unless Phase 21A backend is complete
+- Status: `not_started`.
+
+### P20C-T3 - sectioned Settings page layout
+
+- Task id: `P20C-T3`
+- Title: sectioned Settings page layout
+- Objective: Rework Settings to match the prototype pattern: left settings navigation, right detail panel, safe placeholder states for unavailable sections.
+- Dependencies:
+  - PM/Codex B approval for each settings section
+  - `P20B-T6` if profile/private-alpha display is used
+- Explicitly out of scope:
+  - broker disconnect/delete
+  - credential storage
+  - provider API key editing
+  - frontend LLM/provider selection
+  - destructive account actions
+- Status: `not_started`.
+
+### P20C-T4 - Trade Review clutter reduction
+
+- Task id: `P20C-T4`
+- Title: Trade Review clutter reduction
+- Objective: Reduce visible deterministic overload by prioritizing summary, actionability, freshness, and caveats, while moving detailed deterministic sections into expanders.
+- Dependencies:
+  - no backend changes unless Codex B opens a contract revision
+- Status: `not_started`.
+
+## Phase 21A - Realtime Agent Console backend contract
+
+Phase goal: define and implement the backend foundation required for the prototype Agent Console's transcript, follow-up input, direct-to-agent routing, broadcast-to-team routing, and quick-question suggestions.
+
+Phase 21A must be mock-first and backend-owned. It must not require live LLM calls, TradingAgents execution, market/news providers, broker calls, or frontend provider selection.
+
+### P21A-T0 - realtime Agent Console architecture contract
+
+- Task id: `P21A-T0`
+- Title: realtime Agent Console architecture contract
+- Objective: Define the run/session, event, transcript, deterministic evidence rail, follow-up request, direct-to-agent, broadcast, and transport contracts before implementation.
+- Design questions:
+  - Server-Sent Events vs native WebSocket; default recommendation is native WebSocket only if follow-up messages are interactive during a run.
+  - Persistence model for agent runs, transcript messages, and deterministic evidence snapshots.
+  - How direct-to-agent and broadcast prompts are safety-validated and rate-limited.
+  - How mock provider failures, rate limits, and partial runs appear in the transcript.
+- Status: `not_started`.
 
 ## Future Layer - Broker Activities, Transactions, and Strategy Memory
 

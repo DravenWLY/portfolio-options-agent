@@ -1,10 +1,12 @@
 from datetime import date, datetime
 from decimal import Decimal
+import re
 from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.actionability import (
+    BrokerSnapshotMetadata,
     PortfolioActionabilityDecision,
     ReviewActionabilityStatus,
 )
@@ -21,6 +23,40 @@ SupportedTradeReviewFlow: TypeAlias = Literal[
     "cash_secured_put",
 ]
 WorkspaceCaveatSeverity: TypeAlias = Literal["info", "warning", "blocker"]
+PortfolioContextSelectionMode: TypeAlias = Literal["latest_available", "selected_context"]
+PortfolioContextSource: TypeAlias = Literal["snaptrade", "manual", "csv", "synthetic_mock"]
+PortfolioCashState: TypeAlias = Literal["available", "unavailable", "not_exposed"]
+TradeReviewReportStatus: TypeAlias = Literal["preview_only", "saved", "generated", "unavailable"]
+TradeReviewListSourceMode: TypeAlias = Literal["synthetic_preview", "portfolio_preview", "saved_review"]
+Phase20BDataMode: TypeAlias = Literal["synthetic_demo", "persisted"]
+RiskAlertCategory: TypeAlias = Literal[
+    "concentration",
+    "cash_collateral",
+    "stale_broker_snapshot",
+    "stale_market_quote",
+    "missing_data",
+    "agent_provider",
+]
+RiskAlertFreshnessScope: TypeAlias = Literal["broker_snapshot", "market_quote", "agent_provider", "review"]
+ReviewReadinessMode: TypeAlias = Literal["normal_review", "analysis_only", "manual_confirmation_required", "blocked"]
+ReadinessSnapshotStatus: TypeAlias = Literal["fresh", "manual_review", "stale", "unknown", "unavailable"]
+AgentProviderMode: TypeAlias = Literal["mock", "live", "unavailable"]
+ReadinessAgentProviderStatus: TypeAlias = Literal["available", "unavailable", "error", "mock_default"]
+
+_OPAQUE_CONTEXT_REFERENCE_RE = re.compile(r"^ctx_[a-z0-9][a-z0-9_-]{5,79}$")
+_FORBIDDEN_CONTEXT_REFERENCE_TOKENS = (
+    "account",
+    "acct",
+    "broker",
+    "provider",
+    "snaptrade",
+    "secret",
+    "token",
+    "cash",
+    "holding",
+    "position",
+    "portfolio",
+)
 
 PROHIBITED_TRADE_REVIEW_WORKSPACE_PHRASES = (
     "you should",
@@ -95,6 +131,50 @@ class TradeReviewWorkspacePreviewRequest(BaseModel):
             if self.symbol is not None or self.quantity is not None or self.price_assumption is not None:
                 raise ValueError(f"{self.supported_flow} must use option_leg instead of stock/ETF fields")
         return self
+
+
+class PortfolioContextSelectionRequest(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    mode: PortfolioContextSelectionMode = "latest_available"
+    context_reference: str | None = Field(default=None, min_length=10, max_length=84)
+
+    @model_validator(mode="after")
+    def context_reference_must_be_opaque(self) -> "PortfolioContextSelectionRequest":
+        if self.mode == "latest_available":
+            if self.context_reference is not None:
+                raise ValueError("latest_available must not include context_reference")
+            return self
+        if self.context_reference is None:
+            raise ValueError("selected_context requires context_reference")
+        ref = self.context_reference.strip()
+        if ref != self.context_reference or _OPAQUE_CONTEXT_REFERENCE_RE.fullmatch(ref) is None:
+            raise ValueError("context_reference must be an opaque app-generated context reference")
+        lowered = ref.lower()
+        if any(token in lowered for token in _FORBIDDEN_CONTEXT_REFERENCE_TOKENS):
+            raise ValueError("context_reference must not contain broker, account, provider, or private-data hints")
+        return self
+
+
+class TradeReviewPortfolioPreviewRequest(TradeReviewWorkspacePreviewRequest):
+    portfolio_context_selection: PortfolioContextSelectionRequest = Field(
+        default_factory=PortfolioContextSelectionRequest
+    )
+
+
+class PortfolioContextSummaryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    context_reference: str
+    context_source: PortfolioContextSource
+    selection_mode: PortfolioContextSelectionMode
+    summary_as_of: datetime | None
+    latest_snapshot_as_of: datetime | None
+    broker_snapshot: BrokerSnapshotMetadata
+    stock_position_count: int = Field(ge=0)
+    option_position_count: int = Field(ge=0)
+    cash_state: PortfolioCashState
+    label: str | None = None
 
 
 class TradeIntentSummaryRead(BaseModel):
@@ -249,6 +329,7 @@ class TradeReviewWorkspaceRead(BaseModel):
     calculation_version: str
     supported_flow: SupportedTradeReviewFlow
     trade_intent_summary: TradeIntentSummaryRead
+    portfolio_context: PortfolioContextSummaryRead | None = None
     actionability: PortfolioActionabilityDecision
     deterministic_review: DeterministicTradeReviewRead
     agent_orchestration: AgentOrchestrationSummaryRead | None = None
@@ -257,6 +338,114 @@ class TradeReviewWorkspaceRead(BaseModel):
 
     @model_validator(mode="after")
     def workspace_payload_must_be_safe(self) -> "TradeReviewWorkspaceRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class TradeReviewListItemRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    review_reference: str
+    created_at: datetime
+    supported_flow: SupportedTradeReviewFlow
+    review_flow_label: str
+    symbol_or_underlying: str
+    review_actionability_status: ReviewActionabilityStatus
+    highest_severity: RiskSeverity | None
+    report_status: TradeReviewReportStatus
+    source_mode: TradeReviewListSourceMode
+    broker_snapshot_freshness_label: str | None = None
+    market_quote_freshness_label: str | None = None
+
+
+class TradeReviewListRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    data_mode: Phase20BDataMode
+    demo_notice: str | None = None
+    items: tuple[TradeReviewListItemRead, ...]
+
+    @model_validator(mode="after")
+    def list_payload_must_be_safe(self) -> "TradeReviewListRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class RiskAlertItemRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    alert_reference: str
+    generated_at: datetime
+    severity: RiskSeverity
+    category: RiskAlertCategory
+    title: str
+    summary: str
+    related_symbol_or_underlying: str | None = None
+    related_review_reference: str | None = None
+    freshness_scope: RiskAlertFreshnessScope | None = None
+    is_blocking: bool
+
+
+class RiskAlertListRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    data_mode: Phase20BDataMode
+    demo_notice: str | None = None
+    items: tuple[RiskAlertItemRead, ...]
+
+    @model_validator(mode="after")
+    def risk_alert_payload_must_be_safe(self) -> "RiskAlertListRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class BrokerSnapshotReadinessRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    freshness_scope: Literal["broker_snapshot"] = "broker_snapshot"
+    status: ReadinessSnapshotStatus
+    as_of_label: str | None = None
+    reason_codes: tuple[str, ...]
+    display_label: str
+    is_blocking: bool
+
+
+class MarketQuoteReadinessRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    freshness_scope: Literal["market_quote"] = "market_quote"
+    status: ReadinessSnapshotStatus
+    as_of_label: str | None = None
+    reason_codes: tuple[str, ...]
+    display_label: str
+    is_blocking: bool
+
+
+class AgentProviderReadinessRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    provider_mode: AgentProviderMode
+    provider_status: ReadinessAgentProviderStatus
+    is_mock_default: bool
+    last_checked_at: datetime | None = None
+    display_label: str
+    is_blocking: bool
+
+
+class ReviewReadinessRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    data_mode: Phase20BDataMode
+    demo_notice: str | None = None
+    generated_at: datetime
+    overall_review_mode: ReviewReadinessMode
+    broker_snapshot: BrokerSnapshotReadinessRead
+    market_quotes: MarketQuoteReadinessRead
+    agent_provider: AgentProviderReadinessRead
+    recommended_user_action_label: str
+
+    @model_validator(mode="after")
+    def readiness_payload_must_be_safe(self) -> "ReviewReadinessRead":
         validate_trade_review_workspace_payload(self.model_dump(mode="python"))
         return self
 

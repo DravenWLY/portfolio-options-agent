@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import AppearanceControl from "./AppearanceControl";
+import { useLocation } from "react-router-dom";
 
 interface TopBarProps {
   /** Slot for the account selector chip — wired in P11-T2. */
@@ -7,26 +7,55 @@ interface TopBarProps {
 }
 
 /**
- * TopBar — fixed top strip containing the product name and account selector slot.
+ * TopBar — P20A-T2 prototype topology.
  *
- * Safety note: This bar must never contain trade-execution controls,
- * market quote widgets, or guaranteed-return language.
+ * Translated from `AppTopBar` in
+ *   design/prototype/portfolio-copilot-modern-desk/Portfolio Copilot/app.tsx
+ *
+ * The bar now lives **inside** the main column (no longer `position: fixed`
+ * full-width across the viewport). The Sidebar owns its own brand header
+ * separately, so this strip carries only the workspace-eyebrow breadcrumb +
+ * screen title + right-side controls (appearance + account).
+ *
+ * No global freshness dials in this slice (no aggregate freshness endpoint).
+ *
+ * Safety: no trade-execution controls, no live market quote widgets, no
+ * recommendation language.
  */
-export default function TopBar({ accountSlot }: TopBarProps) {
-  return (
-    <header style={styles.bar} role="banner">
-      <div style={styles.brand}>
-        <span style={styles.brandMark} aria-hidden="true">◈</span>
-        <span style={styles.brandName}>Portfolio Copilot</span>
-        <span style={styles.brandTag}>decision support · read-only</span>
-      </div>
 
-      <div style={styles.accountArea}>
-        <AppearanceControl />
+const ROUTE_TITLE: Array<{ match: RegExp; eyebrow: string; title: string }> = [
+  { match: /^\/broker/, eyebrow: "Workspace · broker", title: "Broker Connection" },
+  { match: /^\/market-data/, eyebrow: "Workspace · market data", title: "Market Data" },
+  { match: /^\/risk/, eyebrow: "Workspace · risk review", title: "Risk Review" },
+  { match: /^\/trade-review/, eyebrow: "Workspace · trade review", title: "Review trade" },
+  { match: /^\/agent-team-analysis/, eyebrow: "Workspace · agent console", title: "Agent team analysis" },
+  { match: /^\/reports/, eyebrow: "Workspace · reports", title: "Reports" },
+  { match: /^\/portfolio-context/, eyebrow: "Workspace · portfolio context", title: "Portfolio context" },
+  { match: /^\/settings/, eyebrow: "Workspace · settings", title: "Settings" },
+  { match: /^\/landing/, eyebrow: "Marketing · landing", title: "Landing (placeholder)" },
+  { match: /^\/pricing/, eyebrow: "Marketing · pricing", title: "Pricing (placeholder)" },
+  { match: /^\/auth/, eyebrow: "Marketing · sign-in", title: "Sign in (placeholder)" },
+  { match: /^\/$/, eyebrow: "Workspace · overview", title: "Dashboard" },
+];
+
+function titleFor(pathname: string): { eyebrow: string; title: string } {
+  for (const r of ROUTE_TITLE) if (r.match.test(pathname)) return { eyebrow: r.eyebrow, title: r.title };
+  return { eyebrow: "Workspace", title: "Portfolio Copilot" };
+}
+
+export default function TopBar({ accountSlot }: TopBarProps) {
+  const { pathname } = useLocation();
+  const { eyebrow, title } = titleFor(pathname);
+  return (
+    <header className="mp-surface" style={styles.bar} role="banner">
+      <div style={styles.left}>
+        <span style={styles.eyebrow}>{eyebrow}</span>
+        <span style={styles.sep} aria-hidden="true">›</span>
+        <span className="mp-display" style={styles.title}>{title}</span>
+      </div>
+      <div style={styles.right}>
         {accountSlot ?? (
-          <span style={styles.accountPlaceholder}>
-            — account selector (P11-T2) —
-          </span>
+          <span style={styles.accountPlaceholder}>— account selector —</span>
         )}
       </div>
     </header>
@@ -35,51 +64,26 @@ export default function TopBar({ accountSlot }: TopBarProps) {
 
 const styles: Record<string, React.CSSProperties> = {
   bar: {
-    position: "fixed",
+    position: "sticky",
     top: 0,
-    left: 0,
-    right: 0,
+    zIndex: 90,
+    backgroundColor: "var(--mp-card)",
+    borderBottom: "1px solid var(--mp-rule)",
+    color: "var(--mp-ink)",
     height: "var(--topbar-height)",
-    backgroundColor: "var(--color-surface)",
-    borderBottom: "1px solid var(--color-border)",
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     paddingInline: "var(--space-6)",
-    zIndex: 100,
     gap: "var(--space-4)",
   },
-  brand: {
-    display: "flex",
-    alignItems: "baseline",
-    gap: "var(--space-3)",
-    flexShrink: 0,
+  left: { display: "flex", alignItems: "baseline", gap: 12, minWidth: 0 },
+  eyebrow: {
+    fontSize: "var(--font-size-xs)", color: "var(--mp-mute)",
+    textTransform: "uppercase", letterSpacing: "0.06em",
   },
-  brandMark: {
-    color: "var(--color-accent)",
-    fontSize: "var(--font-size-lg)",
-    lineHeight: 1,
-  },
-  brandName: {
-    fontSize: "var(--font-size-md)",
-    fontWeight: 600,
-    letterSpacing: "0.02em",
-    color: "var(--color-text-primary)",
-  },
-  brandTag: {
-    fontSize: "var(--font-size-xs)",
-    color: "var(--color-text-muted)",
-    letterSpacing: "0.04em",
-    textTransform: "uppercase",
-  },
-  accountArea: {
-    display: "flex",
-    alignItems: "center",
-    gap: "var(--space-2)",
-  },
-  accountPlaceholder: {
-    fontSize: "var(--font-size-sm)",
-    color: "var(--color-text-muted)",
-    fontStyle: "italic",
-  },
+  sep: { fontSize: "var(--font-size-sm)", color: "var(--mp-mute-2)" },
+  title: { fontSize: 16, color: "var(--mp-ink)", fontWeight: 500 },
+  right: { display: "flex", alignItems: "center", gap: "var(--space-3)" },
+  accountPlaceholder: { fontSize: "var(--font-size-sm)", color: "var(--mp-mute)", fontStyle: "italic" },
 };

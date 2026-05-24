@@ -2,6 +2,7 @@ import type {
   TradeReviewWorkspaceRead,
   ReviewActionabilityStatus,
   PortfolioActionabilityDecision,
+  PortfolioContextSummaryRead,
   TradeIntentSummaryRead,
   DeterministicTradeReviewRead,
   RiskRuleViolationSummaryRead,
@@ -30,10 +31,10 @@ const SEVERITY_META: Record<
   RiskSeverity,
   { icon: string; label: string; cssVar: string }
 > = {
-  info: { icon: "ⓘ", label: "Info", cssVar: "var(--color-unknown)" },
-  warning: { icon: "△", label: "Warning", cssVar: "var(--color-stale)" },
-  violation: { icon: "✕", label: "Violation", cssVar: "var(--color-error)" },
-  blocker: { icon: "■", label: "Blocker", cssVar: "var(--color-error)" },
+  info: { icon: "ⓘ", label: "Info", cssVar: "var(--mp-mute)" },
+  warning: { icon: "△", label: "Warning", cssVar: "var(--mp-stale)" },
+  violation: { icon: "✕", label: "Violation", cssVar: "var(--mp-block)" },
+  blocker: { icon: "■", label: "Blocker", cssVar: "var(--mp-block)" },
 };
 
 const SEVERITY_ORDER: RiskSeverity[] = ["blocker", "violation", "warning", "info"];
@@ -42,9 +43,9 @@ const CAVEAT_META: Record<
   WorkspaceCaveatSeverity,
   { icon: string; label: string; cssVar: string }
 > = {
-  info: { icon: "ⓘ", label: "Info", cssVar: "var(--color-unknown)" },
-  warning: { icon: "△", label: "Warning", cssVar: "var(--color-stale)" },
-  blocker: { icon: "■", label: "Blocker", cssVar: "var(--color-error)" },
+  info: { icon: "ⓘ", label: "Info", cssVar: "var(--mp-mute)" },
+  warning: { icon: "△", label: "Warning", cssVar: "var(--mp-stale)" },
+  blocker: { icon: "■", label: "Blocker", cssVar: "var(--mp-block)" },
 };
 
 const ACTIONABILITY_LABEL: Record<ReviewActionabilityStatus, string> = {
@@ -68,6 +69,7 @@ export default function TradeReviewResults({ data }: { data: TradeReviewWorkspac
         <span style={styles.mono}>{data.calculation_version}</span>; generated at{" "}
         <span style={styles.mono}>{data.generated_at}</span>.
       </p>
+      {data.portfolio_context && <PortfolioContextBlock context={data.portfolio_context} />}
       <FreshnessPanel actionability={data.actionability} />
       <IntentSummary intent={data.trade_intent_summary} />
       <DeterministicSections review={data.deterministic_review} />
@@ -86,16 +88,16 @@ function ActionabilityBanner({ actionability }: { actionability: PortfolioAction
   const isManual = status === "manual_confirmation_required";
   const isAnalysisOnly = status === "analysis_only";
   let icon = "○";
-  let cssVar = "var(--color-unknown)";
+  let cssVar = "var(--mp-mute)";
   if (isBlocked) {
     icon = "■";
-    cssVar = "var(--color-error)";
+    cssVar = "var(--mp-block)";
   } else if (isManual || isAnalysisOnly) {
     icon = "△";
-    cssVar = "var(--color-stale)";
+    cssVar = "var(--mp-stale)";
   } else if (status === "normal_review") {
     icon = "●";
-    cssVar = "var(--color-live)";
+    cssVar = "var(--mp-live)";
   }
   return (
     <section
@@ -137,9 +139,82 @@ function ActionabilityBanner({ actionability }: { actionability: PortfolioAction
 }
 
 function cssColorForReason(sev: "info" | "warning" | "blocker"): string {
-  if (sev === "blocker") return "var(--color-error)";
-  if (sev === "warning") return "var(--color-stale)";
-  return "var(--color-unknown)";
+  if (sev === "blocker") return "var(--mp-block)";
+  if (sev === "warning") return "var(--mp-stale)";
+  return "var(--mp-mute)";
+}
+
+function PortfolioContextBlock({ context }: { context: PortfolioContextSummaryRead }) {
+  const cashStateMeta: Record<
+    PortfolioContextSummaryRead["cash_state"],
+    { icon: string; cssVar: string; label: string }
+  > = {
+    available: { icon: "●", cssVar: "var(--mp-live)", label: "Available" },
+    unavailable: { icon: "△", cssVar: "var(--mp-stale)", label: "Unavailable" },
+    not_exposed: { icon: "○", cssVar: "var(--mp-mute)", label: "Not exposed" },
+  };
+  const brokerFresh = context.broker_snapshot.freshness_status;
+  const brokerStale = ["stale", "unknown", "error", "reauth_required"].includes(brokerFresh);
+  const cs = cashStateMeta[context.cash_state];
+  return (
+    <section
+      style={{ ...styles.card, borderLeft: "3px solid var(--mp-accent)" }}
+      aria-label="Portfolio context (server-owned; Phase 18C)"
+    >
+      <div style={styles.cardHead}>
+        <span style={styles.cardTitle}>Portfolio context</span>
+        <span style={styles.detTag}>server-owned · Phase 18C</span>
+      </div>
+      {brokerStale && (
+        <p style={styles.caveatInline} role="status">
+          <span aria-hidden="true">△ </span>
+          Broker snapshot for this context is{" "}
+          <strong>{brokerFresh}</strong>. Treat the portfolio-backed review as
+          stale; verify holdings in your broker before any manual action.
+        </p>
+      )}
+      <ul style={styles.facts}>
+        <FactRow k="Context reference (opaque)" v={context.context_reference} mono />
+        <FactRow k="Context source" v={context.context_source} mono />
+        <FactRow k="Selection mode" v={context.selection_mode} mono />
+        <FactRow k="Label" v={context.label ?? "—"} mono />
+        <FactRow k="Summary as of" v={context.summary_as_of ?? "—"} mono />
+        <FactRow k="Latest snapshot as of" v={context.latest_snapshot_as_of ?? "—"} mono />
+        <FactRow
+          k="Broker snapshot freshness"
+          v={`${context.broker_snapshot.source} · ${brokerFresh}`}
+          mono
+        />
+        <FactRow
+          k="Broker provider status"
+          v={context.broker_snapshot.provider_status}
+          mono
+        />
+        <FactRow k="Stock position count" v={String(context.stock_position_count)} mono />
+        <FactRow k="Option position count" v={String(context.option_position_count)} mono />
+        <li style={styles.factRow}>
+          <span style={styles.factKey}>Cash state</span>
+          <span
+            style={{
+              ...styles.sevChip,
+              color: cs.cssVar,
+              borderColor: cs.cssVar,
+            }}
+          >
+            <span aria-hidden="true">{cs.icon} </span>
+            {cs.label}{" "}
+            <span style={styles.mono}>({context.cash_state})</span>
+          </span>
+        </li>
+      </ul>
+      <p style={styles.cardFoot}>
+        Only safe portfolio metadata is exposed here — counts and category labels, no
+        holdings, no balances, no account / provider identifiers. Broker snapshot
+        freshness shown above is a different scope from market quote freshness
+        (see Freshness panel below).
+      </p>
+    </section>
+  );
 }
 
 function FreshnessPanel({ actionability }: { actionability: PortfolioActionabilityDecision }) {
@@ -497,7 +572,7 @@ function CaveatsBlock({ caveats }: { caveats: WorkspaceCaveatRead[] }) {
 function AgentOrchestrationBlock({ summary }: { summary: AgentOrchestrationSummaryRead }) {
   return (
     <section
-      style={{ ...styles.card, borderLeft: "3px solid var(--color-unknown)" }}
+      style={{ ...styles.card, borderLeft: "3px solid var(--mp-mute)" }}
       aria-label="Agent orchestration summary (status only — no LLM text)"
     >
       <div style={styles.cardHead}>
@@ -543,7 +618,7 @@ function AgentOrchestrationBlock({ summary }: { summary: AgentOrchestrationSumma
 function AnalysisOnlyReportBlock({ report }: { report: AnalysisOnlyReportOutputRead }) {
   return (
     <section
-      style={{ ...styles.card, borderLeft: "3px solid var(--color-stale)" }}
+      style={{ ...styles.card, borderLeft: "3px solid var(--mp-stale)" }}
       aria-label="Analysis-only report output (separate from deterministic facts)"
     >
       <div style={styles.cardHead}>
@@ -606,8 +681,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     gap: "var(--space-4)",
     alignItems: "flex-start",
-    backgroundColor: "var(--color-surface)",
-    border: "1px solid var(--color-border)",
+    backgroundColor: "var(--mp-card)",
+    border: "1px solid var(--mp-rule)",
     borderLeftWidth: 4,
     borderRadius: "var(--radius-md)",
     padding: "var(--space-4) var(--space-6)",
@@ -616,17 +691,17 @@ const styles: Record<string, React.CSSProperties> = {
   bannerLabel: {
     fontWeight: 700,
     fontSize: "var(--font-size-base)",
-    color: "var(--color-text-primary)",
+    color: "var(--mp-ink)",
     margin: 0,
   },
   bannerSub: {
     fontSize: "var(--font-size-xs)",
-    color: "var(--color-text-muted)",
+    color: "var(--mp-mute)",
     margin: "var(--space-1) 0 0",
   },
   bannerNote: {
     fontSize: "var(--font-size-sm)",
-    color: "var(--color-stale)",
+    color: "var(--mp-stale)",
     margin: "var(--space-2) 0 0",
     fontWeight: 600,
   },
@@ -635,9 +710,9 @@ const styles: Record<string, React.CSSProperties> = {
   scopeChip: {
     fontSize: "var(--font-size-xs)",
     padding: "1px 5px",
-    border: "1px solid var(--color-border)",
+    border: "1px solid var(--mp-rule)",
     borderRadius: "var(--radius-sm)",
-    color: "var(--color-text-muted)",
+    color: "var(--mp-mute)",
   },
   sevChip: {
     fontSize: "var(--font-size-xs)",
@@ -646,20 +721,20 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-sm)",
     fontWeight: 700,
   },
-  reasonMsg: { color: "var(--color-text-secondary)" },
+  reasonMsg: { color: "var(--mp-ink-2)" },
   deterministicBanner: {
     fontSize: "var(--font-size-xs)",
-    color: "var(--color-text-muted)",
-    backgroundColor: "var(--color-surface-2)",
-    border: "1px solid var(--color-border-subtle)",
+    color: "var(--mp-mute)",
+    backgroundColor: "var(--mp-paper-2)",
+    border: "1px solid var(--mp-rule)",
     borderRadius: "var(--radius-sm)",
     padding: "var(--space-2) var(--space-4)",
     margin: 0,
     lineHeight: 1.6,
   },
   card: {
-    backgroundColor: "var(--color-surface)",
-    border: "1px solid var(--color-border)",
+    backgroundColor: "var(--mp-card)",
+    border: "1px solid var(--mp-rule)",
     borderRadius: "var(--radius-md)",
     padding: "var(--space-4) var(--space-6)",
     display: "flex",
@@ -667,42 +742,42 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "var(--space-3)",
   },
   cardHead: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-3)", flexWrap: "wrap" },
-  cardTitle: { fontWeight: 700, fontSize: "var(--font-size-base)", color: "var(--color-text-primary)" },
+  cardTitle: { fontWeight: 700, fontSize: "var(--font-size-base)", color: "var(--mp-ink)" },
   detTag: {
     fontSize: "var(--font-size-xs)",
     padding: "1px 6px",
-    border: "1px solid var(--color-unknown)",
+    border: "1px solid var(--mp-mute)",
     borderRadius: "var(--radius-sm)",
-    color: "var(--color-unknown)",
+    color: "var(--mp-mute)",
     fontWeight: 600,
     letterSpacing: "0.04em",
   },
-  cardFoot: { fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", margin: 0, lineHeight: 1.6 },
+  cardFoot: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", margin: 0, lineHeight: 1.6 },
   freshnessGrid: { display: "flex", gap: "var(--space-5)", flexWrap: "wrap" },
   freshnessCol: { flex: "1 1 260px", minWidth: 260, display: "flex", flexDirection: "column", gap: "var(--space-2)" },
-  freshnessHead: { fontSize: "var(--font-size-xs)", textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--color-text-muted)", margin: 0 },
+  freshnessHead: { fontSize: "var(--font-size-xs)", textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--mp-mute)", margin: 0 },
   facts: { margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "var(--space-1)" },
   factRow: { display: "flex", gap: "var(--space-4)", fontSize: "var(--font-size-xs)", alignItems: "baseline" },
-  factKey: { minWidth: 200, color: "var(--color-text-muted)" },
-  mono: { fontFamily: "var(--font-mono, monospace)", color: "var(--color-text-secondary)" },
+  factKey: { minWidth: 200, color: "var(--mp-mute)" },
+  mono: { fontFamily: "var(--mp-font-mono, monospace)", color: "var(--mp-ink-2)" },
   legList: { margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "var(--space-1)" },
   legRow: { display: "flex", flexDirection: "column", gap: "var(--space-1)", fontSize: "var(--font-size-xs)" },
-  legMeta: { color: "var(--color-text-muted)" },
+  legMeta: { color: "var(--mp-mute)" },
   caveatInline: {
     fontSize: "var(--font-size-sm)",
-    color: "var(--color-text-secondary)",
+    color: "var(--mp-ink-2)",
     margin: 0,
     padding: "var(--space-2) var(--space-3)",
-    border: "1px solid var(--color-stale)",
+    border: "1px solid var(--mp-stale)",
     borderRadius: "var(--radius-sm)",
-    backgroundColor: "var(--color-surface-2)",
+    backgroundColor: "var(--mp-paper-2)",
   },
-  emptyMsg: { fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", margin: 0 },
+  emptyMsg: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", margin: 0 },
   sevGroup: { display: "flex", flexDirection: "column", gap: "var(--space-2)" },
   sevHeading: { fontSize: "var(--font-size-sm)", fontWeight: 700, margin: 0, textTransform: "uppercase", letterSpacing: "0.04em" },
   sevList: { margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "var(--space-2)" },
   violation: {
-    border: "1px solid var(--color-border-subtle)",
+    border: "1px solid var(--mp-rule)",
     borderRadius: "var(--radius-sm)",
     padding: "var(--space-2) var(--space-3)",
     display: "flex",
@@ -710,35 +785,35 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "var(--space-1)",
   },
   violationTop: { display: "flex", gap: "var(--space-3)", alignItems: "center", flexWrap: "wrap" },
-  violationMsg: { fontSize: "var(--font-size-sm)", color: "var(--color-text-secondary)", margin: 0, lineHeight: 1.5 },
+  violationMsg: { fontSize: "var(--font-size-sm)", color: "var(--mp-ink-2)", margin: 0, lineHeight: 1.5 },
   violationMeta: {
     display: "flex",
     gap: "var(--space-4)",
     flexWrap: "wrap",
     fontSize: "var(--font-size-xs)",
-    color: "var(--color-text-muted)",
+    color: "var(--mp-mute)",
   },
   payoffList: { margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: "var(--space-1)" },
   payoffRow: { display: "flex", flexDirection: "column", gap: "var(--space-1)", fontSize: "var(--font-size-xs)" },
-  payoffLabel: { fontWeight: 700, color: "var(--color-text-secondary)" },
-  payoffDesc: { color: "var(--color-text-muted)" },
-  noteList: { margin: 0, padding: 0, listStyle: "none", fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", display: "flex", flexDirection: "column", gap: "var(--space-1)" },
+  payoffLabel: { fontWeight: 700, color: "var(--mp-ink-2)" },
+  payoffDesc: { color: "var(--mp-mute)" },
+  noteList: { margin: 0, padding: 0, listStyle: "none", fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", display: "flex", flexDirection: "column", gap: "var(--space-1)" },
   note: { lineHeight: 1.5 },
-  reportTitle: { fontWeight: 700, fontSize: "var(--font-size-sm)", color: "var(--color-text-primary)", margin: 0 },
-  reportNote: { fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", margin: 0, lineHeight: 1.6 },
+  reportTitle: { fontWeight: 700, fontSize: "var(--font-size-sm)", color: "var(--mp-ink)", margin: 0 },
+  reportNote: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", margin: 0, lineHeight: 1.6 },
   subBlock: { display: "flex", flexDirection: "column", gap: "var(--space-1)" },
-  subHead: { fontSize: "var(--font-size-xs)", textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--color-text-muted)", margin: 0 },
-  subBody: { fontSize: "var(--font-size-xs)", color: "var(--color-text-secondary)", margin: 0 },
+  subHead: { fontSize: "var(--font-size-xs)", textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--mp-mute)", margin: 0 },
+  subBody: { fontSize: "var(--font-size-xs)", color: "var(--mp-ink-2)", margin: 0 },
   markdownDetails: { fontSize: "var(--font-size-xs)" },
-  markdownSummary: { cursor: "pointer", color: "var(--color-text-muted)" },
+  markdownSummary: { cursor: "pointer", color: "var(--mp-mute)" },
   markdownPre: {
     margin: "var(--space-2) 0 0",
     padding: "var(--space-2) var(--space-3)",
-    border: "1px solid var(--color-border-subtle)",
+    border: "1px solid var(--mp-rule)",
     borderRadius: "var(--radius-sm)",
-    backgroundColor: "var(--color-surface-2)",
+    backgroundColor: "var(--mp-paper-2)",
     whiteSpace: "pre-wrap",
-    color: "var(--color-text-secondary)",
-    fontFamily: "var(--font-mono, monospace)",
+    color: "var(--mp-ink-2)",
+    fontFamily: "var(--mp-font-mono, monospace)",
   },
 };

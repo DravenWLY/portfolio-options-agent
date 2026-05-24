@@ -4,10 +4,10 @@ This file is a lightweight task index. The detailed task specs remain in `docs/s
 
 ## Current State
 
-- Completed foundation: Phases 1-16 and Phase 18A.
-- Active roadmap phase: Phase 18B - Frontend Trade Review Workspace expansion.
+- Completed foundation: Phases 1-16, Phase 17A, Phase 18A, Phase 18B, Phase 18C, Phase 19A, Phase 19B, Phase 19C, and Phase 20A.
+- Active roadmap phase: Phase 20B - Modern Portfolio Desk backend contracts.
 - Current safety foundation: broker portfolio snapshot freshness/actionability is explicit, Phase 16 agent components consume it, and Phase 16B enforces private/public context boundaries.
-- Current architecture concern: expand the completed Phase 18A workspace without breaking the sanitized read contract, freshness/actionability separation, read-only manual-review scope, or Phase 17 freeze.
+- Current architecture concern: wire Modern Portfolio Desk placeholders through small sanitized backend read contracts without exposing private data, inventing frontend fields, or collapsing broker freshness, market freshness, and agent-provider readiness.
 
 ## Current Primary Owners
 
@@ -24,12 +24,11 @@ This file is a lightweight task index. The detailed task specs remain in `docs/s
 
 Do not treat this list as authorization to implement. Each item needs an approved task spec before code changes.
 
-1. Backend fast-follow: unify the frontend-read forbidden-field key set in `app/services/privacy.py` before new response fields are added.
-2. Architecture: keep `docs/codex-b-architecture/PHASE_18A_FRONTEND_READINESS_CONTRACT.md` as the baseline frontend/backend boundary until a Phase 18B contract revision exists.
-3. Frontend: expand the read-only Trade Review Workspace only after backend contract implications are clear.
-4. Review: ask Claude B to check frontend safety language, stale-data clarity, no execution controls, private-data leakage, UX clarity, and implementation quality for any Phase 18B UI changes.
-5. Market data: keep real provider integration deferred for local MVP; plan Tradier REST snapshots before external paid beta or quote-current options review.
-6. Phase 17: keep TradingAgents/Public Research Evidence optional and frozen unless PM explicitly reactivates it.
+1. Backend: Codex C continues Phase 20B with P20B-T4 portfolio context enumeration/detail contracts.
+2. Architecture: Codex B reviews every P20B endpoint before Claude A consumes it.
+3. Frontend: Claude A may wire P20B-T1/T1A/T2/T3 only with visible demo/not-connected labels; no ad hoc fields or frontend calculations.
+4. Review: Claude B checks any frontend wiring for safety language, no execution controls, private-data leakage, and UX clarity.
+5. Future gate: Phase 19D live LLM smoke testing remains explicit, backend-only, synthetic-only, and separate from frontend polish.
 
 ## Routine Task Checklist
 

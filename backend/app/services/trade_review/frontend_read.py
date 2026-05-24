@@ -1,6 +1,6 @@
 """Frontend-safe projection for the first Trade Review Workspace."""
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -20,15 +20,26 @@ from app.schemas.trade_review_workspace import (
     DeterministicTradeReviewRead,
     MissingDataWarningRead,
     OptionsExposureRead,
+    AgentProviderReadinessRead,
+    BrokerSnapshotReadinessRead,
+    MarketQuoteReadinessRead,
+    PortfolioContextSelectionRequest,
+    PortfolioContextSummaryRead,
     PortfolioImpactSummaryRead,
+    ReviewReadinessRead,
+    RiskAlertItemRead,
+    RiskAlertListRead,
     RiskRuleViolationSummaryRead,
     ScenarioPayoffPointRead,
     ScenarioPayoffSummaryRead,
     SupportedTradeReviewFlow,
+    TradeReviewListItemRead,
+    TradeReviewListRead,
     TradeReviewPreviewOptionLeg,
     TradeIntentSummaryRead,
     TradeReviewWorkspaceRead,
     TradeReviewWorkspacePreviewRequest,
+    TradeReviewPortfolioPreviewRequest,
     WorkspaceCaveatRead,
     WorkspaceOptionLegSummaryRead,
     validate_trade_review_workspace_payload,
@@ -37,7 +48,12 @@ from app.services.agents.orchestrator import AgentTeamOrchestrationResult, DEFAU
 from app.services.agents.report_composer import ReportComposerAgentOutput
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.trade_review.actionability import evaluate_portfolio_snapshot_actionability
-from app.services.trade_review.context import PortfolioReviewContext
+from app.services.trade_review.context import (
+    CashContext,
+    OptionPositionContext,
+    PortfolioReviewContext,
+    StockPositionContext,
+)
 from app.services.trade_review.models import (
     ETFTradeIntent,
     OptionLeg,
@@ -54,6 +70,23 @@ from app.services.trade_review.snapshots import TradeReviewMarketSnapshot
 from app.services.trade_review.validation import TradeIntentValidator
 
 
+_LATEST_CONTEXT_REFERENCE = "ctx_demo_latest"
+_STALE_CONTEXT_REFERENCE = "ctx_demo_stale"
+_MISSING_MARKET_CONTEXT_REFERENCE = "ctx_demo_missing"
+_NO_CONTEXT_REFERENCE = "ctx_demo_empty"
+
+_DEMO_EMPTY_USER_REFERENCE = "00000000-0000-0000-0000-000000000000"
+_PHASE20B_DEMO_NOTICE = "demo · not yet connected"
+
+
+@dataclass(frozen=True)
+class _ResolvedPortfolioContext:
+    context: PortfolioReviewContext
+    summary: PortfolioContextSummaryRead | None
+    broker_snapshot: BrokerSnapshotMetadata
+    market_quotes: MarketQuotesMetadata
+
+
 def build_trade_review_workspace_read(
     *,
     projection: TradeReviewAgentProjection,
@@ -62,6 +95,7 @@ def build_trade_review_workspace_read(
     supported_flow: SupportedTradeReviewFlow | None = None,
     orchestration_result: AgentTeamOrchestrationResult | None = None,
     report_output: ReportComposerAgentOutput | None = None,
+    portfolio_context_summary: PortfolioContextSummaryRead | None = None,
     generated_at: datetime | None = None,
 ) -> TradeReviewWorkspaceRead:
     """Build a sanitized read contract for the Phase 18A workspace.
@@ -83,6 +117,7 @@ def build_trade_review_workspace_read(
         calculation_version=projection.calculation_version,
         supported_flow=flow,
         trade_intent_summary=summary,
+        portfolio_context=portfolio_context_summary,
         actionability=actionability,
         deterministic_review=DeterministicTradeReviewRead(
             highest_severity=projection.highest_severity,
@@ -98,6 +133,186 @@ def build_trade_review_workspace_read(
         agent_orchestration=_agent_orchestration(orchestration_result),
         report_output=_report_output(report_output or (orchestration_result.report_output if orchestration_result else None)),
         caveats=_caveats(projection, actionability, flow),
+    )
+    validate_trade_review_workspace_payload(read.model_dump(mode="python"))
+    return read
+
+
+def list_recent_trade_reviews_for_user(
+    user_id: object,
+    *,
+    generated_at: datetime | None = None,
+) -> TradeReviewListRead:
+    """Return a frontend-safe recent-review list.
+
+    Phase 20B starts with a synthetic read contract because preview runs are
+    still stateless. The payload is intentionally list-only and excludes raw
+    intents, report bodies, account values, quantities, cash, and provider data.
+    """
+
+    user_reference = str(user_id)
+    if user_reference == _DEMO_EMPTY_USER_REFERENCE:
+        return TradeReviewListRead(
+            data_mode="synthetic_demo",
+            demo_notice=_PHASE20B_DEMO_NOTICE,
+            items=(),
+        )
+
+    generated = generated_at or datetime.now(UTC)
+    items = (
+        TradeReviewListItemRead(
+            review_reference="trv_demo_stock_buy_review",
+            created_at=generated,
+            supported_flow="stock_buy",
+            review_flow_label=_review_flow_label("stock_buy"),
+            symbol_or_underlying="XYZ",
+            review_actionability_status="manual_confirmation_required",
+            highest_severity="warning",
+            report_status="preview_only",
+            source_mode="synthetic_preview",
+            broker_snapshot_freshness_label="Broker snapshot: manual review",
+            market_quote_freshness_label="Market quotes: manual review",
+        ),
+        TradeReviewListItemRead(
+            review_reference="trv_demo_etf_trim_review",
+            created_at=generated,
+            supported_flow="etf_sell_trim",
+            review_flow_label=_review_flow_label("etf_sell_trim"),
+            symbol_or_underlying="QQQ",
+            review_actionability_status="analysis_only",
+            highest_severity="info",
+            report_status="generated",
+            source_mode="portfolio_preview",
+            broker_snapshot_freshness_label="Broker snapshot: user-confirmed",
+            market_quote_freshness_label="Market quotes: manual",
+        ),
+        TradeReviewListItemRead(
+            review_reference="trv_demo_covered_call_review",
+            created_at=generated,
+            supported_flow="covered_call",
+            review_flow_label=_review_flow_label("covered_call"),
+            symbol_or_underlying="XYZ",
+            review_actionability_status="blocked_unknown_freshness",
+            highest_severity="blocker",
+            report_status="unavailable",
+            source_mode="saved_review",
+            broker_snapshot_freshness_label="Broker snapshot: unknown",
+            market_quote_freshness_label="Market quotes: unknown",
+        ),
+    )
+    read = TradeReviewListRead(
+        data_mode="synthetic_demo",
+        demo_notice=_PHASE20B_DEMO_NOTICE,
+        items=items,
+    )
+    validate_trade_review_workspace_payload(read.model_dump(mode="python"))
+    return read
+
+
+def list_risk_alerts_for_user(
+    user_id: object,
+    *,
+    generated_at: datetime | None = None,
+) -> RiskAlertListRead:
+    """Return a frontend-safe aggregate risk-alert list.
+
+    Phase 20B exposes synthetic alert rows only. Alerts are display summaries,
+    not raw risk-rule violations, raw report content, or account-specific
+    thresholds.
+    """
+
+    user_reference = str(user_id)
+    if user_reference == _DEMO_EMPTY_USER_REFERENCE:
+        return RiskAlertListRead(
+            data_mode="synthetic_demo",
+            demo_notice=_PHASE20B_DEMO_NOTICE,
+            items=(),
+        )
+
+    generated = generated_at or datetime.now(UTC)
+    items = (
+        RiskAlertItemRead(
+            alert_reference="rsk_demo_broker_snapshot_stale",
+            generated_at=generated,
+            severity="blocker",
+            category="stale_broker_snapshot",
+            title="Broker snapshot needs review",
+            summary="Broker snapshot freshness is stale in this demo alert. Confirm portfolio context before relying on account-specific review output.",
+            related_symbol_or_underlying=None,
+            related_review_reference="trv_demo_covered_call_review",
+            freshness_scope="broker_snapshot",
+            is_blocking=True,
+        ),
+        RiskAlertItemRead(
+            alert_reference="rsk_demo_market_quote_stale",
+            generated_at=generated,
+            severity="warning",
+            category="stale_market_quote",
+            title="Market quote freshness needs review",
+            summary="Market quote freshness is stale in this demo alert. Treat the related review as analysis-only until quote data is refreshed or confirmed.",
+            related_symbol_or_underlying="XYZ",
+            related_review_reference="trv_demo_stock_buy_review",
+            freshness_scope="market_quote",
+            is_blocking=False,
+        ),
+        RiskAlertItemRead(
+            alert_reference="rsk_demo_agent_provider_unavailable",
+            generated_at=generated,
+            severity="info",
+            category="agent_provider",
+            title="Optional agent provider unavailable",
+            summary="Optional analysis provider output is unavailable in this demo alert. Deterministic backend review remains the source of review facts.",
+            related_symbol_or_underlying=None,
+            related_review_reference=None,
+            freshness_scope="agent_provider",
+            is_blocking=False,
+        ),
+    )
+    read = RiskAlertListRead(
+        data_mode="synthetic_demo",
+        demo_notice=_PHASE20B_DEMO_NOTICE,
+        items=items,
+    )
+    validate_trade_review_workspace_payload(read.model_dump(mode="python"))
+    return read
+
+
+def get_review_readiness_for_user(
+    user_id: object,
+    *,
+    generated_at: datetime | None = None,
+) -> ReviewReadinessRead:
+    """Return a frontend-safe aggregate review-readiness summary."""
+
+    generated = generated_at or datetime.now(UTC)
+    read = ReviewReadinessRead(
+        data_mode="synthetic_demo",
+        demo_notice=_PHASE20B_DEMO_NOTICE,
+        generated_at=generated,
+        overall_review_mode="analysis_only",
+        broker_snapshot=BrokerSnapshotReadinessRead(
+            status="stale",
+            as_of_label="Demo broker snapshot needs review",
+            reason_codes=("broker_snapshot_stale",),
+            display_label="Broker snapshot requires review",
+            is_blocking=True,
+        ),
+        market_quotes=MarketQuoteReadinessRead(
+            status="manual_review",
+            as_of_label="Demo market quotes require review",
+            reason_codes=("market_quote_manual_review",),
+            display_label="Market quote freshness requires review",
+            is_blocking=False,
+        ),
+        agent_provider=AgentProviderReadinessRead(
+            provider_mode="mock",
+            provider_status="mock_default",
+            is_mock_default=True,
+            last_checked_at=generated,
+            display_label="Mock agent provider active",
+            is_blocking=False,
+        ),
+        recommended_user_action_label="Analysis-only: data limitations are present.",
     )
     validate_trade_review_workspace_payload(read.model_dump(mode="python"))
     return read
@@ -164,6 +379,71 @@ def build_trade_review_workspace_preview(
         actionability=actionability,
         review_reference=report.intent_id,
         supported_flow=payload.supported_flow,
+        generated_at=generated,
+    )
+
+
+def build_trade_review_workspace_portfolio_preview(
+    payload: TradeReviewPortfolioPreviewRequest,
+    *,
+    generated_at: datetime | None = None,
+) -> TradeReviewWorkspaceRead:
+    """Build a portfolio-backed preview from server-owned sanitized context."""
+
+    generated = generated_at or datetime.now(UTC)
+    resolved = _resolve_portfolio_context(payload.portfolio_context_selection, generated_at=generated)
+    actionability = evaluate_portfolio_snapshot_actionability(
+        PortfolioActionabilityInput(
+            broker_snapshot=resolved.broker_snapshot,
+            market_quotes=resolved.market_quotes,
+            user_confirmation=None,
+        ),
+        evaluated_at=generated,
+    )
+    intent = _preview_intent(
+        payload,
+        generated_at=generated,
+        user_id=resolved.context.user_id,
+        account_id=resolved.context.account_id,
+        broker_portfolio_status=resolved.broker_snapshot.freshness_status,
+        market_quote_status=resolved.market_quotes.freshness_status,
+        intent_prefix="portfolio-preview",
+    )
+    market_snapshot = TradeReviewMarketSnapshot(
+        report_market_snapshot=None,
+        missing_symbols=()
+        if actionability.market_quotes.actionability_status == "actionable_snapshot"
+        else (_intent_symbol(intent),),
+        manual_review_required=actionability.market_quotes.actionability_status != "actionable_snapshot",
+    )
+    validation = TradeIntentValidator().validate(intent, today=generated.date())
+    payoff = PayoffScenarioEngine().evaluate(intent)
+    impact = PortfolioImpactEngine().calculate(
+        intent=intent,
+        portfolio_context=resolved.context,
+        market_snapshot=market_snapshot,
+        payoff=payoff,
+    )
+    risk = TradeReviewRiskEngine().evaluate(
+        validation=validation,
+        portfolio_impact=impact,
+        market_snapshot=market_snapshot,
+    )
+    report = build_trade_review_report(
+        intent=intent,
+        generated_at=generated,
+        validation=validation,
+        payoff=payoff,
+        portfolio_impact=impact,
+        risk=risk,
+        market_snapshot=market_snapshot,
+    )
+    return build_trade_review_workspace_read(
+        projection=to_agent_safe_projection(report),
+        actionability=actionability,
+        review_reference=report.intent_id,
+        supported_flow=payload.supported_flow,
+        portfolio_context_summary=resolved.summary,
         generated_at=generated,
     )
 
@@ -459,15 +739,36 @@ def _infer_supported_flow(intent_summary: dict[str, Any]) -> SupportedTradeRevie
     raise ValueError("unsupported Phase 18A trade-review flow")
 
 
-def _preview_intent(payload: TradeReviewWorkspacePreviewRequest, *, generated_at: datetime) -> TradeIntent:
+def _review_flow_label(flow: SupportedTradeReviewFlow) -> str:
+    labels: dict[SupportedTradeReviewFlow, str] = {
+        "stock_buy": "Stock buy review",
+        "stock_sell_trim": "Stock sell/trim review",
+        "etf_buy": "ETF buy review",
+        "etf_sell_trim": "ETF sell/trim review",
+        "covered_call": "Covered call review",
+        "cash_secured_put": "Cash-secured put review",
+    }
+    return labels[flow]
+
+
+def _preview_intent(
+    payload: TradeReviewWorkspacePreviewRequest,
+    *,
+    generated_at: datetime,
+    user_id=None,
+    account_id=None,
+    broker_portfolio_status: str = "fresh",
+    market_quote_status: str = "manual",
+    intent_prefix: str = "preview",
+) -> TradeIntent:
     freshness = TradeIntentFreshnessSnapshot(
-        broker_portfolio_status="fresh",
-        market_quote_status="manual",
+        broker_portfolio_status=broker_portfolio_status,
+        market_quote_status=market_quote_status,
     )
     common = {
-        "intent_id": f"preview-{uuid4().hex}",
-        "user_id": uuid4(),
-        "account_id": uuid4(),
+        "intent_id": f"{intent_prefix}-{uuid4().hex}",
+        "user_id": user_id or uuid4(),
+        "account_id": account_id or uuid4(),
         "created_at": generated_at,
         "calculation_version": "trade-review-preview-v1",
         "data_freshness_snapshot": freshness,
@@ -541,6 +842,271 @@ def _default_preview_market_quotes() -> MarketQuotesMetadata:
         actionability_status="manual_review_required",
         provider_status="not_applicable",
     )
+
+
+def _resolve_portfolio_context(
+    selection: PortfolioContextSelectionRequest,
+    *,
+    generated_at: datetime,
+) -> _ResolvedPortfolioContext:
+    reference = _LATEST_CONTEXT_REFERENCE if selection.mode == "latest_available" else selection.context_reference
+    if reference == _NO_CONTEXT_REFERENCE:
+        return _resolved_context(
+            reference=reference,
+            selection=selection,
+            generated_at=generated_at,
+            context_source="synthetic_mock",
+            label=None,
+            broker_snapshot=BrokerSnapshotMetadata(
+                source="synthetic_mock",
+                freshness_status="unknown",
+                provider_status="not_applicable",
+            ),
+            market_quotes=MarketQuotesMetadata(
+                freshness_status="unknown",
+                data_mode="unknown",
+                actionability_status="blocked_unknown_quote",
+                provider_status="not_applicable",
+            ),
+            include_summary=False,
+            stock_position_count=0,
+            option_position_count=0,
+            cash_available=False,
+        )
+    if reference == _STALE_CONTEXT_REFERENCE:
+        return _resolved_context(
+            reference=reference,
+            selection=selection,
+            generated_at=generated_at,
+            context_source="manual",
+            label="Manual context snapshot",
+            broker_snapshot=BrokerSnapshotMetadata(
+                source="manual",
+                freshness_status="stale",
+                as_of=generated_at,
+                received_at=generated_at,
+                provider_status="not_applicable",
+            ),
+            market_quotes=_default_portfolio_market_quotes(generated_at),
+            stock_position_count=2,
+            option_position_count=1,
+            cash_available=True,
+        )
+    if reference == _MISSING_MARKET_CONTEXT_REFERENCE:
+        return _resolved_context(
+            reference=reference,
+            selection=selection,
+            generated_at=generated_at,
+            context_source="manual",
+            label="Manual context snapshot",
+            broker_snapshot=BrokerSnapshotMetadata(
+                source="manual",
+                freshness_status="fresh",
+                as_of=generated_at,
+                received_at=generated_at,
+                provider_status="not_applicable",
+            ),
+            market_quotes=MarketQuotesMetadata(
+                freshness_status="unknown",
+                data_mode="unknown",
+                actionability_status="blocked_unknown_quote",
+                provider_status="not_applicable",
+            ),
+            stock_position_count=2,
+            option_position_count=1,
+            cash_available=True,
+        )
+    if selection.mode == "selected_context" and reference != _LATEST_CONTEXT_REFERENCE:
+        return _resolved_context(
+            reference=reference,
+            selection=selection,
+            generated_at=generated_at,
+            context_source="synthetic_mock",
+            label=None,
+            broker_snapshot=BrokerSnapshotMetadata(
+                source="synthetic_mock",
+                freshness_status="unknown",
+                provider_status="not_applicable",
+            ),
+            market_quotes=MarketQuotesMetadata(
+                freshness_status="unknown",
+                data_mode="unknown",
+                actionability_status="blocked_unknown_quote",
+                provider_status="not_applicable",
+            ),
+            include_summary=False,
+            stock_position_count=0,
+            option_position_count=0,
+            cash_available=False,
+        )
+    return _resolved_context(
+        reference=_LATEST_CONTEXT_REFERENCE,
+        selection=selection,
+        generated_at=generated_at,
+        context_source="manual",
+        label="Manual context snapshot",
+        broker_snapshot=BrokerSnapshotMetadata(
+            source="manual",
+            freshness_status="fresh",
+            as_of=generated_at,
+            received_at=generated_at,
+            provider_status="not_applicable",
+        ),
+        market_quotes=_default_portfolio_market_quotes(generated_at),
+        stock_position_count=2,
+        option_position_count=1,
+        cash_available=True,
+    )
+
+
+def _default_portfolio_market_quotes(generated_at: datetime) -> MarketQuotesMetadata:
+    return MarketQuotesMetadata(
+        freshness_status="manual",
+        data_mode="manual",
+        actionability_status="manual_review_required",
+        as_of_min=generated_at,
+        as_of_max=generated_at,
+        received_at_min=generated_at,
+        received_at_max=generated_at,
+        provider_status="not_applicable",
+    )
+
+
+def _resolved_context(
+    *,
+    reference: str | None,
+    selection: PortfolioContextSelectionRequest,
+    generated_at: datetime,
+    context_source: str,
+    label: str | None,
+    broker_snapshot: BrokerSnapshotMetadata,
+    market_quotes: MarketQuotesMetadata,
+    stock_position_count: int,
+    option_position_count: int,
+    cash_available: bool,
+    include_summary: bool = True,
+) -> _ResolvedPortfolioContext:
+    stock_positions = _synthetic_stock_positions(
+        count=stock_position_count,
+        generated_at=generated_at,
+        freshness_status=broker_snapshot.freshness_status,
+        source=context_source,
+    )
+    option_positions = _synthetic_option_positions(
+        count=option_position_count,
+        generated_at=generated_at,
+        freshness_status=broker_snapshot.freshness_status,
+        source=context_source,
+    )
+    cash = (
+        CashContext(
+            total_cash=Decimal("12000"),
+            free_cash=Decimal("10000"),
+            reserved_collateral_cash=Decimal("2000"),
+            data_freshness_status=broker_snapshot.freshness_status,
+            as_of=generated_at,
+            source=context_source,
+        )
+        if cash_available
+        else None
+    )
+    context = PortfolioReviewContext(
+        user_id=uuid4(),
+        account_id=uuid4(),
+        summary_as_of=generated_at,
+        latest_snapshot_as_of=broker_snapshot.as_of,
+        total_internal_value=_synthetic_total_internal_value(
+            cash=cash,
+            stock_positions=stock_positions,
+            option_positions=option_positions,
+        ),
+        data_sources=(context_source,),
+        data_freshness_statuses=(broker_snapshot.freshness_status,),
+        cash=cash,
+        stock_positions=stock_positions,
+        option_positions=option_positions,
+    )
+    summary = None
+    if include_summary and reference is not None:
+        summary = PortfolioContextSummaryRead(
+            context_reference=reference,
+            context_source=context_source,
+            selection_mode=selection.mode,
+            summary_as_of=generated_at,
+            latest_snapshot_as_of=broker_snapshot.as_of,
+            broker_snapshot=broker_snapshot,
+            stock_position_count=stock_position_count,
+            option_position_count=option_position_count,
+            cash_state="available" if cash_available else "unavailable",
+            label=label,
+        )
+    return _ResolvedPortfolioContext(
+        context=context,
+        summary=summary,
+        broker_snapshot=broker_snapshot,
+        market_quotes=market_quotes,
+    )
+
+
+def _synthetic_stock_positions(
+    *,
+    count: int,
+    generated_at: datetime,
+    freshness_status: str,
+    source: str,
+) -> tuple[StockPositionContext, ...]:
+    templates = (
+        ("XYZ", "stock", Decimal("100"), Decimal("5000")),
+        ("QQQ", "etf", Decimal("10"), Decimal("4000")),
+    )
+    return tuple(
+        StockPositionContext(
+            symbol=symbol,
+            asset_type=asset_type,
+            quantity=quantity,
+            market_value=market_value,
+            data_freshness_status=freshness_status,
+            as_of=generated_at,
+            source=source,
+        )
+        for symbol, asset_type, quantity, market_value in templates[:count]
+    )
+
+
+def _synthetic_option_positions(
+    *,
+    count: int,
+    generated_at: datetime,
+    freshness_status: str,
+    source: str,
+) -> tuple[OptionPositionContext, ...]:
+    return tuple(
+        OptionPositionContext(
+            option_contract_id=uuid4(),
+            position_side="short",
+            quantity=Decimal("1"),
+            market_value=Decimal("-200"),
+            status="open",
+            data_freshness_status=freshness_status,
+            as_of=generated_at,
+            source=source,
+        )
+        for _ in range(count)
+    )
+
+
+def _synthetic_total_internal_value(
+    *,
+    cash: CashContext | None,
+    stock_positions: tuple[StockPositionContext, ...],
+    option_positions: tuple[OptionPositionContext, ...],
+) -> Decimal:
+    total = Decimal("0")
+    if cash is not None:
+        total += cash.total_cash
+    total += sum((position.market_value or Decimal("0") for position in stock_positions), Decimal("0"))
+    total += sum((position.market_value or Decimal("0") for position in option_positions), Decimal("0"))
+    return total
 
 
 def _reject_forbidden_input(payload: object, *, label: str) -> None:

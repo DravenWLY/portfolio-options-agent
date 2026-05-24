@@ -2,7 +2,10 @@ import { useState, type FormEvent } from "react";
 import type {
   SupportedTradeReviewFlow,
   TradeReviewWorkspacePreviewRequest,
+  TradeReviewPortfolioPreviewRequest,
   TradeReviewPreviewOptionLeg,
+  TradeReviewSubmission,
+  PortfolioContextSelectionMode,
 } from "../../types/tradeReview";
 
 /**
@@ -15,7 +18,21 @@ import type {
  *  - Numeric inputs are serialized as strings to avoid JS float drift.
  *  - Backend validator forbids mixing stock-fields with option_leg; the form
  *    enforces the same branching here.
+ *
+ * Phase 18C: review mode toggles between portfolio-backed (default) and the
+ * synthetic-only preview. The frontend never sends broker/market freshness,
+ * provider status, cash, holdings, or thresholds — the backend owns those.
+ * Context references are opaque demo refs only.
  */
+
+type ReviewMode = "portfolio" | "synthetic";
+
+const DEMO_CONTEXT_REFS: { value: string; label: string; help: string }[] = [
+  { value: "ctx_demo_latest", label: "ctx_demo_latest", help: "Latest-like demo context (cash + positions present)" },
+  { value: "ctx_demo_stale", label: "ctx_demo_stale", help: "Demo context with a stale broker snapshot" },
+  { value: "ctx_demo_missing", label: "ctx_demo_missing", help: "Demo context with missing/unknown market quotes" },
+  { value: "ctx_demo_empty", label: "ctx_demo_empty", help: "No portfolio context available (empty)" },
+];
 
 const FLOW_OPTIONS: {
   value: SupportedTradeReviewFlow | "stock_etf_buy" | "stock_etf_sell_trim";
@@ -34,11 +51,23 @@ type FlowGroup =
   | "cash_secured_put";
 
 interface TradeReviewFormProps {
-  onSubmit: (request: TradeReviewWorkspacePreviewRequest) => void;
+  onSubmit: (submission: TradeReviewSubmission) => void;
   busy: boolean;
+  /** P19A-T6: when true, hide the synthetic-preview radio and force
+   *  portfolio-backed submissions. Default false preserves the original
+   *  TradeReviewPage UX. */
+  hideSyntheticMode?: boolean;
 }
 
-export default function TradeReviewForm({ onSubmit, busy }: TradeReviewFormProps) {
+export default function TradeReviewForm({
+  onSubmit,
+  busy,
+  hideSyntheticMode = false,
+}: TradeReviewFormProps) {
+  const [reviewMode, setReviewMode] = useState<ReviewMode>("portfolio");
+  const [contextMode, setContextMode] =
+    useState<PortfolioContextSelectionMode>("latest_available");
+  const [contextRef, setContextRef] = useState<string>(DEMO_CONTEXT_REFS[0].value);
   const [flowGroup, setFlowGroup] = useState<FlowGroup>("stock_etf_buy");
   const [assetClass, setAssetClass] = useState<"stock" | "etf">("stock");
 
@@ -98,33 +127,131 @@ export default function TradeReviewForm({ onSubmit, busy }: TradeReviewFormProps
     const isStockEtf =
       sf === "stock_buy" || sf === "stock_sell_trim" || sf === "etf_buy" || sf === "etf_sell_trim";
 
-    if (isStockEtf) {
-      onSubmit({
-        supported_flow: sf,
-        symbol: symbol.trim().toUpperCase(),
-        quantity: quantity.trim(),
-        price_assumption: priceAssumption.trim(),
-      });
+    const intent: TradeReviewWorkspacePreviewRequest = isStockEtf
+      ? {
+          supported_flow: sf,
+          symbol: symbol.trim().toUpperCase(),
+          quantity: quantity.trim(),
+          price_assumption: priceAssumption.trim(),
+        }
+      : {
+          supported_flow: sf,
+          option_leg: ((): TradeReviewPreviewOptionLeg => ({
+            underlying_symbol: underlying.trim().toUpperCase(),
+            option_type: sf === "covered_call" ? "call" : "put",
+            leg_action: "sell_to_open",
+            expiration_date: expiration,
+            strike: strike.trim(),
+            quantity: optQuantity.trim(),
+            premium: premium.trim() === "" ? null : premium.trim(),
+            multiplier: multiplier.trim(),
+          }))(),
+        };
+
+    if (reviewMode === "synthetic") {
+      onSubmit({ kind: "synthetic", payload: intent });
       return;
     }
 
-    const leg: TradeReviewPreviewOptionLeg = {
-      underlying_symbol: underlying.trim().toUpperCase(),
-      option_type: sf === "covered_call" ? "call" : "put",
-      leg_action: "sell_to_open",
-      expiration_date: expiration,
-      strike: strike.trim(),
-      quantity: optQuantity.trim(),
-      premium: premium.trim() === "" ? null : premium.trim(),
-      multiplier: multiplier.trim(),
+    const portfolio: TradeReviewPortfolioPreviewRequest = {
+      ...intent,
+      portfolio_context_selection:
+        contextMode === "latest_available"
+          ? { mode: "latest_available" }
+          : { mode: "selected_context", context_reference: contextRef },
     };
-    onSubmit({ supported_flow: sf, option_leg: leg });
+    onSubmit({ kind: "portfolio", payload: portfolio });
   }
 
   const stockEtfActive = flowGroup === "stock_etf_buy" || flowGroup === "stock_etf_sell_trim";
 
   return (
     <form style={styles.form} onSubmit={handleSubmit} aria-label="Trade review preview inputs">
+      {!hideSyntheticMode && (
+        <fieldset style={styles.fieldset} aria-label="Review mode">
+          <legend style={styles.legend}>Review mode</legend>
+          <div style={styles.radioRow}>
+            <label style={styles.radioOption}>
+              <input
+                type="radio"
+                name="reviewMode"
+                value="portfolio"
+                checked={reviewMode === "portfolio"}
+                onChange={() => setReviewMode("portfolio")}
+                disabled={busy}
+              />
+              <span>
+                <strong>Portfolio-backed</strong> — server-owned context (Phase 18C)
+              </span>
+            </label>
+            <label style={styles.radioOption}>
+              <input
+                type="radio"
+                name="reviewMode"
+                value="synthetic"
+                checked={reviewMode === "synthetic"}
+                onChange={() => setReviewMode("synthetic")}
+                disabled={busy}
+              />
+              <span>
+                <strong>Synthetic preview</strong> — dev fallback, no portfolio context
+              </span>
+            </label>
+          </div>
+        </fieldset>
+      )}
+
+      {reviewMode === "portfolio" && (
+        <fieldset style={styles.fieldset} aria-label="Portfolio context selection">
+          <legend style={styles.legend}>Portfolio context</legend>
+          <div style={styles.radioRow}>
+            <label style={styles.radioOption}>
+              <input
+                type="radio"
+                name="contextMode"
+                value="latest_available"
+                checked={contextMode === "latest_available"}
+                onChange={() => setContextMode("latest_available")}
+                disabled={busy}
+              />
+              <span>Latest available context</span>
+            </label>
+            <label style={styles.radioOption}>
+              <input
+                type="radio"
+                name="contextMode"
+                value="selected_context"
+                checked={contextMode === "selected_context"}
+                onChange={() => setContextMode("selected_context")}
+                disabled={busy}
+              />
+              <span>Specific demo context reference</span>
+            </label>
+          </div>
+          {contextMode === "selected_context" && (
+            <label style={styles.label}>
+              <span style={styles.labelText}>Demo context reference (opaque)</span>
+              <select
+                style={styles.input}
+                value={contextRef}
+                onChange={(e) => setContextRef(e.target.value)}
+                disabled={busy}
+              >
+                {DEMO_CONTEXT_REFS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label} — {o.help}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <p style={styles.contextNote}>
+            Context references are opaque and server-owned. The frontend never sends
+            broker freshness, market freshness, provider status, cash, holdings, or thresholds.
+          </p>
+        </fieldset>
+      )}
+
       <div style={styles.row}>
         <label style={styles.label}>
           <span style={styles.labelText}>Flow</span>
@@ -198,10 +325,14 @@ export default function TradeReviewForm({ onSubmit, busy }: TradeReviewFormProps
 
       <div style={styles.actions}>
         <button type="submit" style={styles.submit} disabled={busy}>
-          {busy ? "Generating preview…" : "Preview review"}
+          {busy
+            ? "Generating analysis…"
+            : reviewMode === "portfolio"
+              ? "Generate analysis"
+              : "Generate synthetic analysis"}
         </button>
         <p style={styles.previewNote}>
-          Manual preview only. No order is placed. No broker action is taken.
+          Manual review only. No order is placed. No broker action is taken.
         </p>
       </div>
     </form>
@@ -258,8 +389,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: "var(--space-3)",
-    backgroundColor: "var(--color-surface)",
-    border: "1px solid var(--color-border)",
+    backgroundColor: "var(--mp-card)",
+    border: "1px solid var(--mp-rule)",
     borderRadius: "var(--radius-md)",
     padding: "var(--space-4) var(--space-6)",
   },
@@ -267,7 +398,7 @@ const styles: Record<string, React.CSSProperties> = {
   label: { display: "flex", flexDirection: "column", gap: "var(--space-1)", minWidth: 180, flex: "1 1 180px" },
   labelText: {
     fontSize: "var(--font-size-xs)",
-    color: "var(--color-text-muted)",
+    color: "var(--mp-mute)",
     fontWeight: 600,
     textTransform: "uppercase",
     letterSpacing: "0.04em",
@@ -275,16 +406,16 @@ const styles: Record<string, React.CSSProperties> = {
   input: {
     fontSize: "var(--font-size-sm)",
     padding: "var(--space-2) var(--space-3)",
-    border: "1px solid var(--color-border)",
+    border: "1px solid var(--mp-rule)",
     borderRadius: "var(--radius-sm)",
-    backgroundColor: "var(--color-surface-2)",
-    color: "var(--color-text-primary)",
+    backgroundColor: "var(--mp-paper-2)",
+    color: "var(--mp-ink)",
   },
   inputMono: { fontFamily: "var(--font-mono, monospace)" },
-  optionNote: { fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", margin: 0 },
+  optionNote: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", margin: 0 },
   error: {
     fontSize: "var(--font-size-sm)",
-    color: "var(--color-error)",
+    color: "var(--mp-block)",
     margin: 0,
     fontWeight: 600,
   },
@@ -293,11 +424,42 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "var(--font-size-sm)",
     fontWeight: 700,
     padding: "var(--space-2) var(--space-5)",
-    border: "2px solid var(--color-accent)",
+    border: "2px solid var(--mp-accent)",
     borderRadius: "var(--radius-sm)",
-    backgroundColor: "var(--color-accent)",
-    color: "var(--color-bg)",
+    backgroundColor: "var(--mp-accent)",
+    color: "var(--mp-paper)",
     cursor: "pointer",
   },
-  previewNote: { fontSize: "var(--font-size-xs)", color: "var(--color-text-muted)", margin: 0, fontStyle: "italic" },
+  previewNote: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", margin: 0, fontStyle: "italic" },
+  fieldset: {
+    border: "1px solid var(--mp-rule)",
+    borderRadius: "var(--radius-sm)",
+    padding: "var(--space-2) var(--space-3)",
+    display: "flex",
+    flexDirection: "column",
+    gap: "var(--space-2)",
+    margin: 0,
+  },
+  legend: {
+    fontSize: "var(--font-size-xs)",
+    color: "var(--mp-mute)",
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    padding: "0 var(--space-1)",
+  },
+  radioRow: { display: "flex", gap: "var(--space-4)", flexWrap: "wrap" },
+  radioOption: {
+    display: "flex",
+    alignItems: "center",
+    gap: "var(--space-2)",
+    fontSize: "var(--font-size-xs)",
+    color: "var(--mp-ink-2)",
+  },
+  contextNote: {
+    fontSize: "var(--font-size-xs)",
+    color: "var(--mp-mute)",
+    margin: 0,
+    lineHeight: 1.6,
+  },
 };

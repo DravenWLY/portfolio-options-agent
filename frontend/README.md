@@ -89,9 +89,27 @@ Route: `/market-data` — a thin read-only status slice for Phase 12.
 - Copy is conservative: provider-not-connected, manual/mock only, not live
   pricing, no guaranteed-return / trade-execution language.
 
-## Trade Review Workspace (P18A-T3, P18B-T1/T2 verified)
+## Trade Review Workspace (P18A-T3 · P18B-T1/T2 verified · P18C-T3)
 
-Route: `/trade-review` — first visible Trade Review Workspace.
+Route: `/trade-review` — Trade Review Workspace, now portfolio-backed (Phase 18C).
+
+Review modes:
+- **Portfolio-backed (default)** — `POST /trade-reviews/portfolio-preview`. The
+  backend owns the portfolio context and freshness. The frontend never sends
+  broker/market freshness, provider status, cash, holdings, or thresholds.
+  Context selection is an opaque server-owned reference (e.g.
+  `ctx_demo_latest`, `ctx_demo_stale`, `ctx_demo_missing`, `ctx_demo_empty`)
+  or **Latest available**.
+- **Synthetic preview (secondary/dev)** — the original `POST
+  /trade-reviews/preview` is retained as a clearly labelled dev fallback that
+  carries no portfolio context.
+
+The response's `portfolio_context` summary surfaces only safe metadata —
+opaque reference, source, selection mode, broker snapshot freshness, position
+counts, cash-state **category**, and label — never holdings, balances, or
+provider/account identifiers. Broker snapshot freshness and market quote
+freshness remain separate scopes; the backend severity asymmetry is
+presented as-is.
 
 - Supported flows: **Stock/ETF buy**, **Stock/ETF sell or trim**, **Covered call**,
   **Cash-secured put** (Phase 18A scope).
@@ -118,7 +136,44 @@ Route: `/trade-review` — first visible Trade Review Workspace.
 - `src/components/broker/` — Broker connection UI components (P11-T7)
 - `src/components/marketdata/` — Market data status slice (P12-T9)
 - `src/components/risk/` — Deterministic risk review slice (P13-T8)
-- `src/components/trade-review/` — Trade Review Workspace (P18A-T3)
+- `src/components/trade-review/` — Trade Review Workspace (P18A-T3 + P18C-T3 + P20A-T1 re-skin)
+- `src/components/agent-team/` — Agent-team analysis console (P19A-T6 + P20A-T1 re-skin)
+- `src/components/shared/mp/` — **Modern Portfolio Desk shared primitives** (P20A-T1).
+  Broker-/data-agnostic: `Badge`, `Pill`, `Panel`, `KV`, `Stat`, `FreshnessDial`,
+  `PageHeader`, `SafetyStrip`. Translated (not pasted) from the typed prototype's
+  `components.tsx`. Consume `--mp-*` tokens only; never coupled to a backend
+  schema. Re-skinned surfaces opt in with `className="mp-surface"`.
+
+## Agent-team analysis console (P19A-T6)
+
+Route: `/agent-team-analysis` — first role-by-role analysis console.
+
+- Reuses the portfolio-backed Trade Review form (synthetic mode hidden) and
+  posts to `POST /agent-team/trade-review-analysis/preview` via the existing
+  `/api` Vite proxy. The backend route is stateless and uses the app-owned
+  **mock LLM provider** by default; real provider calls remain a later gate.
+- Renders the five roles in approved stage order: `fundamentals_analyst →
+  news_analyst → technical_analyst → risk_management_agent →
+  portfolio_manager_agent`. Each role panel shows display name, role status,
+  `provider_status` badge (icon + text, never color-only), an `is_mock`
+  indicator when applicable, and either `content_markdown` (rendered inside a
+  `<pre>` — no HTML interpretation, no number parsing) or the
+  `unavailable_reason`.
+- The header surfaces `run_status`, `review_actionability_status`,
+  `review_flow_label`, `workflow_version`, `generated_at`, and `run_reference`.
+- Broker snapshot freshness and market quote freshness are rendered as two
+  parallel, separately-scoped panels — never collapsed.
+- `deterministic_evidence_summary` is rendered verbatim as a key/value list
+  (counts and categories only; never values, holdings, or identifiers).
+- `final_synthesis` is in its own analysis-only-labelled section, structurally
+  separated from per-role outputs.
+- `provider_warnings` and `stages` are rendered as plain lists.
+- Required states: idle, loading, error, success, partial-success (banner when
+  `run_status === "partially_completed"`).
+- No order / execute / submit / cancel / disconnect / delete / buy-now /
+  sell-now controls. No guaranteed-return / recommendation language. No
+  `localStorage` / `sessionStorage` of portfolio, review, analysis, role,
+  prompt, provider, credential, or account data.
 - `src/pages/` — top-level page components
 - `src/styles/globals.css` — CSS custom properties (design tokens), global resets
 - `src/api/` — fetch wrappers per domain

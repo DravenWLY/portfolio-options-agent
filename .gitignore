@@ -19,6 +19,7 @@ broker_credentials.yaml
 
 # Account data, broker files, and generated artifacts
 /data/
+/design/prototype/
 /reports/
 /imports/
 /exports/
@@ -62,6 +63,10 @@ build/
 .next/
 out/
 coverage/
+*.tsbuildinfo
+
+# Local assistant/editor launch configuration
+.claude/launch.json
 
 # Editors and OS files
 .DS_Store

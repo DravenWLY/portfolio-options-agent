@@ -10,11 +10,22 @@
 import { apiClient } from "./client";
 import type {
   TradeReviewWorkspacePreviewRequest,
+  TradeReviewPortfolioPreviewRequest,
   TradeReviewWorkspaceRead,
 } from "../types/tradeReview";
 
 export const tradeReviewsApi = {
+  /**
+   * Synthetic/manual preview — Phase 18A/18B fallback. Kept as a secondary
+   * dev-safe mode; never confuse with a portfolio-backed review.
+   */
   preview: (body: TradeReviewWorkspacePreviewRequest) =>
-    // apiClient prefixes /api; the Vite proxy strips it to /trade-reviews/preview.
     apiClient.post<TradeReviewWorkspaceRead>("/trade-reviews/preview", body),
+  /**
+   * Phase 18C portfolio-backed review. The backend owns the portfolio context
+   * and freshness; the frontend never sends broker/market freshness, provider
+   * status, cash, holdings, or thresholds. Context selection is opaque.
+   */
+  portfolioPreview: (body: TradeReviewPortfolioPreviewRequest) =>
+    apiClient.post<TradeReviewWorkspaceRead>("/trade-reviews/portfolio-preview", body),
 };

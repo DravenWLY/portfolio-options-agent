@@ -45,6 +45,7 @@ The previous generic agent-context folder was removed because it became a vague 
 - `docs/codex-b-architecture/architecture.md` is the full architecture reference. Load it only when necessary.
 - `docs/shared/implementation_plan.md` is active/future task planning.
 - `docs/shared/completed_phases_log.md` is historical verification archive. Avoid loading it by default.
+- `docs/shared/frontend_design_change_playbook.md` is the reference for future redesigns, prototype adoption, Figma/Claude Design integration, and frontend design-system migrations.
 
 ## Review Framework
 

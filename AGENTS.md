@@ -60,6 +60,7 @@ This project may connect to real read-only brokerage data through SnapTrade. Tre
 ## Context Efficiency Rules
 
 - Prefer `docs/shared/current_roadmap.md` for high-level project direction.
+- Use `docs/shared/agent_workflows.md` when a task explicitly calls for a repo-specific workflow such as frontend contract review, backend TDD slices, or docs/roadmap grilling.
 - Prefer `docs/codex-c-backend/WORKING_CONTEXT.md` before implementation tasks.
 - Prefer `docs/claude-b-review/OPUS_REVIEW_BRIEF.md` for high-stakes Claude Opus reviews.
 - Keep `docs/shared/implementation_plan.md` focused on active and future tasks.

@@ -53,6 +53,12 @@ export type ActionabilityReasonSeverity = "info" | "warning" | "blocker";
 
 export type UserConfirmationState = "unconfirmed" | "confirmed" | "expired";
 
+export type PortfolioContextSelectionMode = "latest_available" | "selected_context";
+
+export type PortfolioContextSource = "snaptrade" | "manual" | "csv" | "synthetic_mock";
+
+export type PortfolioCashState = "available" | "unavailable" | "not_exposed";
+
 export type BrokerDataFreshnessStatus =
   | "fresh"
   | "cached"
@@ -85,6 +91,23 @@ export interface TradeReviewWorkspacePreviewRequest {
   price_assumption?: string | null;
   option_leg?: TradeReviewPreviewOptionLeg | null;
 }
+
+/* ── Phase 18C portfolio-backed request (server-owned context) ───────────── */
+
+export interface PortfolioContextSelectionRequest {
+  mode: PortfolioContextSelectionMode;
+  context_reference?: string | null;
+}
+
+export interface TradeReviewPortfolioPreviewRequest
+  extends TradeReviewWorkspacePreviewRequest {
+  portfolio_context_selection: PortfolioContextSelectionRequest;
+}
+
+/** Discriminated submission shape used between form and page. */
+export type TradeReviewSubmission =
+  | { kind: "synthetic"; payload: TradeReviewWorkspacePreviewRequest }
+  | { kind: "portfolio"; payload: TradeReviewPortfolioPreviewRequest };
 
 /* ── Actionability sub-shapes ────────────────────────────────────────────── */
 
@@ -270,6 +293,19 @@ export interface AnalysisOnlyReportOutputRead {
   source_agent_names: string[];
 }
 
+export interface PortfolioContextSummaryRead {
+  context_reference: string;
+  context_source: PortfolioContextSource;
+  selection_mode: PortfolioContextSelectionMode;
+  summary_as_of: string | null;
+  latest_snapshot_as_of: string | null;
+  broker_snapshot: BrokerSnapshotMetadata;
+  stock_position_count: number;
+  option_position_count: number;
+  cash_state: PortfolioCashState;
+  label: string | null;
+}
+
 export interface WorkspaceCaveatRead {
   code: string;
   severity: WorkspaceCaveatSeverity;
@@ -288,4 +324,7 @@ export interface TradeReviewWorkspaceRead {
   agent_orchestration?: AgentOrchestrationSummaryRead | null;
   report_output?: AnalysisOnlyReportOutputRead | null;
   caveats: WorkspaceCaveatRead[];
+  /** Phase 18C: present on responses from /trade-reviews/portfolio-preview;
+   *  null on the synthetic /trade-reviews/preview path. */
+  portfolio_context?: PortfolioContextSummaryRead | null;
 }

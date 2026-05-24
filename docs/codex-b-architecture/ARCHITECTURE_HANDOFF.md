@@ -12,8 +12,13 @@ The app is layered around portfolio-aware trade review:
 6. Deterministic trade/risk engine: payoff, portfolio impact, risk rule integration, strategy wrappers, deterministic report.
 7. Phase 16A deterministic agent components: actionability, portfolio context, trade review explanation, freshness/guardrail, and report composition.
 8. Phase 16B portfolio-aware agent-team orchestrator: app-owned stage graph, role context envelopes, actionability enforcement, run/step persistence, and fallbacks.
-9. Phase 18A frontend-readiness contract: sanitized deterministic trade-review read contract and first visible workspace boundary.
-10. Phase 17 TradingAgents/Public Research Evidence Adapter: async public ticker/company research evidence only, temporarily frozen.
+9. Phase 18A/18B frontend-readiness contract and workspace expansion: sanitized deterministic trade-review read contract, first visible workspace boundary, frontend-read privacy guard unification, and deterministic report UI.
+10. Phase 18C portfolio-backed workspace contract: backend-owned sanitized/manual portfolio context feeding the Trade Review Workspace without exposing raw private data.
+11. Phase 17A TradingAgents/Public Research Evidence Adapter: async public ticker/company research evidence contracts only, optional and public-evidence-only.
+12. Phase 19A Basic Portfolio-Aware LLM Agent Team + Analysis Console: app-owned orchestration boundary, mock LLM provider first, role-based analysis console, and sanitized portfolio evidence for portfolio-aware roles only.
+13. Phase 19B Real LLM Provider Gate: backend-only, Google/Gemini-first candidate, mock-default provider resolver, prompt/output safety hardening, and safe rate-limit/quota fallback.
+14. Phase 19C Agent-Team Evidence and Prompt Foundation: agent-safe deterministic evidence projection, role-specific prompt inputs, scenario coverage, and stricter prompt-boundary privacy controls.
+15. Phase 20A Modern Portfolio Desk Frontend Integration: prototype-fidelity frontend shell/workspace direction using existing read-only backend contracts and clearly labeled placeholder surfaces.
 
 ## Backend / Frontend Boundaries
 
@@ -52,6 +57,8 @@ Frontend must not:
 - Portfolio Snapshot Actionability Policy is a backend-owned gate consumed by Phase 16 agent/orchestrator outputs. See `docs/codex-b-architecture/adr/0001-portfolio-snapshot-actionability-policy.md`.
 - Portfolio Copilot is TradingAgents-inspired, not TradingAgents-centered. See `docs/codex-b-architecture/adr/0002-tradingagents-inspired-portfolio-agent-team.md`.
 - Real market-data provider integration is deferred for local MVP; Tradier REST snapshots are the preferred first real provider candidate before external paid beta. See `docs/codex-b-architecture/adr/0003-market-data-timing-tradier-rest-snapshots.md`.
+- Real LLM provider support is a backend-only explicit gate with Google/Gemini as the first candidate and mock provider as default. See `docs/codex-b-architecture/adr/0005-real-llm-provider-gate-google-first.md`.
+- Live LLM/API smoke testing remains a separate future gate after Phase 19C. It must be backend-owned, explicit opt-in, synthetic-first, budget/rate-limit aware, and reviewed before any user-facing reliance.
 
 ## Missing ADRs
 
@@ -66,42 +73,64 @@ Recommended ADRs:
 
 - Portfolio snapshot actionability metadata now has an ADR and is implemented as the first Phase 16A contract/service slice before deterministic agent components produce polished account-specific outputs.
 - Broker provider freshness may need fields such as provider plan mode, provider sync time, broker as-of time, endpoint source, and user confirmation state.
-- Trade-review read schemas for frontend/API exposure are implemented for Phase 18A; future Phase 18B changes should extend them only through explicit backend contracts and tests.
+- Trade-review read schemas for frontend/API exposure are implemented through Phase 18C; future extensions should happen only through explicit backend contracts and tests.
 - Covered-call/CSP coverage/collateral netting is not deeply modelled yet.
 - Broker activities/transactions are future layer only.
 
-## Current Phase 18B Sequence
+## Current Phase 20B Sequence
 
-Phase 16A, Phase 16B, and Phase 18A are complete and archived in `docs/shared/completed_phases_log.md`.
+Phases 16A, 16B, 17A, 18A, 18B, 18C, 19A, 19B, and 19C are complete and archived in `docs/shared/completed_phases_log.md`.
 
-Completed Phase 16 delivered:
+The active delivery focus is **Phase 20B - Modern Portfolio Desk backend contracts**.
 
-- deterministic agent components for actionability, portfolio context, trade review explanation, freshness/guardrail, and report composition;
-- the app-owned portfolio-aware agent-team orchestrator with stage order, actionability gate enforcement, context-envelope role compatibility, run/step mapping, and unavailable-state fallbacks;
-- backend-only synthetic tests and no frontend route, DB persistence, TradingAgents import, real market provider call, LLM call, or broker action.
+Phase 20A prototype-fidelity frontend work is complete. Phase 20B should now provide the missing sanitized backend reads behind its `demo · not yet connected` placeholder surfaces, one reviewed contract at a time.
 
-Deep Phase 17 implementation is temporarily frozen by PM decision. TradingAgents/Public Research Evidence remains optional, async, public ticker/company evidence only, and not the final portfolio-aware decision engine.
+Active frontend contract boundaries:
 
-The active delivery focus is **Phase 18B - Frontend Trade Review Workspace expansion**.
+- `POST /trade-reviews/preview`
+- `POST /trade-reviews/portfolio-preview`
+- `POST /agent-team/trade-review-analysis/preview`
 
-Phase 18B depends on:
+Completed Phase 20A surfaces and any Phase 20B frontend consumers must preserve:
 
-- Phase 18A complete;
-- preserving the typed sanitized trade-review read schema and forbidden-field tests unless a new backend contract explicitly revises them;
-- keeping coverage/collateral caveats visible until deeper modelling is implemented;
-- real market data only before external paid beta or polished quote-current options review, not before local MVP demo.
+- existing `TradeReviewWorkspaceRead` and `AgentTeamAnalysisConsoleRead` TypeScript/backend schema alignment;
+- separate broker snapshot freshness and market quote freshness;
+- deterministic facts vs agent commentary separation;
+- no frontend financial calculations beyond rendering backend-provided values;
+- no invented backend fields or fake connected data;
+- no order-placement, cancellation, disconnect, execution, `safe to trade`, `ready to trade`, guaranteed-return, AI-picked, or `you should buy/sell` language;
+- no raw holdings, raw positions, cash balances, buying power, account values, broker/provider ids, raw payloads, trade-journal entries, or account-specific thresholds in frontend contracts, fixtures, screenshots, or storage.
 
-Architecture contract: `docs/codex-b-architecture/PHASE_18A_FRONTEND_READINESS_CONTRACT.md`.
+Phase 20B priorities:
 
-Phase 18A already provided the minimum backend contract/support:
+1. Keep completed Phase 20A visual surfaces stable while replacing placeholder data through explicit typed backend contracts.
+2. Keep every response display-ready, demo-labeled while synthetic, and recursively free of private brokerage/account/provider data.
+3. Preserve separate broker snapshot freshness, market quote freshness, and agent-provider readiness concepts.
+4. Let Claude A consume only reviewed endpoints and keep visible `demo · not yet connected` labels until data is truly persisted/real.
+5. Continue with the remaining backend-read contract candidates:
 
-- a safe `TradeReviewWorkspaceRead` response schema;
-- a mapper/projection from deterministic trade-review report, `PortfolioActionabilityDecision`, and Phase 16 orchestration summaries;
-- synthetic tests for stock/ETF buy, stock/ETF sell/trim, covered call, and cash-secured put;
-- recursive forbidden-field tests;
-- a small synthetic preview/read route.
+- persisted trade-review run list for Dashboard recent reviews;
+- aggregate risk-alert/readiness summaries;
+- standalone sanitized portfolio-context summary endpoint;
+- reports list/detail read contracts;
+- profile/display-name contract if the product wants personalized greeting/avatar surfaces.
 
-Before Phase 18B frontend expansion consumes new fields, Codex C should handle backend fast-follows or contract extensions first. Current known backend fast-follow: unify the frontend-read forbidden-field key set in `app/services/privacy.py` and import it from both the mapper and schema validators.
+Phase 19D / live LLM smoke testing remains future only:
+
+- mock provider remains default;
+- live Google/Gemini calls require explicit backend config, human-controlled local/deployment checks, budget/rate-limit handling, and a separate review gate;
+- frontend requests must not choose provider, model, prompt text, credentials, freshness, actionability, or private portfolio metadata;
+- deterministic trade review remains the source of financial metrics;
+- provider failures must degrade to partial analysis, not block deterministic review.
+
+Existing agent-team architecture references remain relevant:
+
+- `docs/codex-b-architecture/PHASE_19A_LLM_AGENT_TEAM_CONTRACT.md`
+- `docs/codex-b-architecture/adr/0004-basic-llm-agent-team-mock-provider-first.md`
+- `docs/codex-b-architecture/PHASE_19B_REAL_LLM_PROVIDER_GATE_CONTRACT.md`
+- `docs/codex-b-architecture/adr/0005-real-llm-provider-gate-google-first.md`
+
+Recommended backend namespace remains `backend/app/services/agent_team/`. Keep `backend/app/services/agents/` for deterministic Phase 16 components. Phase 19+ consumes those components and safe projections instead of replacing them.
 
 ## Portfolio Snapshot Actionability Handoff
 
@@ -143,11 +172,11 @@ Recommended first backend slice:
 
 ## Recommended First Tasks for Codex B
 
-1. Keep Phase 18A centered on the sanitized trade-review read contract and first workspace.
-2. Review Codex C's safe read schema/mapper for forbidden fields, freshness/actionability semantics, and deterministic-vs-agent separation.
-3. Review Claude A's frontend for API contract alignment, stale-data clarity, no execution controls, no advice wording, and no raw private-data exposure.
-4. Keep public research/debate evidence visually and structurally subordinate to deterministic review and actionability.
-5. Keep real market-data provider integration deferred until external paid beta or quote-current options review requires it.
+1. Continue Phase 20B with P20B-T4 portfolio context enumeration/detail contracts.
+2. Review P20B-T5 reports list/detail and P20B-T6 safe profile/display only after their backend contracts exist.
+3. Keep Claude A frontend wiring behind Codex B-reviewed contracts and visible demo labels for synthetic responses.
+4. Propose Phase 19D live LLM smoke testing only as a separate backend-owned, synthetic-only, explicit opt-in gate.
+5. Keep real market-data provider integration, deep TradingAgents execution, and frontend research-evidence UI deferred until separately reactivated.
 
 ## Engineering Framework Sections To Apply First
 

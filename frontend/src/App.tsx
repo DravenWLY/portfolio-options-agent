@@ -8,6 +8,13 @@ import BrokerConnectionPage from "./pages/BrokerConnectionPage";
 import MarketDataPage from "./pages/MarketDataPage";
 import RiskReviewPage from "./pages/RiskReviewPage";
 import TradeReviewPage from "./pages/TradeReviewPage";
+import AgentTeamAnalysisPage from "./pages/AgentTeamAnalysisPage";
+import ReportsPage from "./pages/ReportsPage";
+import PortfolioContextPage from "./pages/PortfolioContextPage";
+import SettingsPage from "./pages/SettingsPage";
+import LandingPage from "./pages/LandingPage";
+import PricingPage from "./pages/PricingPage";
+import AuthPage from "./pages/AuthPage";
 
 /**
  * App root.
@@ -31,6 +38,13 @@ export default function App() {
               <Route path="/market-data" element={<MarketDataPage />} />
               <Route path="/risk" element={<RiskReviewPage />} />
               <Route path="/trade-review" element={<TradeReviewPage />} />
+              <Route path="/agent-team-analysis" element={<AgentTeamAnalysisPage />} />
+              <Route path="/reports" element={<ReportsPage />} />
+              <Route path="/portfolio-context" element={<PortfolioContextPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/landing" element={<LandingPage />} />
+              <Route path="/pricing" element={<PricingPage />} />
+              <Route path="/auth" element={<AuthPage />} />
             </Routes>
           </AppShell>
         </AccountProvider>

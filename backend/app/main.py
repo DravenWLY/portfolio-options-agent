@@ -1,6 +1,6 @@
 from fastapi import Depends, FastAPI
 
-from app.api.routes import accounts, broker_sync, imports, portfolio, reports, trade_reviews, users
+from app.api.routes import accounts, agent_team, broker_sync, imports, portfolio, reports, trade_reviews, users
 from app.core.access_guard import require_local_access
 
 app = FastAPI(
@@ -18,6 +18,7 @@ app.include_router(broker_sync.router, dependencies=protected)
 app.include_router(imports.router, dependencies=protected)
 app.include_router(reports.router, dependencies=protected)
 app.include_router(trade_reviews.router, dependencies=protected)
+app.include_router(agent_team.router, dependencies=protected)
 
 
 @app.get("/health")

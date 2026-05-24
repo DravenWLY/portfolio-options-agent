@@ -6,15 +6,20 @@ import pytest
 
 from app.schemas.actionability import BrokerSnapshotMetadata, MarketQuotesMetadata, PortfolioActionabilityInput, UserConfirmationMetadata
 from app.schemas.trade_review_workspace import (
+    TradeReviewPortfolioPreviewRequest,
     TradeReviewWorkspaceRead,
     validate_trade_review_workspace_payload,
 )
 from app.services.agents import PortfolioAgentTeamOrchestrator
-from app.services.privacy import FORBIDDEN_PRIVATE_CONTEXT_KEYS, find_forbidden_keys
+from app.services.privacy import FORBIDDEN_PRIVATE_CONTEXT_KEYS, FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.risk.violations import RiskRuleViolation
 from app.services.trade_review import AgentSafePortfolioImpact, PortfolioReviewContext, StockPositionContext
 from app.services.trade_review.actionability import evaluate_portfolio_snapshot_actionability
-from app.services.trade_review.frontend_read import build_trade_review_workspace_read
+from app.services.trade_review.frontend_read import (
+    build_trade_review_workspace_portfolio_preview,
+    build_trade_review_workspace_read,
+    _resolve_portfolio_context,
+)
 from app.services.trade_review.payoff import PayoffReview, PayoffScenarioPoint
 from app.services.trade_review.report import TradeReviewAgentProjection
 from app.services.trade_review.snapshots import TradeReviewMarketSnapshot
@@ -343,6 +348,121 @@ def test_workspace_read_exposes_risk_findings_and_validation_warnings_without_ra
     assert "777777" not in repr(read.model_dump(mode="python"))
     assert any(warning.code == "validation_price_assumption_manual" for warning in read.deterministic_review.missing_data_warnings)
     assert "account_id" not in _collect_keys(read.model_dump(mode="python"))
+
+
+def test_portfolio_preview_service_returns_safe_context_summary() -> None:
+    read = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="stock_buy",
+            symbol="XYZ",
+            quantity=Decimal("3"),
+            price_assumption=Decimal("50"),
+        ),
+        generated_at=NOW,
+    )
+
+    assert read.portfolio_context is not None
+    assert read.portfolio_context.context_reference == "ctx_demo_latest"
+    assert read.portfolio_context.cash_state == "available"
+    assert read.actionability.review_actionability_status == "manual_confirmation_required"
+    assert read.actionability.broker_snapshot.freshness_scope == "broker_snapshot"
+    assert read.actionability.market_quotes.freshness_scope == "market_quote"
+    assert not find_forbidden_keys(read.model_dump(mode="python"), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_portfolio_preview_resolved_context_matches_safe_summary_counts_and_cash_state() -> None:
+    resolved = _resolve_portfolio_context(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="stock_buy",
+            symbol="XYZ",
+            quantity=Decimal("3"),
+            price_assumption=Decimal("50"),
+        ).portfolio_context_selection,
+        generated_at=NOW,
+    )
+
+    assert resolved.summary is not None
+    assert len(resolved.context.stock_positions) == resolved.summary.stock_position_count
+    assert len(resolved.context.option_positions) == resolved.summary.option_position_count
+    assert resolved.summary.cash_state == "available"
+    assert resolved.context.cash is not None
+    assert resolved.context.total_internal_value != Decimal("0")
+    assert resolved.context.data_freshness_statuses == (resolved.summary.broker_snapshot.freshness_status,)
+
+
+def test_portfolio_preview_csp_uses_available_cash_context_without_missing_cash_blocker() -> None:
+    read = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="cash_secured_put",
+            option_leg={
+                "underlying_symbol": "XYZ",
+                "option_type": "put",
+                "leg_action": "sell_to_open",
+                "expiration_date": date(2026, 6, 19),
+                "strike": Decimal("50"),
+                "quantity": Decimal("1"),
+                "premium": Decimal("2"),
+            },
+        ),
+        generated_at=NOW,
+    )
+
+    assert read.portfolio_context is not None
+    assert read.portfolio_context.cash_state == "available"
+    assert read.deterministic_review.cash_collateral_impact.estimated_collateral_requirement_change == "5000"
+    assert "cash_secured_put_collateral_generic" in {caveat.code for caveat in read.caveats}
+    assert "cash_context_missing_for_collateral" not in {
+        violation.code for violation in read.deterministic_review.risk_rule_violations
+    }
+
+
+def test_portfolio_preview_csp_flags_missing_cash_context_when_context_unavailable() -> None:
+    read = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="cash_secured_put",
+            option_leg={
+                "underlying_symbol": "XYZ",
+                "option_type": "put",
+                "leg_action": "sell_to_open",
+                "expiration_date": date(2026, 6, 19),
+                "strike": Decimal("50"),
+                "quantity": Decimal("1"),
+                "premium": Decimal("2"),
+            },
+            portfolio_context_selection={
+                "mode": "selected_context",
+                "context_reference": "ctx_demo_empty",
+            },
+        ),
+        generated_at=NOW,
+    )
+
+    assert read.portfolio_context is None
+    assert "cash_secured_put_collateral_generic" in {caveat.code for caveat in read.caveats}
+    assert "cash_context_missing_for_collateral" in {
+        violation.code for violation in read.deterministic_review.risk_rule_violations
+    }
+
+
+def test_portfolio_preview_service_preserves_no_context_available_state() -> None:
+    read = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="stock_buy",
+            symbol="XYZ",
+            quantity=Decimal("3"),
+            price_assumption=Decimal("50"),
+            portfolio_context_selection={
+                "mode": "selected_context",
+                "context_reference": "ctx_demo_empty",
+            },
+        ),
+        generated_at=NOW,
+    )
+
+    assert read.portfolio_context is None
+    assert read.actionability.review_actionability_status == "blocked_unknown_freshness"
+    assert any(warning.code == "unknown_freshness" for warning in read.deterministic_review.missing_data_warnings)
+    assert not find_forbidden_keys(read.model_dump(mode="python"), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
 
 
 def _projection(

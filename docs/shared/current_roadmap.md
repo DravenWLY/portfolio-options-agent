@@ -38,44 +38,46 @@ TradingAgents-inspired does not mean TradingAgents-centered. The product center 
 - Phase 14: TradeIntent foundation for proposed stock, ETF, and options trade review.
 - Phase 15: deterministic trade review engine MVP with payoff, portfolio impact, risk integration, strategy wrappers, deterministic report, and agent-safe projection.
 - Phase 16: deterministic agent components plus portfolio-aware agent-team orchestrator, including actionability policy, context envelopes, run/step mapping, and privacy-safe fallbacks.
+- Phase 17A: public research evidence adapter boundary, including optional TradingAgents dependency detection, public ticker/company evidence contracts, cache/budget policy, mocked parser/report mapping, and adapter-boundary review.
 - Phase 18A: first visible Trade Review Workspace readiness, including the sanitized backend read contract, synthetic preview endpoint, first read-only frontend workspace, and integration review.
-- Phase 18B: frontend Trade Review Workspace expansion over the T0-T2 + T4 scope, including frontend-read privacy guard unification, deterministic report UI, and Codex integration review. P18B-T3 research-evidence display remains deferred pending Phase 17 reactivation.
+- Phase 18B: frontend Trade Review Workspace expansion over the T0-T2 + T4 scope, including frontend-read privacy guard unification, deterministic report UI, and Codex integration review. P18B-T3 research-evidence display remains deferred pending reviewed Phase 17 backend evidence contracts.
+- Phase 18C: real portfolio-backed Trade Review Workspace, including a distinct portfolio-backed preview endpoint, safe portfolio context summary, frontend integration, and final architecture signoff.
+- Phase 19A: basic portfolio-aware LLM agent team plus analysis console, using an app-owned mock-provider agent workflow and role-by-role frontend console.
+- Phase 19B: real LLM provider gate, including backend-owned provider config/factory, Google/Gemini candidate adapter behind explicit opt-in, prompt/output safety hardening, and safe partial-output fallback. Mock remains default.
+- Phase 19C: agent-team evidence and prompt foundation, including agent-safe deterministic evidence projection, role-specific prompt inputs, scenario coverage, and privacy-preserving prompt boundaries.
+- Phase 20A: Modern Portfolio Desk frontend integration, including prototype-fidelity shell/topbar/sidebar, workspace placeholder screens, marketing placeholders, and self-hosted font assets.
 
 Detailed verification history lives in `docs/shared/completed_phases_log.md`.
 
 ## Active Phases
 
-Awaiting Codex A PM decision for the next active vertical slice.
+Phase 20B - Modern Portfolio Desk backend contracts.
 
-- Phase 18A and Phase 18B are complete.
-- Keep the Trade Review Workspace read-only, deterministic-first, and actionability/freshness-aware.
-- Preserve the approved Phase 18A/18B frontend read contract unless Codex B/Codex C explicitly revise the backend schema first.
-- Recommended next PM discussion: whether to start a Phase 18C real portfolio-backed trade-review workspace slice before reactivating Phase 17.
-
-Temporarily frozen: deep Phase 17 TradingAgents/Public Research Evidence Adapter implementation.
-
-- Phase 17 remains optional public ticker/company evidence only.
-- It must not become the main sprint, fast-path decision engine, or source of portfolio-aware conclusions.
-- No holdings, account values, cash, broker ids, journal entries, or account-specific thresholds are sent by default.
+- Phase 20A prototype-fidelity frontend work is complete; keep its visual direction stable while wiring placeholder surfaces through reviewed backend contracts.
+- Active backend focus: sanitized read contracts for Dashboard, Portfolio Context, Reports, and safe profile/display surfaces.
+- P20B-T1/T1A/T2/T3 are complete as demo-labeled frontend-readiness contracts for recent trade reviews, risk alerts, and readiness.
+- Next backend task: P20B-T4 portfolio context enumeration and detail contracts.
+- Claude A may consume completed P20B endpoints only with visible `demo · not yet connected` labeling until data_mode becomes persisted/real.
+- Preserve safety boundaries: no execution UI, no invented backend fields, no frontend financial computation, no raw private data exposure, and no new storage keys beyond approved UI preferences.
 
 ## Next Phases
 
-Candidate Phase 18C - Real portfolio-backed Trade Review Workspace.
+Phase 20B delivery sequence.
 
-- PM decision required before implementation starts.
-- Likely direction: replace or supplement the synthetic preview with a safe backend path that uses an existing sanitized portfolio snapshot/manual portfolio context, the actionability policy, and deterministic trade-review outputs.
-- Keep this deterministic-first and read-only: no TradingAgents, no LLM, no real market-data dependency, no broker actions, no order UI.
-- Optional research evidence display waits for Phase 17 contracts and must remain subordinate to deterministic review.
+- Codex C owns one backend read-contract slice at a time.
+- Codex B reviews schema safety, endpoint placement, forbidden-field coverage, actionability/freshness semantics, and whether Claude A may consume the contract.
+- Claude A wires completed endpoints into the Modern Portfolio Desk only after Codex B review, keeping demo labels visible for synthetic/demo data.
+- Claude B reviews frontend safety, UX clarity, no execution affordances, and no private-data leakage after wiring.
 
-Before expanding beyond the Phase 18B workspace:
+Phase 19D / live LLM smoke gate, future only.
 
-- Keep Phase 17 frozen unless Codex A PM explicitly reactivates it.
-- Resolve backend contract fast-follows before asking frontend to consume new fields.
-- Coverage-aware covered-call/CSP portfolio netting may be implemented later, but until then the visible caveats must remain.
-- Real market data is not required for local MVP demo, but real REST snapshot market data is required before external paid beta or any polished UI/report that implies quote-current options review.
+- Real Google/Gemini calls remain disabled by default.
+- A future backend-only smoke gate may exercise synthetic prompts against a live provider after explicit human approval, budget/rate-limit checks, and privacy review.
+- Frontend API keys, frontend provider selection, deep TradingAgents execution, real news/macro providers, and debate loops remain out of scope until separately approved.
 
-Phase 19+ - Streaming Market Data, TradingAgents Evidence UI, and broader workflow polish.
+Phase 19+ / 20+ - UI Refinement, Streaming Market Data, TradingAgents Evidence UI, and broader workflow polish.
 
+- Refine the analysis console and Trade Review Workspace after the current Modern Portfolio Desk integration is reviewed and backend agent/provider gates remain safe.
 - Add async research evidence display after backend adapter and safety boundaries are stable.
 - Add WebSocket/streaming market data only if paid-beta users prove the need. Do not build an option-chain browser, screener, or market-data terminal for MVP.
 

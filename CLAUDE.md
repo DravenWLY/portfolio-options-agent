@@ -94,6 +94,7 @@ See the project skill at `.claude/skills/frontend-design/SKILL.md` for full visu
 
 ## Skills available in this repo
 
+- `docs/shared/agent_workflows.md` - repo-specific workflow guidance for frontend contract review, backend TDD slices, and product/architecture docs grilling. These are not installed external skills and do not override `AGENTS.md`.
 - `.claude/skills/frontend-design/` - production-grade React/Vite dashboard UI standards and review checklist.
 - `.claude/skills/finance-dashboard-ux-review/` - fintech-specific UX review for portfolio/options dashboards.
 - `.claude/skills/implementation-plan-review/` - enforces single-task discipline against `docs/implementation_plan.md`.

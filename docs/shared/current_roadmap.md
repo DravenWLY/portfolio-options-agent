@@ -55,19 +55,63 @@ Phase 20B - Modern Portfolio Desk backend contracts.
 
 - Phase 20A prototype-fidelity frontend work is complete; keep its visual direction stable while wiring placeholder surfaces through reviewed backend contracts.
 - Active backend focus: sanitized read contracts for Dashboard, Portfolio Context, Reports, and safe profile/display surfaces.
-- P20B-T1/T1A/T2/T3 are complete as demo-labeled frontend-readiness contracts for recent trade reviews, risk alerts, and readiness.
-- Next backend task: P20B-T4 portfolio context enumeration and detail contracts.
+- P20B-T1/T1A/T2/T3/T4/T7 are complete as demo-labeled frontend-readiness contracts for recent trade reviews, risk alerts, readiness, portfolio context, and dashboard account summary.
+- P20B-T5 reports and P20B-T6 profile/display remain blocked until their persistence/auth and product contracts are approved.
 - Claude A may consume completed P20B endpoints only with visible `demo · not yet connected` labeling until data_mode becomes persisted/real.
 - Preserve safety boundaries: no execution UI, no invented backend fields, no frontend financial computation, no raw private data exposure, and no new storage keys beyond approved UI preferences.
 
+Phase 20C - Modern Portfolio Desk contract wiring and layout follow-through.
+
+- P20C-T1 through P20C-T6 are complete and reviewed: Dashboard wiring, Agent Console five-zone layout and visual refinement, sectioned Settings, Trade Review disclosure, and shared Modern Desk state/icon cleanup.
+- This phase is a stable frontend integration checkpoint. Deferred cleanup on legacy Broker, Market Data, and Risk Review surfaces is not authorization for a new implementation task.
+- Before expanding the Dashboard, create a product/UX content definition that separates currently backed panels from proposed market/news/account/report additions and identifies the backend contract required for each approved addition.
+- Phase 21A remains paused after these frontend refinements: the Agent Console composer stays visibly disabled and makes no network or storage writes.
+
+Paused design reference - Phase 21A Realtime Agent Console backend contract.
+
+- Codex B drafted a mock-first realtime console option and proposed ADR 0007; both are preserved as reference material.
+- PM paused further agentic/realtime architecture and implementation on 2026-05-25 while the founder studies agentic AI concepts and decides which patterns belong in the product.
+- Do not begin Phase 21A backend work, live-agent work, debate/routing/memory work, SSE follow-up work, or agent-thread persistence work unless Codex A explicitly reactivates a scoped slice.
+- The existing Agent Console composer remains disabled and must not imply an active interactive-agent roadmap commitment.
+
+Phase 22A - Provider-Neutral Market Data Evaluation Foundation.
+
+- Codex A approved Phase 22A on 2026-05-25 as the next backend-only evaluation phase while Phase 21A stays paused.
+- The only initial implementation task is offline and synthetic/replay-only: provider-neutral stock/ETF and listed-options snapshot contracts, provenance/freshness semantics, and deterministic scenario tests.
+- Tradier is no longer the assumed scalable production provider; it remains a possible prototype/reference candidate only.
+- No production market-data provider is selected. Written RFI/licensing review is required before any commercial provider choice or live/current quote claim.
+- No external provider calls, credentials, frontend live-price surface, streaming, agent ingestion, or TradingAgents work is authorized by the initial slice.
+- Market-data work now has two tracks: early free/delayed evaluation first, and
+  commercial-scale provider/RFI selection later. RFI outreach is deferred
+  while PM decides whether to authorize a bounded local/internal evaluation
+  adapter.
+
 ## Next Phases
 
-Phase 20B delivery sequence.
+Phase 20B / 20C delivery sequence.
 
 - Codex C owns one backend read-contract slice at a time.
 - Codex B reviews schema safety, endpoint placement, forbidden-field coverage, actionability/freshness semantics, and whether Claude A may consume the contract.
 - Claude A wires completed endpoints into the Modern Portfolio Desk only after Codex B review, keeping demo labels visible for synthetic/demo data.
 - Claude B reviews frontend safety, UX clarity, no execution affordances, and no private-data leakage after wiring.
+- Phase 20C is complete; new Dashboard work begins with a content-definition gate rather than opportunistic new cards or endpoints.
+
+Phase 21A, paused.
+
+- No current Codex C or Claude A implementation assignment exists for Phase 21A.
+- If PM later reactivates a slice, the retained contract/ADR must first be reviewed against founder learning and any updated product direction.
+
+Phase 22A, current decision gate.
+
+- `P22A-T1` provider-neutral synthetic/replay contract work is complete.
+- `P22A-T3` identifies Alpaca Basic as the recommended first local/internal
+  evaluation candidate, labelled `limited_source`/`indicative` and
+  `analysis_only`; Codex A approval is required before any adapter task.
+- Tradier Sandbox remains a secondary delayed-data candidate without sandbox
+  Greeks; Intrinio delayed remains conditional on written trial terms.
+- Stage 2 RFI materials for Intrinio, Databento, dxFeed, and Massive are
+  retained for commercial scale, but outreach is deferred and does not select
+  or integrate a provider.
 
 Phase 19D / live LLM smoke gate, future only.
 
@@ -75,17 +119,19 @@ Phase 19D / live LLM smoke gate, future only.
 - A future backend-only smoke gate may exercise synthetic prompts against a live provider after explicit human approval, budget/rate-limit checks, and privacy review.
 - Frontend API keys, frontend provider selection, deep TradingAgents execution, real news/macro providers, and debate loops remain out of scope until separately approved.
 
-Phase 19+ / 20+ - UI Refinement, Streaming Market Data, TradingAgents Evidence UI, and broader workflow polish.
+Phase 20+ / future research - UI Refinement, Market/News Data Evaluation, Agentic AI Learning, and broader workflow polish.
 
-- Refine the analysis console and Trade Review Workspace after the current Modern Portfolio Desk integration is reviewed and backend agent/provider gates remain safe.
+- Refine approved read-only surfaces after the current Modern Portfolio Desk integration is reviewed; do not activate interactive Agent Console behavior during the Phase 21A pause.
 - Add async research evidence display after backend adapter and safety boundaries are stable.
-- Add WebSocket/streaming market data only if paid-beta users prove the need. Do not build an option-chain browser, screener, or market-data terminal for MVP.
+- Evaluate real market/news data and symbol discovery as separate product/backend contracts before implementation. Do not build an option-chain browser, screener, or market-data terminal for MVP.
 
 Market data timing:
 
 - Manual/mock market data remains acceptable for local MVP demo with clear analysis-only labeling where appropriate.
-- Tradier is the preferred first real provider candidate for backend-only REST snapshots: quotes, option expirations, option chains, and Greeks/IV where available.
-- Before purchase/public beta, recheck current Tradier pricing, licensing, OPRA/data rights, and API capabilities.
+- Phase 22A now owns provider-neutral, synthetic/replay-first evaluation of stock/ETF quote and listed-options snapshot semantics.
+- Tradier is no longer the assumed production foundation; it is reference/prototyping-only unless later reconsidered through the same written review process.
+- Production selection requires written review of equity coverage, OPRA-derived options coverage, display/derived/retention rights, possible later sanitized agent-evidence rights, entitlements/reporting, and cost at scale.
+- REST snapshots remain the first architecture posture. Streaming remains deferred until a separately approved user need and licensing decision exist.
 
 Future Broker Activities / Transactions layer.
 

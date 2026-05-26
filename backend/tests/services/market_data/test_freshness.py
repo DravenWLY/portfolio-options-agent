@@ -59,6 +59,33 @@ def test_delayed_manual_and_eod_quotes_are_analysis_only() -> None:
     assert eod.actionability_status == "analysis_only"
 
 
+def test_synthetic_and_unavailable_quotes_are_never_actionable() -> None:
+    now = datetime(2026, 5, 18, 15, 0, tzinfo=UTC)
+
+    synthetic = evaluate_quote_freshness(
+        data_mode="synthetic",
+        quote_time=now,
+        received_at=now,
+        now=now,
+        freshness_scope="underlying_quote",
+    )
+    unavailable = evaluate_quote_freshness(
+        data_mode="unavailable",
+        quote_time=None,
+        received_at=now,
+        now=now,
+        freshness_scope="option_quote",
+    )
+
+    assert synthetic.freshness_scope == "underlying_quote"
+    assert synthetic.freshness_status == "fresh"
+    assert synthetic.actionability_status == "analysis_only"
+    assert unavailable.freshness_scope == "option_quote"
+    assert unavailable.freshness_status == "unavailable"
+    assert unavailable.actionability_status == "blocked_unknown_quote"
+    assert unavailable.reason == "market quote is unavailable"
+
+
 def test_cached_and_indicative_quotes_are_analysis_only_even_when_recent() -> None:
     now = datetime(2026, 5, 18, 15, 0, tzinfo=UTC)
 

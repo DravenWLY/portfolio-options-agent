@@ -331,6 +331,113 @@ a:hover {
   text-decoration: underline;
 }
 
+/* P20C-T4 — Disclosure sections (native <details>/<summary>).
+   Suppress default marker; rotate the MpIcon chevron on open. */
+.mp-disclosure > summary { list-style: none; cursor: pointer; }
+.mp-disclosure > summary::-webkit-details-marker { display: none; }
+.mp-disclosure > summary::marker { display: none; content: ""; }
+.mp-disclosure > summary .mp-disclosure-chevron {
+  transition: transform 120ms ease;
+}
+.mp-disclosure[open] > summary .mp-disclosure-chevron {
+  transform: rotate(90deg);
+}
+
+/* P20C-T4 — Keep the trade-review disclosure layout readable when the
+   desktop shell leaves too little room for a fixed form/results split. */
+.mp-trade-review-grid {
+  grid-template-columns: 320px minmax(0, 1fr);
+}
+
+.mp-trade-review-form-rail {
+  position: sticky;
+  top: var(--space-4);
+  max-height: calc(100vh - var(--topbar-height) - var(--space-8));
+  overflow-y: auto;
+}
+
+@media (max-width: 1120px) {
+  .mp-trade-review-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mp-trade-review-form-rail {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
+}
+
+/* P20C-T5 — Agent Console responsive layout.
+   At wide desktops the success body is a three-column grid:
+     240px (pipeline rail) | 1fr (transcript + composer) | 280px (evidence rail).
+   When the available width is constrained (1024px with expanded 220px sidebar),
+   collapse to a single column: transcript on top, then pipeline and evidence
+   rails stacked below it. */
+.mp-agent-console-body {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 280px;
+  gap: var(--space-4);
+  min-width: 0;
+  align-items: start;
+}
+
+.mp-agent-console-body > .mp-ac-rail {
+  position: sticky;
+  top: var(--space-4);
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-height: calc(100vh - var(--topbar-height) - var(--space-8));
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.mp-agent-console-body > .mp-ac-evidence {
+  position: sticky;
+  top: var(--space-4);
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: calc(100vh - var(--topbar-height) - var(--space-8));
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.mp-agent-console-body > .mp-ac-transcript {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+@media (max-width: 1120px) {
+  .mp-agent-console-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Transcript takes full width, order 1 */
+  .mp-agent-console-body > .mp-ac-transcript {
+    order: 1;
+  }
+
+  /* Rails un-stick and flow below the transcript */
+  .mp-agent-console-body > .mp-ac-rail {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+    order: 2;
+  }
+
+  .mp-agent-console-body > .mp-ac-evidence {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+    order: 3;
+  }
+}
+
 /* Skeleton pulse animation */
 @keyframes pulse {
   0%, 100% { opacity: 1; }

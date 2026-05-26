@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useUIPreference } from "../../context/useUIPreference";
 import AppearanceControl from "./AppearanceControl";
-import { Badge } from "../shared/mp";
+import { Badge, MpIcon, type MpIconName } from "../shared/mp";
 
 /**
  * Sidebar — P20A Modern Portfolio Desk styling.
@@ -9,44 +9,54 @@ import { Badge } from "../shared/mp";
  * Translated (not pasted) from the `Sidebar` block in
  *   design/prototype/portfolio-copilot-modern-desk/Portfolio Copilot/app.tsx
  *
- * Layout intent (matching the prototype):
- *  - Expanded mode: BrandMark + stacked wordmark ("Portfolio" / "Copilot" in
- *    accent), with a small inline collapse chevron at the right edge that
- *    does not dominate the brand area.
- *  - Collapsed mode: the BrandMark itself is the click-to-expand affordance.
- *    There is no separate arrow control.
+ * Navigation taxonomy follows the prototype direction:
+ *   Product  → Landing, Pricing, Sign in (marketing pages)
+ *   Workspace → Overview, Trade Review, Agent Console, Reports,
+ *               Portfolio Context, Settings
+ *   Data sources → Broker, Market Data, Risk Review (secondary extension,
+ *               not in the prototype primary groups — kept for route access,
+ *               positioned last with reduced visual weight)
+ *
+ * Icons: monochrome stroke-based SVGs via MpIcon. No emoji.
  *
  * Safety: no trade-execution, market screener, or TradingAgents links.
  * The Private-alpha / read-only / analysis-only / no-order-placement copy
  * remains visible in both expanded and collapsed states (via the footer).
  */
 
-// P20A-T4: marketing placeholder pages (Landing / Pricing / Sign-in/up) are
-// now available, so the Marketing nav group is visible. The pages themselves
-// are static; the workspace routes remain ungated.
-const SHOW_MARKETING_GROUP = true as boolean;
+const SHOW_PRODUCT_GROUP = true as boolean;
 
-interface NavEntry { label: string; icon: string; to: string; end?: boolean }
-interface NavGroup { label: string; items: NavEntry[] }
+interface NavEntry { label: string; icon: MpIconName; to: string; end?: boolean; tag?: string }
+interface NavGroup { label: string; items: NavEntry[]; secondary?: boolean }
+
+const PRODUCT_NAV: NavGroup = {
+  label: "Product",
+  items: [
+    { label: "Landing",  icon: "logo",    to: "/landing",  tag: "Marketing" },
+    { label: "Pricing",  icon: "reports", to: "/pricing",  tag: "Marketing" },
+    { label: "Sign in",  icon: "lock",    to: "/auth",     tag: "Marketing" },
+  ],
+};
 
 const WORKSPACE_NAV: NavGroup = {
   label: "Workspace",
   items: [
-    { label: "Dashboard", icon: "▦", to: "/", end: true },
-    { label: "Trade Review", icon: "☑", to: "/trade-review" },
-    { label: "Agent Team", icon: "⇶", to: "/agent-team-analysis" },
-    { label: "Reports", icon: "▤", to: "/reports" },
-    { label: "Portfolio Context", icon: "◈", to: "/portfolio-context" },
-    { label: "Settings", icon: "⚙", to: "/settings" },
+    { label: "Overview",          icon: "overview",  to: "/", end: true },
+    { label: "Trade Review",      icon: "review",    to: "/trade-review" },
+    { label: "Agent Console",     icon: "agent",     to: "/agent-team-analysis" },
+    { label: "Reports",           icon: "reports",   to: "/reports" },
+    { label: "Portfolio Context", icon: "portfolio", to: "/portfolio-context" },
+    { label: "Settings",          icon: "settings",  to: "/settings" },
   ],
 };
 
 const DATA_NAV: NavGroup = {
   label: "Data sources",
+  secondary: true,
   items: [
-    { label: "Broker", icon: "⊞", to: "/broker" },
-    { label: "Market Data", icon: "◷", to: "/market-data" },
-    { label: "Risk Review", icon: "⚠", to: "/risk" },
+    { label: "Broker",      icon: "broker", to: "/broker" },
+    { label: "Market Data", icon: "spark",  to: "/market-data" },
+    { label: "Risk Review", icon: "alert",  to: "/risk" },
   ],
 };
 
@@ -61,8 +71,6 @@ export default function Sidebar() {
       aria-label="Main navigation"
     >
       {sidebarCollapsed ? (
-        // Collapsed: the BrandMark is the only top affordance, and it is the
-        // expand button. No arrow control.
         <header style={styles.brandHeadCollapsed}>
           <button
             type="button"
@@ -76,7 +84,6 @@ export default function Sidebar() {
           </button>
         </header>
       ) : (
-        // Expanded: brand mark + stacked wordmark + small inline collapse chevron.
         <header style={styles.brandHead}>
           <BrandMark size={22} />
           <div style={styles.brandStack}>
@@ -91,27 +98,17 @@ export default function Sidebar() {
             title="Collapse sidebar"
             style={styles.collapseChevron}
           >
-            <span aria-hidden="true">‹</span>
+            <MpIcon name="chevron-r" size={12} style={{ transform: "rotate(180deg)" }} />
           </button>
         </header>
       )}
 
       <div style={styles.scroll}>
+        {SHOW_PRODUCT_GROUP && (
+          <NavGroupBlock group={PRODUCT_NAV} collapsed={sidebarCollapsed} />
+        )}
         <NavGroupBlock group={WORKSPACE_NAV} collapsed={sidebarCollapsed} />
         <NavGroupBlock group={DATA_NAV} collapsed={sidebarCollapsed} />
-        {SHOW_MARKETING_GROUP && (
-          <NavGroupBlock
-            collapsed={sidebarCollapsed}
-            group={{
-              label: "Marketing",
-              items: [
-                { label: "Landing", icon: "⌂", to: "/landing" },
-                { label: "Pricing", icon: "¤", to: "/pricing" },
-                { label: "Sign in", icon: "⍟", to: "/auth" },
-              ],
-            }}
-          />
-        )}
       </div>
 
       <footer style={styles.footer}>
@@ -141,7 +138,14 @@ function NavGroupBlock({ group, collapsed }: { group: NavGroup; collapsed: boole
   return (
     <div style={styles.group}>
       <div style={collapsed ? styles.groupRule : styles.groupHead}>
-        {!collapsed && <span style={styles.groupLabel}>{group.label}</span>}
+        {!collapsed && (
+          <span style={{
+            ...styles.groupLabel,
+            ...(group.secondary ? { opacity: 0.7 } : {}),
+          }}>
+            {group.label}
+          </span>
+        )}
       </div>
       <ul style={styles.navList} role="list">
         {group.items.map((item) => (
@@ -152,7 +156,7 @@ function NavGroupBlock({ group, collapsed }: { group: NavGroup; collapsed: boole
   );
 }
 
-function NavItem({ label, icon, to, collapsed, end }: NavEntry & { collapsed: boolean }) {
+function NavItem({ label, icon, to, collapsed, end, tag }: NavEntry & { collapsed: boolean }) {
   return (
     <li>
       <NavLink
@@ -160,15 +164,23 @@ function NavItem({ label, icon, to, collapsed, end }: NavEntry & { collapsed: bo
         end={end}
         aria-label={collapsed ? label : undefined}
         title={collapsed ? label : undefined}
-        className={({ isActive }) => isActive ? "mp-nav-active" : "mp-nav-idle"}
         style={({ isActive }) => ({
           ...styles.navLink,
           justifyContent: collapsed ? "center" : "flex-start",
           ...(isActive ? styles.navLinkActive : styles.navLinkIdle),
         })}
       >
-        <span style={styles.navIcon} aria-hidden="true">{icon}</span>
-        {!collapsed && <span style={styles.navLabel}>{label}</span>}
+        {({ isActive }) => (
+          <>
+            <MpIcon
+              name={icon}
+              size={14}
+              style={{ color: isActive ? "var(--mp-accent)" : "var(--mp-mute)" }}
+            />
+            {!collapsed && <span style={styles.navLabel}>{label}</span>}
+            {!collapsed && tag && <span style={styles.navTag}>{tag}</span>}
+          </>
+        )}
       </NavLink>
     </li>
   );
@@ -253,7 +265,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: 24, height: 24, borderRadius: "var(--radius-sm)",
     display: "flex", alignItems: "center", justifyContent: "center",
     color: "var(--mp-mute)", border: "none", background: "transparent",
-    cursor: "pointer", fontSize: 14, lineHeight: 1, fontWeight: 600,
+    cursor: "pointer", lineHeight: 1,
   },
   scroll: { flex: 1, overflowY: "auto", paddingTop: "var(--space-3)", display: "flex", flexDirection: "column", gap: "var(--space-2)" },
   group: { display: "flex", flexDirection: "column", gap: "var(--space-1)" },
@@ -265,10 +277,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
   navList: { listStyle: "none", display: "flex", flexDirection: "column", gap: 2, paddingInline: "var(--space-3)", margin: 0 },
   navLink: {
-    display: "flex", alignItems: "center", gap: "var(--space-3)",
-    padding: "var(--space-2) var(--space-3)",
+    display: "flex", alignItems: "center", gap: 10,
+    padding: "7px 12px",
     borderRadius: "var(--radius-sm)",
-    fontSize: "var(--font-size-sm)", letterSpacing: "0.01em",
+    fontSize: 13, fontWeight: 450, letterSpacing: "-0.005em",
     textDecoration: "none", whiteSpace: "nowrap", overflow: "hidden",
     border: "1px solid transparent",
     transition: "background-color 120ms, color 120ms, border-color 120ms",
@@ -283,8 +295,15 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--mp-ink)",
     borderColor: "var(--mp-rule)",
   },
-  navIcon: { width: 16, flexShrink: 0, textAlign: "center", color: "var(--mp-accent)", fontSize: "var(--font-size-base)" },
   navLabel: { overflow: "hidden", textOverflow: "ellipsis" },
+  navTag: {
+    marginLeft: "auto",
+    fontSize: 9.5,
+    textTransform: "uppercase",
+    letterSpacing: "0.10em",
+    color: "var(--mp-mute)",
+    fontFamily: "var(--mp-font-mono, monospace)",
+  },
   footer: {
     paddingInline: "var(--space-4)", paddingTop: "var(--space-3)",
     borderTop: "1px solid var(--mp-rule)",

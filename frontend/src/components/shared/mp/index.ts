@@ -16,4 +16,6 @@ export { default as FreshnessDial } from "./FreshnessDial";
 export { default as PageHeader } from "./PageHeader";
 export { default as SafetyStrip } from "./SafetyStrip";
 export { default as DemoChip } from "./DemoChip";
+export { default as MpIcon } from "./MpIcon";
+export type { MpIconName } from "./MpIcon";
 export type { MpTone } from "./tokens";

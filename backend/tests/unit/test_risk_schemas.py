@@ -60,6 +60,7 @@ def test_risk_schema_field_sets_are_exact() -> None:
         "captured_at",
         "quote_time",
         "freshness_scope",
+        "input_freshness_scope",
         "data_mode",
         "freshness_status",
         "actionability_status",
@@ -107,6 +108,21 @@ def test_risk_report_schema_validates_domain_report_with_snapshot_reference() ->
         captured_at=captured_at,
         quote_time=captured_at,
         freshness_scope="market_quote",
+        input_freshness_scope="option_quote",
+        data_mode="manual",
+        freshness_status="manual",
+        actionability_status="analysis_only",
+    )
+    chain_reference = MarketDataSnapshotReference(
+        snapshot_id="chain-snapshot-demo",
+        kind="option_chain",
+        purpose="report_input_snapshot",
+        provider="manual",
+        stable_key="HOOD:2026-06-18",
+        captured_at=captured_at,
+        quote_time=captured_at,
+        freshness_scope="market_quote",
+        input_freshness_scope="option_chain",
         data_mode="manual",
         freshness_status="manual",
         actionability_status="analysis_only",
@@ -128,7 +144,7 @@ def test_risk_report_schema_validates_domain_report_with_snapshot_reference() ->
         input_snapshot=ReportMarketDataSnapshot(
             report_input_snapshot_id="report-input-demo",
             quote_references=(reference,),
-            chain_references=(),
+            chain_references=(chain_reference,),
             captured_at=captured_at,
         ),
     )
@@ -139,6 +155,9 @@ def test_risk_report_schema_validates_domain_report_with_snapshot_reference() ->
     assert read.has_blocker is False
     assert read.input_snapshot is not None
     assert read.input_snapshot.quote_references[0].freshness_scope == "market_quote"
+    assert read.input_snapshot.quote_references[0].input_freshness_scope == "option_quote"
+    assert read.input_snapshot.chain_references[0].freshness_scope == "market_quote"
+    assert read.input_snapshot.chain_references[0].input_freshness_scope == "option_chain"
     assert not hasattr(read, "account_id")
 
 

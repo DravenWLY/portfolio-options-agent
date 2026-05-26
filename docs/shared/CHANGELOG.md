@@ -4,6 +4,11 @@ This changelog is for human-readable project changes. It should summarize meanin
 
 ## Unreleased
 
+- Completed and reviewed Phase 20C Modern Portfolio Desk wiring and presentation refinements through shared state/icon cleanup; future Dashboard expansion now begins with an explicit content-definition gate.
+- Opened Phase 22A as an offline, provider-neutral market-data evaluation foundation; amended ADR 0003 so Tradier is reference/prototyping-only rather than the assumed scalable production provider, and added a reusable vendor RFI template.
+- Split Phase 22A market-data follow-through into early evaluation and later commercial selection tracks; assessed Alpaca Basic, Tradier Sandbox, and Intrinio delayed trial paths, recommending Alpaca Basic for a future PM-approved local/internal indicative evaluation while deferring RFI outreach.
+- Paused Phase 21A agentic/realtime console expansion pending founder learning and future PM reactivation; retained the contract and ADR 0007 as inactive design references and added Codex E as an advisory-only learning role.
+- Drafted Phase 21A realtime Agent Console architecture and proposed ADR 0007: backend-owned HTTP commands plus validated SSE progress, mock-first, with interactive frontend activation deferred until review.
 - Archived completed Phase 18A into `docs/shared/completed_phases_log.md` and shifted the active roadmap/task pointers to Phase 18B workspace expansion.
 - Added the Phase 18A frontend-readiness contract and shifted active delivery focus from deep Phase 17 research work to the first visible Trade Review Workspace.
 - Archived completed Phase 16A/16B into `docs/shared/completed_phases_log.md`; Phase 17 was active briefly before the Phase 18A focus shift.

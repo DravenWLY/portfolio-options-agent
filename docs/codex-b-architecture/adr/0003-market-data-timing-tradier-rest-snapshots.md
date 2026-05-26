@@ -1,8 +1,20 @@
-# ADR 0003: Market-Data Timing and Tradier-First REST Snapshots
+# ADR 0003: Market-Data Timing and Provider-Neutral REST Snapshots
 
-Status: accepted
+Status: amended
 Date: 2026-05-20
+Amended: 2026-05-25
 Owner: Codex B - Architecture / Tech Lead
+
+## Amendment Note
+
+Codex A approved Phase 22A on 2026-05-25 after review of market-data
+coverage, redistribution, and scale constraints. This ADR is amended in place
+because its REST-snapshot-versus-streaming decision remains valid, while its
+earlier Tradier-first provider posture no longer reflects product direction.
+
+Tradier is no longer the assumed scalable production provider. It may remain a
+prototyping or reference candidate only. No production market-data provider is
+currently selected.
 
 ## Context
 
@@ -22,16 +34,33 @@ Real backend REST snapshot market data is required before:
 - any polished UI/report that implies quote-current options review;
 - any public-facing claim that options quotes, Greeks, or IV are provider-current.
 
-Preferred first real provider candidate: **Tradier Market Data API**, backend-only, REST snapshots first:
+Phase 22A reopens provider selection. The first authorized work is an offline,
+provider-neutral, synthetic/replay-based backend evaluation foundation:
 
-- quotes;
-- option expirations;
-- option chains;
-- Greeks/IV where available.
+- stock/ETF underlying quote snapshot contracts;
+- listed-option quote and option-chain snapshot contracts;
+- IV and Greeks provenance or unavailable-state contracts;
+- explicit market-data mode and freshness semantics;
+- deterministic synthetic/replay scenario tests only.
 
-Before purchase or public beta, re-verify current pricing, licensing, OPRA/data rights, plan requirements, data freshness, Greeks/IV behavior, redistribution limits, and API capabilities from official provider documentation.
+Optional external evaluations, including Alpaca Basic limited-source/indicative
+smoke testing or an Intrinio delayed-options trial, are not authorized by the
+initial Phase 22A slice and require separate approval.
 
-WebSocket/streaming real-time market data is explicitly deferred to Phase 19+ or paid beta, and only if active users prove the need.
+Before purchase, paid beta, or any public live/current quote claim, select a
+provider only after written RFI/licensing review of U.S. equity coverage,
+OPRA-derived listed-options coverage, external display rights, deterministic
+backend calculation rights, retention/replay rights, derived-summary rights,
+possible later sanitized agent-evidence rights, entitlement fees, reporting,
+rate limits, outage handling, and pricing at scale.
+
+The initial commercial vendor comparison should include Intrinio, Databento,
+and dxFeed, with Massive included only if it materially improves comparison.
+This is an evaluation list, not a provider selection.
+
+REST snapshot semantics remain the first implementation posture. WebSocket or
+streaming real-time market data remains separately deferred and requires a
+reviewed user need, licensing approval, and architecture decision.
 
 ## Non-Goals
 
@@ -39,12 +68,28 @@ WebSocket/streaming real-time market data is explicitly deferred to Phase 19+ or
 - No market-data terminal.
 - No options screener.
 - No streaming entire option markets.
+- No real provider calls or credentials in the Phase 22A initial slice.
+- No public live-price UI claims in the Phase 22A initial slice.
+- No market-data ingestion by LLM agents in Phase 22A.
 - No frontend calls directly to market-data providers.
 - No storing provider secrets in frontend code, reports, logs, tests, or public docs.
 
 ## Implementation Guidance
 
-When the provider slice is approved:
+For the Phase 22A synthetic/replay slice:
+
+- Reuse or refine provider-neutral contracts only where tests demonstrate a
+  contract gap.
+- Treat `synthetic`, `indicative`, `delayed`, `live`, and `unavailable` as
+  required product concepts. `live` may exist in schemas/tests as reserved
+  vocabulary but may not be emitted as a production/public claim before
+  provider and licensing approval.
+- Preserve underlying quote freshness, option quote/chain freshness, and
+  broker snapshot freshness as distinct concepts.
+- Record IV and Greeks provenance, including unavailable states.
+- Keep tests offline, deterministic, and synthetic/replay-only.
+
+When a later real provider slice is separately approved:
 
 - Keep provider calls backend-only.
 - Add a provider adapter behind existing `MarketDataProvider` and `OptionDataProvider` contracts.
@@ -59,7 +104,7 @@ When the provider slice is approved:
 Positive:
 
 - Keeps the local MVP from turning into a market-data integration project.
-- Gives paid beta a clear path to quote-current options review.
+- Creates a provider-neutral, licensing-aware path to quote-current options review.
 - Avoids premature WebSocket, OPRA, or terminal-style UI complexity.
 - Aligns with the product center: pre-trade portfolio review, not market-data viewing.
 
@@ -67,13 +112,17 @@ Tradeoffs:
 
 - Local MVP demos cannot honestly claim real quote-current options review.
 - Paid beta readiness will need a provider/licensing check before launch.
-- Tradier remains a candidate, not a permanent provider lock-in.
+- Vendor RFI and commercial-rights review are required before final selection.
+- Free or trial evaluation sources cannot be treated as production quote truth.
 
 ## Alternatives Considered
 
 1. Implement real-time streaming now. Rejected because the MVP does not need a terminal and streaming creates cost, licensing, UI, and reliability complexity.
 2. Use broker provider data as market data. Rejected because broker account sync and market quotes are separate subsystems.
 3. Use free/unofficial data as product-grade options data. Rejected for reliability/licensing/freshness reasons.
+4. Retain Tradier as the assumed production provider. Rejected because
+   realtime access/account assumptions constrain scalable commercial design
+   before licensing and coverage evaluation is complete.
 
 ## Review Guidance
 
@@ -84,3 +133,5 @@ Architecture reviews should block changes that:
 - collapse broker freshness and market quote freshness;
 - add option-chain browser, screener, market terminal, or streaming UI before PM approval;
 - expose provider secrets, raw payloads, private account data, or account-specific thresholds.
+- implement external provider evaluation, LLM/agent ingestion, or public live
+  display as part of the initial synthetic/replay-only Phase 22A slice.

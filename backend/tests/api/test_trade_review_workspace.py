@@ -660,6 +660,110 @@ def test_user_readiness_requires_local_access(app) -> None:
     assert response.status_code == 401
 
 
+def test_user_dashboard_account_summary_returns_sanitized_synthetic_contract(client: TestClient) -> None:
+    response = client.get("/users/11111111-1111-1111-1111-111111111111/dashboard-account-summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_mode"] == "synthetic_demo"
+    assert payload["demo_notice"] == "demo · not yet connected"
+    assert payload["summary_reference"] == "das_demo_current"
+    assert payload["source_label"] == "Synthetic demo portfolio summary"
+    assert payload["portfolio_shape"] == {"stock_position_count": 2, "option_position_count": 1}
+    assert payload["cash_state"] == "available"
+    assert payload["cash_state_label"] == "Cash state available"
+    assert payload["total_value_label"] == "Demo total value · not connected"
+    assert payload["cash_label"] == "Demo cash state available · not connected"
+    assert payload["stock_exposure_label"] == "Demo stock exposure summary · not connected"
+    assert payload["option_exposure_label"] == "Demo option exposure summary · not connected"
+    assert "summary_demo_only" in payload["caveat_codes"]
+    assert {section["section_key"] for section in payload["display_sections"]} == {
+        "freshness",
+        "shape",
+        "summary",
+    }
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_user_dashboard_account_summary_preserves_broker_and_market_freshness_separation(
+    client: TestClient,
+) -> None:
+    response = client.get("/users/22222222-2222-2222-2222-222222222222/dashboard-account-summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["broker_snapshot_freshness"]["freshness_scope"] == "broker_snapshot"
+    assert payload["broker_snapshot_freshness"]["status"] == "stale"
+    assert payload["broker_snapshot_freshness"]["reason_codes"] == ["broker_snapshot_stale"]
+    assert payload["broker_snapshot_freshness"]["is_blocking"] is True
+    assert payload["market_quote_freshness"]["freshness_scope"] == "market_quote"
+    assert payload["market_quote_freshness"]["status"] == "manual_review"
+    assert payload["market_quote_freshness"]["reason_codes"] == ["market_quote_manual_review"]
+    assert payload["market_quote_freshness"]["is_blocking"] is False
+    assert payload["market_data_unavailable"] is False
+
+
+def test_user_dashboard_account_summary_handles_empty_unavailable_state(client: TestClient) -> None:
+    response = client.get("/users/00000000-0000-0000-0000-000000000000/dashboard-account-summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["data_mode"] == "synthetic_demo"
+    assert payload["demo_notice"] == "demo · not yet connected"
+    assert payload["summary_reference"] == "das_demo_unavailable"
+    assert payload["portfolio_shape"] == {"stock_position_count": 0, "option_position_count": 0}
+    assert payload["cash_state"] == "unavailable"
+    assert payload["broker_snapshot_freshness"]["freshness_scope"] == "broker_snapshot"
+    assert payload["broker_snapshot_freshness"]["status"] == "unknown"
+    assert payload["market_quote_freshness"] is None
+    assert payload["market_data_unavailable"] is True
+    assert "market_data_unavailable" in payload["caveat_codes"]
+
+
+def test_user_dashboard_account_summary_avoids_private_fields_and_execution_language(client: TestClient) -> None:
+    response = client.get("/users/33333333-3333-3333-3333-333333333333/dashboard-account-summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    rendered = repr(payload).lower()
+    forbidden_text = (
+        "raw_holdings",
+        "raw_positions",
+        "lot",
+        "tax_lot",
+        "position_quantity",
+        "cash_balance",
+        "buying_power",
+        "account_value",
+        "account_id",
+        "broker_id",
+        "provider_id",
+        "provider_account_id",
+        "raw_csv",
+        "raw_provider_payload",
+        "threshold",
+        "prompt",
+        "llm_response",
+        "provider_trace",
+        "safe to trade",
+        "ready to trade",
+        "you should",
+        "guaranteed",
+        "place order",
+        "execute",
+    )
+    assert not any(text in rendered for text in forbidden_text)
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_user_dashboard_account_summary_requires_local_access(app) -> None:
+    client = TestClient(app)
+
+    response = client.get("/users/11111111-1111-1111-1111-111111111111/dashboard-account-summary")
+
+    assert response.status_code == 401
+
+
 def test_user_portfolio_contexts_returns_sanitized_synthetic_context_list(client: TestClient) -> None:
     response = client.get("/users/11111111-1111-1111-1111-111111111111/portfolio-contexts")
 

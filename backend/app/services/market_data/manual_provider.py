@@ -6,6 +6,9 @@ from app.services.market_data.freshness import DEFAULT_MAX_QUOTE_AGE_SECONDS, ev
 from app.services.market_data.interfaces import GreeksProvider, MarketDataProvider, OptionDataProvider
 from app.services.market_data.models import (
     DataMode,
+    GreeksSource,
+    ImpliedVolatilitySource,
+    MarketMetricSource,
     OptionChainSnapshot,
     OptionContractIdentity,
     OptionQuoteSnapshot,
@@ -16,7 +19,16 @@ from app.services.market_data.models import (
 )
 
 
-MANUAL_PROVIDER_DATA_MODES: tuple[DataMode, ...] = ("manual", "delayed", "cached", "eod", "unknown")
+MANUAL_PROVIDER_DATA_MODES: tuple[DataMode, ...] = (
+    "manual",
+    "synthetic",
+    "delayed",
+    "indicative",
+    "cached",
+    "eod",
+    "unavailable",
+    "unknown",
+)
 
 
 class ManualMarketDataNotFoundError(LookupError):
@@ -24,7 +36,7 @@ class ManualMarketDataNotFoundError(LookupError):
 
 
 class ManualMarketDataProvider(MarketDataProvider, OptionDataProvider, GreeksProvider):
-    """Deterministic in-memory provider for manual or synthetic market data."""
+    """Deterministic in-memory provider for manual or synthetic/replay fixtures."""
 
     provider_name = "manual"
 
@@ -54,7 +66,7 @@ class ManualMarketDataProvider(MarketDataProvider, OptionDataProvider, GreeksPro
             supports_streaming=False,
             supports_historical_options=False,
             supported_data_modes=MANUAL_PROVIDER_DATA_MODES,
-            notes=("Manual/mock provider; no network calls.",),
+            notes=("Manual/synthetic replay provider; no network calls.",),
         )
 
     def get_stock_quote(
@@ -247,6 +259,8 @@ def build_manual_option_quote(
     rho: Decimal | None = None,
     underlying_price: Decimal | None = None,
     underlying_quote_time: datetime | None = None,
+    implied_volatility_source: ImpliedVolatilitySource | None = None,
+    greeks_source: GreeksSource | None = None,
     max_age_seconds: int = DEFAULT_MAX_QUOTE_AGE_SECONDS,
 ) -> OptionQuoteSnapshot:
     _validate_manual_provider_data_mode(data_mode)
@@ -281,7 +295,10 @@ def build_manual_option_quote(
         rho=rho,
         underlying_price=underlying_price,
         underlying_quote_time=underlying_quote_time,
-        greeks_source="manual" if any(value is not None for value in (delta, gamma, theta, vega, rho)) else "missing",
+        implied_volatility_source=implied_volatility_source
+        or _fixture_metric_source(data_mode, value_available=implied_volatility is not None),
+        greeks_source=greeks_source
+        or _fixture_metric_source(data_mode, value_available=any(value is not None for value in (delta, gamma, theta, vega, rho))),
     )
 
 
@@ -289,3 +306,13 @@ def _validate_manual_provider_data_mode(data_mode: DataMode) -> None:
     if data_mode not in MANUAL_PROVIDER_DATA_MODES:
         allowed = ", ".join(MANUAL_PROVIDER_DATA_MODES)
         raise ValueError(f"manual provider data_mode must be one of: {allowed}")
+
+
+def _fixture_metric_source(data_mode: DataMode, *, value_available: bool) -> MarketMetricSource:
+    if data_mode == "unavailable":
+        return "unavailable"
+    if not value_available:
+        return "missing"
+    if data_mode == "synthetic":
+        return "synthetic"
+    return "manual"

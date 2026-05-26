@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.trade_review_workspace import (
+    DashboardAccountSummaryRead,
     PortfolioContextDetailRead,
     PortfolioContextListRead,
     ReviewReadinessRead,
@@ -14,6 +15,7 @@ from app.schemas.trade_review_workspace import (
 from app.schemas.user import UserCreate, UserRead
 from app.services import users as user_service
 from app.services.trade_review.frontend_read import (
+    get_dashboard_account_summary_for_user,
     get_latest_portfolio_context_for_user,
     get_portfolio_context_for_user,
     get_review_readiness_for_user,
@@ -62,6 +64,13 @@ def get_user_readiness(user_id: UUID) -> ReviewReadinessRead:
     """Return a sanitized aggregate review-readiness summary for a user."""
 
     return get_review_readiness_for_user(user_id)
+
+
+@router.get("/{user_id}/dashboard-account-summary", response_model=DashboardAccountSummaryRead)
+def get_user_dashboard_account_summary(user_id: UUID) -> DashboardAccountSummaryRead:
+    """Return a sanitized Dashboard account-summary contract for a user."""
+
+    return get_dashboard_account_summary_for_user(user_id)
 
 
 @router.get("/{user_id}/portfolio-contexts", response_model=PortfolioContextListRead)

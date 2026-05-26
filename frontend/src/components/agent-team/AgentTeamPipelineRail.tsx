@@ -6,26 +6,31 @@ import type {
 } from "../../types/agentTeam";
 import { AGENT_TEAM_STAGE_ORDER } from "../../types/agentTeam";
 import { Panel, Pill, type MpTone } from "../shared/mp";
+import { MpIcon, type MpIconName } from "../shared/mp";
 
 /**
- * AgentTeamPipelineRail — Modern Portfolio Desk left rail (P20A-T1).
+ * AgentTeamPipelineRail — left rail with pipeline status (P20C-T5).
  *
- * Translated (not pasted) from the agent-team pipeline list in
- *   design/prototype/portfolio-copilot-modern-desk/Portfolio Copilot/screens/agent-console.tsx
+ * Prototype-aligned: circular step indicators with MpIcon status,
+ * role name and subtitle, and compact status/provider pills. Roles
+ * display in fixed pipeline order.
  *
- * Renders the five roles in fixed stage order with their `status`,
- * `provider_status`, and `is_mock` indicator. Each chip pairs an icon
- * glyph with text — never color-only. No streaming animation: the
- * backend response is single-shot.
+ * Each status indicator uses icon + text — never color alone.
  */
 
-const ROLE_DISPLAY: Record<AgentTeamRole, string> = {
-  fundamentals_analyst: "Fundamentals analyst",
-  news_analyst: "News analyst",
-  technical_analyst: "Technical analyst",
-  risk_management_agent: "Risk management agent",
-  portfolio_manager_agent: "Portfolio manager agent",
+const ROLE_DISPLAY: Record<AgentTeamRole, { name: string; sub: string }> = {
+  fundamentals_analyst: { name: "Fundamentals analyst", sub: "Earnings, valuation, margins" },
+  news_analyst: { name: "News analyst", sub: "Catalysts, sentiment, events" },
+  technical_analyst: { name: "Technical analyst", sub: "Trend, range, momentum" },
+  risk_management_agent: { name: "Risk management agent", sub: "Coverage, collateral, rules" },
+  portfolio_manager_agent: { name: "Portfolio manager", sub: "Synthesis, final stance" },
 };
+
+function statusIcon(status: AgentTeamRoleOutputRead["status"]): { icon: MpIconName; tone: MpTone } {
+  if (status === "completed") return { icon: "check", tone: "live" };
+  if (status === "unavailable") return { icon: "alert", tone: "stale" };
+  return { icon: "circle", tone: "mute" };
+}
 
 function statusToTone(status: AgentTeamRoleOutputRead["status"]): MpTone {
   if (status === "completed") return "live";
@@ -48,22 +53,43 @@ interface PipelineRailProps {
 export default function AgentTeamPipelineRail({ data }: PipelineRailProps) {
   const byRole = new Map(data?.role_outputs.map((o) => [o.role_name, o]) ?? []);
   return (
-    <Panel title="Agent team" tag="pipeline · fixed order">
+    <Panel title="Agent team" tag="pipeline">
       <ol style={styles.list}>
         {AGENT_TEAM_STAGE_ORDER.map((role, idx) => {
           const out = byRole.get(role);
-          const stageTone: MpTone = out ? statusToTone(out.status) : "mute";
+          const st = out ? statusIcon(out.status) : { icon: "circle" as MpIconName, tone: "mute" as MpTone };
           const statusLabel = out?.status ?? "pending";
+          const display = ROLE_DISPLAY[role];
+          const toneColor =
+            st.tone === "live" ? "var(--mp-live)" :
+            st.tone === "stale" ? "var(--mp-stale)" :
+            st.tone === "block" ? "var(--mp-block)" :
+            "var(--mp-mute)";
+
           return (
             <li key={role} style={styles.item}>
-              <span style={styles.index}>{String(idx + 1).padStart(2, "0")}</span>
+              {/* Step circle */}
+              <div style={{ ...styles.stepCircle, borderColor: toneColor, color: toneColor }}>
+                {out?.status === "completed" ? (
+                  <MpIcon name="check" size={11} />
+                ) : out?.status === "unavailable" ? (
+                  <MpIcon name="alert" size={11} />
+                ) : (
+                  <span style={styles.stepNum}>{idx + 1}</span>
+                )}
+              </div>
+
+              {/* Body */}
               <div style={styles.body}>
-                <span style={styles.roleName}>{ROLE_DISPLAY[role]}</span>
+                <span style={styles.roleName}>{display.name}</span>
+                <span style={styles.roleSub}>{display.sub}</span>
                 <div style={styles.chips}>
-                  <Pill tone={stageTone} title={`role status = ${statusLabel}`}>{statusLabel}</Pill>
+                  <Pill tone={out ? statusToTone(out.status) : "mute"} title={`role status = ${statusLabel}`}>
+                    {statusLabel}
+                  </Pill>
                   {out && (
                     <Pill tone={providerToTone(out.provider_status)} title={`provider_status = ${out.provider_status}`}>
-                      provider · {out.provider_status}
+                      {out.provider_status}
                     </Pill>
                   )}
                   {out?.is_mock && (
@@ -80,10 +106,58 @@ export default function AgentTeamPipelineRail({ data }: PipelineRailProps) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  list: { listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "var(--space-3)" },
-  item: { display: "grid", gridTemplateColumns: "auto 1fr", gap: "var(--space-3)", alignItems: "flex-start" },
-  index: { fontFamily: "var(--mp-font-mono)", fontSize: "var(--font-size-xs)", color: "var(--mp-mute-2)", paddingTop: 2, width: 22 },
-  body: { display: "flex", flexDirection: "column", gap: "var(--space-1)", minWidth: 0 },
-  roleName: { fontSize: "var(--font-size-sm)", color: "var(--mp-ink)", fontWeight: 500 },
-  chips: { display: "flex", gap: "var(--space-1)", flexWrap: "wrap" },
+  list: {
+    listStyle: "none",
+    margin: 0,
+    padding: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: "var(--space-3)",
+  },
+  item: {
+    display: "grid",
+    gridTemplateColumns: "24px 1fr",
+    gap: "var(--space-3)",
+    alignItems: "flex-start",
+  },
+  stepCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 999,
+    backgroundColor: "var(--mp-card-2)",
+    border: "1px solid currentColor",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    marginTop: 1,
+  },
+  stepNum: {
+    fontSize: 10,
+    fontFamily: "var(--mp-font-mono, monospace)",
+    fontWeight: 500,
+  },
+  body: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 1,
+    minWidth: 0,
+  },
+  roleName: {
+    fontSize: "var(--font-size-sm)",
+    color: "var(--mp-ink)",
+    fontWeight: 500,
+    lineHeight: 1.3,
+  },
+  roleSub: {
+    fontSize: "var(--font-size-xs)",
+    color: "var(--mp-mute)",
+    lineHeight: 1.3,
+  },
+  chips: {
+    display: "flex",
+    gap: "var(--space-1)",
+    flexWrap: "wrap",
+    marginTop: 2,
+  },
 };

@@ -44,7 +44,7 @@ def test_manual_provider_satisfies_market_and_option_protocols() -> None:
     assert isinstance(provider, OptionDataProvider)
     assert provider.get_capabilities().provider == "manual"
     assert provider.get_stock_quote("hood").symbol == "HOOD"
-    assert provider.get_underlying_quote("hood").freshness_scope == "market_quote"
+    assert provider.get_underlying_quote("hood").freshness_scope == "underlying_quote"
     assert provider.get_option_quote(contract).mark == Decimal("2.90")
     assert provider.get_option_quote_with_greeks(contract).delta == Decimal("0.30")
 
@@ -62,14 +62,28 @@ def test_manual_provider_builds_chain_from_explicit_option_quotes() -> None:
     assert len(chain.contracts) == 1
 
 
-def test_manual_provider_supports_delayed_stale_eod_and_unknown_modes() -> None:
+def test_manual_provider_supports_synthetic_delayed_indicative_stale_eod_unavailable_and_unknown_modes() -> None:
     now = datetime(2026, 5, 18, 15, 0, tzinfo=UTC)
+    synthetic = build_manual_stock_quote(
+        symbol="SYNTH",
+        received_at=now,
+        quote_time=now,
+        now=now,
+        data_mode="synthetic",
+    )
     delayed = build_manual_stock_quote(
         symbol="DELAY",
         received_at=now,
         quote_time=now - timedelta(minutes=5),
         now=now,
         data_mode="delayed",
+    )
+    indicative = build_manual_stock_quote(
+        symbol="INDICATIVE",
+        received_at=now,
+        quote_time=now,
+        now=now,
+        data_mode="indicative",
     )
     stale = build_manual_stock_quote(
         symbol="STALE",
@@ -93,20 +107,33 @@ def test_manual_provider_supports_delayed_stale_eod_and_unknown_modes() -> None:
         now=now,
         data_mode="unknown",
     )
+    unavailable = build_manual_stock_quote(
+        symbol="UNAVAILABLE",
+        received_at=now,
+        quote_time=None,
+        now=now,
+        data_mode="unavailable",
+    )
 
+    assert synthetic.freshness_status == "fresh"
+    assert synthetic.actionability_status == "analysis_only"
     assert delayed.freshness_status == "delayed"
     assert delayed.actionability_status == "analysis_only"
+    assert indicative.freshness_status == "fresh"
+    assert indicative.actionability_status == "analysis_only"
     assert stale.freshness_status == "stale"
     assert stale.actionability_status == "blocked_stale_quote"
     assert eod.freshness_status == "eod_only"
     assert unknown.freshness_status == "unknown"
+    assert unavailable.freshness_status == "unavailable"
+    assert unavailable.actionability_status == "blocked_unknown_quote"
 
 
 def test_manual_provider_builders_never_create_actionable_snapshots() -> None:
     now = datetime(2026, 5, 18, 15, 0, tzinfo=UTC)
     contract = _demo_contract()
 
-    for data_mode in ("manual", "delayed", "cached", "eod", "unknown"):
+    for data_mode in ("manual", "synthetic", "delayed", "indicative", "cached", "eod", "unavailable", "unknown"):
         stock_quote = build_manual_stock_quote(
             symbol=f"DEMO-{data_mode}",
             received_at=now,

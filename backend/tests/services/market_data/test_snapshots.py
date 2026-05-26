@@ -43,9 +43,11 @@ def test_stock_and_option_quote_references_capture_stable_snapshot_metadata() ->
 
     assert stock_reference.kind == "stock_quote"
     assert stock_reference.stable_key == "HOOD"
+    assert stock_reference.input_freshness_scope == "market_quote"
     assert option_reference.kind == "option_quote"
     assert option_reference.stable_key == "HOOD260618C00085000"
     assert option_reference.freshness_scope == "market_quote"
+    assert option_reference.input_freshness_scope == "option_quote"
 
 
 def test_chain_reference_uses_underlying_and_expiration_as_stable_key() -> None:
@@ -74,6 +76,8 @@ def test_chain_reference_uses_underlying_and_expiration_as_stable_key() -> None:
     assert reference.kind == "option_chain"
     assert reference.purpose == "current_chain_cache"
     assert reference.stable_key == "HOOD:2026-06-18"
+    assert reference.freshness_scope == "market_quote"
+    assert reference.input_freshness_scope == "option_chain"
 
 
 def test_report_market_inputs_must_reference_saved_report_snapshots() -> None:

@@ -1,3 +1,5 @@
+import MpIcon from "./MpIcon";
+
 /**
  * MP DemoChip — visible "demo · not yet connected" badge for placeholder
  * cards on screens that do not have a backing API contract yet.
@@ -28,7 +30,7 @@ export default function DemoChip({ tight = false }: { tight?: boolean }) {
         whiteSpace: "nowrap",
       }}
     >
-      <span aria-hidden="true">○</span>
+      <MpIcon name="circle" size={10} />
       demo · not yet connected
     </span>
   );

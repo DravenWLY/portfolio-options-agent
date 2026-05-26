@@ -11,7 +11,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
-from app.services.market_data.models import OptionChainSnapshot, OptionQuoteSnapshot, StockQuoteSnapshot
+from app.services.market_data.models import (
+    MARKET_FRESHNESS_SCOPE,
+    MarketDataFreshnessScope,
+    OptionChainSnapshot,
+    OptionQuoteSnapshot,
+    StockQuoteSnapshot,
+)
 
 SnapshotPurpose = Literal["current_chain_cache", "selected_candidate_snapshot", "report_input_snapshot"]
 SnapshotKind = Literal["stock_quote", "option_quote", "option_chain"]
@@ -32,6 +38,7 @@ class MarketDataSnapshotReference:
     data_mode: str
     freshness_status: str
     actionability_status: str
+    input_freshness_scope: MarketDataFreshnessScope = MARKET_FRESHNESS_SCOPE
 
 
 @dataclass(frozen=True)
@@ -57,10 +64,11 @@ def stock_quote_snapshot_reference(
         stable_key=quote.symbol,
         captured_at=quote.received_at,
         quote_time=quote.quote_time,
-        freshness_scope=quote.freshness_scope,
+        freshness_scope=MARKET_FRESHNESS_SCOPE,
         data_mode=quote.data_mode,
         freshness_status=quote.freshness_status,
         actionability_status=quote.actionability_status,
+        input_freshness_scope=quote.freshness_scope,
     )
 
 
@@ -78,10 +86,11 @@ def option_quote_snapshot_reference(
         stable_key=quote.contract.canonical_symbol,
         captured_at=quote.received_at,
         quote_time=quote.quote_time,
-        freshness_scope=quote.freshness_scope,
+        freshness_scope=MARKET_FRESHNESS_SCOPE,
         data_mode=quote.data_mode,
         freshness_status=quote.freshness_status,
         actionability_status=quote.actionability_status,
+        input_freshness_scope=quote.freshness_scope,
     )
 
 
@@ -100,10 +109,11 @@ def option_chain_snapshot_reference(
         stable_key=stable_key,
         captured_at=chain.received_at,
         quote_time=chain.quote_time,
-        freshness_scope=chain.freshness_scope,
+        freshness_scope=MARKET_FRESHNESS_SCOPE,
         data_mode=chain.data_mode,
         freshness_status=chain.freshness_status,
         actionability_status=chain.actionability_status,
+        input_freshness_scope=chain.freshness_scope,
     )
 
 

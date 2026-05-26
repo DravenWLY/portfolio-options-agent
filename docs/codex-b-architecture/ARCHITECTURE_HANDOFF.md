@@ -19,6 +19,9 @@ The app is layered around portfolio-aware trade review:
 13. Phase 19B Real LLM Provider Gate: backend-only, Google/Gemini-first candidate, mock-default provider resolver, prompt/output safety hardening, and safe rate-limit/quota fallback.
 14. Phase 19C Agent-Team Evidence and Prompt Foundation: agent-safe deterministic evidence projection, role-specific prompt inputs, scenario coverage, and stricter prompt-boundary privacy controls.
 15. Phase 20A Modern Portfolio Desk Frontend Integration: prototype-fidelity frontend shell/workspace direction using existing read-only backend contracts and clearly labeled placeholder surfaces.
+16. Phase 20B/P20C Modern Portfolio Desk contracts and wiring: demo-labeled backend read contracts for dashboard/portfolio-context surfaces plus reviewed Dashboard, Agent Console, and Settings layout integration.
+17. Phase 21A Realtime Agent Console contract draft: retained as a paused design reference after PM postponed further agentic/realtime expansion; no backend implementation or composer activation is authorized.
+18. Phase 22A Market Data Evaluation Foundation: approved offline, provider-neutral, synthetic/replay-first market-data contract and scenario-test work; provider selection is reopened and commercial integration is not yet authorized.
 
 ## Backend / Frontend Boundaries
 
@@ -56,9 +59,10 @@ Frontend must not:
 - Agent-safe projection is required before LLM/agent paths receive trade-review report data.
 - Portfolio Snapshot Actionability Policy is a backend-owned gate consumed by Phase 16 agent/orchestrator outputs. See `docs/codex-b-architecture/adr/0001-portfolio-snapshot-actionability-policy.md`.
 - Portfolio Copilot is TradingAgents-inspired, not TradingAgents-centered. See `docs/codex-b-architecture/adr/0002-tradingagents-inspired-portfolio-agent-team.md`.
-- Real market-data provider integration is deferred for local MVP; Tradier REST snapshots are the preferred first real provider candidate before external paid beta. See `docs/codex-b-architecture/adr/0003-market-data-timing-tradier-rest-snapshots.md`.
+- Real market-data provider integration is not required for local MVP. Phase 22A replaces the Tradier-first production assumption with provider-neutral synthetic/replay evaluation, an early free/delayed evaluation gate, and later written RFI/licensing review for commercial scale. Tradier is reference/prototyping-only unless later approved. REST snapshots remain preferred before any separately approved streaming work. See `docs/codex-b-architecture/adr/0003-market-data-timing-tradier-rest-snapshots.md`, `docs/codex-b-architecture/PHASE_22A_MARKET_DATA_EVALUATION_CONTRACT.md`, and `docs/codex-b-architecture/PHASE_22A_EARLY_EVALUATION_PROVIDER_ASSESSMENT.md`.
 - Real LLM provider support is a backend-only explicit gate with Google/Gemini as the first candidate and mock provider as default. See `docs/codex-b-architecture/adr/0005-real-llm-provider-gate-google-first.md`.
 - Live LLM/API smoke testing remains a separate future gate after Phase 19C. It must be backend-owned, explicit opt-in, synthetic-first, budget/rate-limit aware, and reviewed before any user-facing reliance.
+- Realtime Agent Console HTTP/SSE is a paused proposed option only, pending future PM reactivation after founder agentic-AI study. See proposed, paused `docs/codex-b-architecture/adr/0007-agent-console-http-commands-sse-streaming.md`.
 
 ## Missing ADRs
 
@@ -77,13 +81,36 @@ Recommended ADRs:
 - Covered-call/CSP coverage/collateral netting is not deeply modelled yet.
 - Broker activities/transactions are future layer only.
 
-## Current Phase 20B Sequence
+## Current Phase 20B / 20C / 21A / 22A Sequence
 
 Phases 16A, 16B, 17A, 18A, 18B, 18C, 19A, 19B, and 19C are complete and archived in `docs/shared/completed_phases_log.md`.
 
-The active delivery focus is **Phase 20B - Modern Portfolio Desk backend contracts**.
+The active delivery focus is:
+
+- **Phase 20B / 20C**: finish reviewed Modern Portfolio Desk data wiring and visual follow-through when Claude A is available.
+- **Phase 22A**: `P22A-T1` synthetic/replay contracts and `P22A-T3` early-provider assessment are complete; wait for Codex A to decide whether Alpaca Basic may become a bounded backend-only local/internal evaluation adapter.
+
+**Phase 21A is paused**: Codex B's mock-first realtime Agent Console draft is
+preserved for future discussion, but Codex C must not implement it and Claude A
+must not enable the disabled composer unless Codex A explicitly reactivates a
+scoped slice.
 
 Phase 20A prototype-fidelity frontend work is complete. Phase 20B should now provide the missing sanitized backend reads behind its `demo · not yet connected` placeholder surfaces, one reviewed contract at a time.
+
+Phase 22A is approved as a separate evaluation foundation:
+
+- no real provider calls, credentials, live display, streaming, frontend
+  changes, agent market-evidence ingestion, or TradingAgents work in the
+  initial slice;
+- preserve separate broker snapshot freshness, underlying quote freshness, and
+  listed-option quote/chain freshness;
+- require explicit data modes and IV/Greeks provenance;
+- treat Alpaca Basic as the recommended first candidate only for a separately
+  approved local/internal `limited_source`/`indicative`, analysis-only
+  evaluation adapter;
+- retain the RFI template in
+  `docs/codex-b-architecture/MARKET_DATA_PROVIDER_RFI.md` for later commercial
+  selection; do not contact providers or choose a production provider yet.
 
 Active frontend contract boundaries:
 
@@ -107,13 +134,23 @@ Phase 20B priorities:
 2. Keep every response display-ready, demo-labeled while synthetic, and recursively free of private brokerage/account/provider data.
 3. Preserve separate broker snapshot freshness, market quote freshness, and agent-provider readiness concepts.
 4. Let Claude A consume only reviewed endpoints and keep visible `demo · not yet connected` labels until data is truly persisted/real.
-5. Continue with the remaining backend-read contract candidates:
+5. Keep completed demo-safe contracts for recent reviews, risk alerts, readiness, portfolio context, and dashboard account summary stable while the remaining blocked contracts are decided:
 
-- persisted trade-review run list for Dashboard recent reviews;
-- aggregate risk-alert/readiness summaries;
-- standalone sanitized portfolio-context summary endpoint;
-- reports list/detail read contracts;
-- profile/display-name contract if the product wants personalized greeting/avatar surfaces.
+- reports list/detail read contracts require persistence ownership;
+- profile/display-name contracts require auth/session and product decisions.
+
+Phase 21A architecture draft:
+
+- The Agent Console's approved five-zone visual layout is not a realtime chat system; its composer remains disabled during the PM pause.
+- HTTP follow-up commands and SSE validated transcript progress are retained as an unapproved architecture option only.
+- Keep the stateless `POST /agent-team/trade-review-analysis/preview` route unchanged for regression tests and demo output.
+- Reuse existing safe projections and app-owned persistence primitives where semantics fit; do not store raw prompts, provider responses, traces, or private brokerage values.
+- No Phase 21A or Phase 19D/live-provider work begins without explicit PM reactivation and review.
+
+Phase 21A references:
+
+- `docs/codex-b-architecture/PHASE_21A_REALTIME_AGENT_CONSOLE_CONTRACT.md`
+- `docs/codex-b-architecture/adr/0007-agent-console-http-commands-sse-streaming.md`
 
 Phase 19D / live LLM smoke testing remains future only:
 
@@ -172,11 +209,11 @@ Recommended first backend slice:
 
 ## Recommended First Tasks for Codex B
 
-1. Continue Phase 20B with P20B-T4 portfolio context enumeration/detail contracts.
-2. Review P20B-T5 reports list/detail and P20B-T6 safe profile/display only after their backend contracts exist.
-3. Keep Claude A frontend wiring behind Codex B-reviewed contracts and visible demo labels for synthetic responses.
-4. Propose Phase 19D live LLM smoke testing only as a separate backend-owned, synthetic-only, explicit opt-in gate.
-5. Keep real market-data provider integration, deep TradingAgents execution, and frontend research-evidence UI deferred until separately reactivated.
+1. Ask Codex A whether to authorize a narrow Alpaca Basic local/internal evaluation adapter task after reviewing `P22A-T3`; do not assign Codex C an external provider adapter before that decision.
+2. Keep Phase 20B/P20C frontend wiring behind Codex B-reviewed contracts and visible demo labels for synthetic responses.
+3. Review P20B-T5 reports list/detail and P20B-T6 safe profile/display only after their persistence/auth decisions exist.
+4. Keep Phase 21A realtime agent expansion and Phase 19D live LLM smoke testing paused or separately gated.
+5. Retain vendor RFI comparison for later commercial selection; defer outreach while the early evaluation path is decided, and do not expose a live/current UI claim until separately approved.
 
 ## Engineering Framework Sections To Apply First
 

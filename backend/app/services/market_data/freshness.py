@@ -9,6 +9,7 @@ from app.services.market_data.models import (
     ActionabilityStatus,
     DataMode,
     FreshnessStatus,
+    MarketDataFreshnessScope,
 )
 
 
@@ -17,7 +18,7 @@ DEFAULT_MAX_QUOTE_AGE_SECONDS = 15 * 60
 
 @dataclass(frozen=True)
 class QuoteFreshnessDecision:
-    freshness_scope: str
+    freshness_scope: MarketDataFreshnessScope
     data_mode: DataMode
     freshness_status: FreshnessStatus
     actionability_status: ActionabilityStatus
@@ -50,6 +51,8 @@ def classify_quote_freshness(
         return "manual"
     if data_mode == "eod":
         return "eod_only"
+    if data_mode == "unavailable":
+        return "unavailable"
     if data_mode == "unknown":
         return "unknown"
 
@@ -80,7 +83,7 @@ def classify_quote_actionability(
         return "manual_review_required"
     if freshness_status == "stale":
         return "blocked_stale_quote"
-    if freshness_status == "unknown":
+    if freshness_status in {"unavailable", "unknown"}:
         return "blocked_unknown_quote"
     if freshness_status in {"manual", "eod_only", "delayed"}:
         return "analysis_only"
@@ -98,6 +101,7 @@ def evaluate_quote_freshness(
     max_age_seconds: int = DEFAULT_MAX_QUOTE_AGE_SECONDS,
     manual_review_required: bool = False,
     provider_error: bool = False,
+    freshness_scope: MarketDataFreshnessScope = MARKET_FRESHNESS_SCOPE,
 ) -> QuoteFreshnessDecision:
     evaluation_time = now or datetime.now(UTC)
     freshness_status = classify_quote_freshness(
@@ -118,7 +122,7 @@ def evaluate_quote_freshness(
     age_seconds = quote_age_seconds(reference_time, evaluation_time) if reference_time else None
 
     return QuoteFreshnessDecision(
-        freshness_scope=MARKET_FRESHNESS_SCOPE,
+        freshness_scope=freshness_scope,
         data_mode=data_mode,
         freshness_status=freshness_status,
         actionability_status=actionability_status,
@@ -142,6 +146,8 @@ def _decision_reason(
         return "market data provider error"
     if actionability_status == "blocked_stale_quote":
         return "market quote snapshot is stale"
+    if freshness_status == "unavailable":
+        return "market quote is unavailable"
     if actionability_status == "blocked_unknown_quote":
         return "market quote freshness is unknown"
     if actionability_status == "manual_review_required":

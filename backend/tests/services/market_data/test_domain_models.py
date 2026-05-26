@@ -23,7 +23,10 @@ pytestmark = [pytest.mark.unit]
 def test_market_data_vocabulary_contains_actionability_and_freshness_values() -> None:
     assert "live" in DATA_MODES
     assert "manual" in DATA_MODES
+    assert "synthetic" in DATA_MODES
+    assert "unavailable" in DATA_MODES
     assert "eod_only" in FRESHNESS_STATUSES
+    assert "unavailable" in FRESHNESS_STATUSES
     assert "blocked_stale_quote" in ACTIONABILITY_STATUSES
     assert "blocked_provider_error" in ACTIONABILITY_STATUSES
 
@@ -100,7 +103,7 @@ def test_stock_and_underlying_quote_snapshots_are_market_quote_scoped() -> None:
 
     assert stock_quote.symbol == "HOOD"
     assert stock_quote.freshness_scope == "market_quote"
-    assert underlying_quote.freshness_scope == "market_quote"
+    assert underlying_quote.freshness_scope == "underlying_quote"
 
 
 def test_option_quote_snapshot_keeps_contract_and_quote_freshness_separate() -> None:
@@ -136,7 +139,7 @@ def test_option_quote_snapshot_keeps_contract_and_quote_freshness_separate() -> 
     )
 
     assert quote.contract.canonical_symbol == "HOOD260618C00085000"
-    assert quote.freshness_scope == "market_quote"
+    assert quote.freshness_scope == "option_quote"
     assert quote.actionability_status == "manual_review_required"
 
 

@@ -10,6 +10,7 @@ from app.services.market_data.models import (
     DataMode,
     FreshnessStatus,
     GreeksSource,
+    ImpliedVolatilitySource,
     OptionType,
 )
 
@@ -95,7 +96,7 @@ class StockQuoteSnapshotRead(BaseModel):
 
 
 class UnderlyingQuoteSnapshotRead(StockQuoteSnapshotRead):
-    pass
+    freshness_scope: Literal["underlying_quote"] = "underlying_quote"
 
 
 class OptionQuoteSnapshotRead(BaseModel):
@@ -125,8 +126,9 @@ class OptionQuoteSnapshotRead(BaseModel):
     rho: Decimal | None
     underlying_price: Decimal | None
     underlying_quote_time: datetime | None
+    implied_volatility_source: ImpliedVolatilitySource
     greeks_source: GreeksSource
-    freshness_scope: Literal["market_quote"] = "market_quote"
+    freshness_scope: Literal["option_quote"] = "option_quote"
 
 
 class OptionChainSnapshotRead(BaseModel):
@@ -142,4 +144,4 @@ class OptionChainSnapshotRead(BaseModel):
     actionability_status: ActionabilityStatus
     contracts: tuple[OptionQuoteSnapshotRead, ...]
     underlying_quote: UnderlyingQuoteSnapshotRead | None
-    freshness_scope: Literal["market_quote"] = "market_quote"
+    freshness_scope: Literal["option_chain"] = "option_chain"

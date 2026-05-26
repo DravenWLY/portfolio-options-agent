@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Badge, DemoChip, Pill, SafetyStrip } from "../components/shared/mp";
+import { Badge, DemoChip, MpIcon, Pill, SafetyStrip } from "../components/shared/mp";
 import { SectionH, MarketingFooter } from "../components/marketing";
 
 /**
@@ -184,7 +184,7 @@ export default function LandingPage() {
           />
           <div style={styles.safetyGrid}>
             <div style={styles.safetyCard}>
-              <div style={{ ...styles.safetyHead, color: "var(--mp-live)" }}>● Is</div>
+              <div style={{ ...styles.safetyHead, color: "var(--mp-live)" }}><MpIcon name="check" size={12} style={{ verticalAlign: "middle", marginRight: 4 }} /> Is</div>
               {SAFETY_IS.map(([h, b]) => (
                 <div key={h} style={styles.safetyItem}>
                   <h4 style={styles.safetyItemTitle}>{h}</h4>
@@ -196,7 +196,7 @@ export default function LandingPage() {
               </div>
             </div>
             <div style={styles.safetyCard}>
-              <div style={{ ...styles.safetyHead, color: "var(--mp-block)" }}>✕ Is not</div>
+              <div style={{ ...styles.safetyHead, color: "var(--mp-block)" }}><MpIcon name="x" size={12} style={{ verticalAlign: "middle", marginRight: 4 }} /> Is not</div>
               {SAFETY_ISNT.map(([h, b]) => (
                 <div key={h} style={styles.safetyItem}>
                   <h4 style={styles.safetyItemTitle}>{h}</h4>
@@ -377,15 +377,15 @@ const HOW_STEPS: Array<{ n: string; t: string; b: string }> = [
   },
 ];
 
-const FEATURES: Array<{ icon: string; t: string; b: string }> = [
-  { icon: "⊛", t: "Read-only broker sync",   b: "Pull positions, cash, and options via SnapTrade's read-only OAuth. Portfolio Copilot never sees your broker credentials." },
-  { icon: "◇", t: "Deterministic impact",    b: "Cash + collateral, concentration delta, allocation drift, and options exposure are all computed in Python services, not the LLM." },
-  { icon: "◷", t: "Two-scope freshness",     b: "Broker snapshot freshness and market quote freshness are tracked separately and surfaced where they matter." },
-  { icon: "△", t: "Risk-rule violations",    b: "Position-size, concentration, assignment burden, and other deterministic rule families. Severity is paired with icon + text — never color-only." },
-  { icon: "◫", t: "Role-separated agents",   b: "Five agents debate the proposal in fixed order; their commentary sits next to — never replaces — the deterministic facts." },
-  { icon: "◰", t: "Stale-data guardrails",   b: "If the broker snapshot or market quotes are stale, the workspace switches to analysis-only and flags it without alarm." },
-  { icon: "⊙", t: "CSV fallback",            b: "No broker, no problem — upload a positions CSV. Reviews still run, with the extra freshness caveats clearly displayed." },
-  { icon: "✦", t: "Reproducible reports",    b: "Every review gets a stable reference, a calculation version, and a saved snapshot of inputs, evidence, and verdict." },
+const FEATURES: Array<{ icon: React.ReactNode; t: string; b: string }> = [
+  { icon: <MpIcon name="lock" size={14} />,      t: "Read-only broker sync",   b: "Pull positions, cash, and options via SnapTrade's read-only OAuth. Portfolio Copilot never sees your broker credentials." },
+  { icon: <MpIcon name="spark" size={14} />,      t: "Deterministic impact",    b: "Cash + collateral, concentration delta, allocation drift, and options exposure are all computed in Python services, not the LLM." },
+  { icon: <MpIcon name="clock" size={14} />,      t: "Two-scope freshness",     b: "Broker snapshot freshness and market quote freshness are tracked separately and surfaced where they matter." },
+  { icon: <MpIcon name="alert" size={14} />,      t: "Risk-rule violations",    b: "Position-size, concentration, assignment burden, and other deterministic rule families. Severity is paired with icon + text — never color-only." },
+  { icon: <MpIcon name="agent" size={14} />,      t: "Role-separated agents",   b: "Five agents debate the proposal in fixed order; their commentary sits next to — never replaces — the deterministic facts." },
+  { icon: <MpIcon name="shield" size={14} />,     t: "Stale-data guardrails",   b: "If the broker snapshot or market quotes are stale, the workspace switches to analysis-only and flags it without alarm." },
+  { icon: <MpIcon name="portfolio" size={14} />,  t: "CSV fallback",            b: "No broker, no problem — upload a positions CSV. Reviews still run, with the extra freshness caveats clearly displayed." },
+  { icon: <MpIcon name="reports" size={14} />,    t: "Reproducible reports",    b: "Every review gets a stable reference, a calculation version, and a saved snapshot of inputs, evidence, and verdict." },
 ];
 
 const FLOWS: Array<{ t: string; tag: string; checks: string[] }> = [

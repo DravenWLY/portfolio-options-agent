@@ -4,8 +4,8 @@ from decimal import Decimal
 from typing import Literal
 
 
-DataMode = Literal["live", "delayed", "indicative", "cached", "eod", "manual", "unknown"]
-FreshnessStatus = Literal["fresh", "delayed", "stale", "eod_only", "manual", "unknown", "error"]
+DataMode = Literal["live", "delayed", "indicative", "cached", "eod", "manual", "synthetic", "unavailable", "unknown"]
+FreshnessStatus = Literal["fresh", "delayed", "stale", "eod_only", "manual", "unavailable", "unknown", "error"]
 ActionabilityStatus = Literal[
     "actionable_snapshot",
     "analysis_only",
@@ -16,10 +16,13 @@ ActionabilityStatus = Literal[
 ]
 ContractSupportStatus = Literal["supported", "manual_review_required", "unsupported"]
 OptionType = Literal["call", "put"]
-GreeksSource = Literal["provider", "calculated", "manual", "missing"]
+MarketMetricSource = Literal["provider", "calculated", "manual", "synthetic", "replay", "unavailable", "missing"]
+GreeksSource = MarketMetricSource
+ImpliedVolatilitySource = MarketMetricSource
+MarketDataFreshnessScope = Literal["market_quote", "underlying_quote", "option_quote", "option_chain"]
 
-DATA_MODES: tuple[str, ...] = ("live", "delayed", "indicative", "cached", "eod", "manual", "unknown")
-FRESHNESS_STATUSES: tuple[str, ...] = ("fresh", "delayed", "stale", "eod_only", "manual", "unknown", "error")
+DATA_MODES: tuple[str, ...] = ("live", "delayed", "indicative", "cached", "eod", "manual", "synthetic", "unavailable", "unknown")
+FRESHNESS_STATUSES: tuple[str, ...] = ("fresh", "delayed", "stale", "eod_only", "manual", "unavailable", "unknown", "error")
 ACTIONABILITY_STATUSES: tuple[str, ...] = (
     "actionable_snapshot",
     "analysis_only",
@@ -30,9 +33,14 @@ ACTIONABILITY_STATUSES: tuple[str, ...] = (
 )
 CONTRACT_SUPPORT_STATUSES: tuple[str, ...] = ("supported", "manual_review_required", "unsupported")
 OPTION_TYPES: tuple[str, ...] = ("call", "put")
-GREEKS_SOURCES: tuple[str, ...] = ("provider", "calculated", "manual", "missing")
+MARKET_METRIC_SOURCES: tuple[str, ...] = ("provider", "calculated", "manual", "synthetic", "replay", "unavailable", "missing")
+GREEKS_SOURCES: tuple[str, ...] = MARKET_METRIC_SOURCES
+IMPLIED_VOLATILITY_SOURCES: tuple[str, ...] = MARKET_METRIC_SOURCES
 
 MARKET_FRESHNESS_SCOPE = "market_quote"
+UNDERLYING_QUOTE_FRESHNESS_SCOPE = "underlying_quote"
+OPTION_QUOTE_FRESHNESS_SCOPE = "option_quote"
+OPTION_CHAIN_FRESHNESS_SCOPE = "option_chain"
 
 
 def _validate_choice(value: str, allowed: tuple[str, ...], field_name: str) -> None:
@@ -194,6 +202,8 @@ class StockQuoteSnapshot:
 class UnderlyingQuoteSnapshot(StockQuoteSnapshot):
     """Underlying quote used by option quotes and Greeks calculations."""
 
+    freshness_scope: Literal["underlying_quote"] = UNDERLYING_QUOTE_FRESHNESS_SCOPE
+
 
 @dataclass(frozen=True)
 class OptionQuoteSnapshot:
@@ -219,8 +229,9 @@ class OptionQuoteSnapshot:
     rho: Decimal | None = None
     underlying_price: Decimal | None = None
     underlying_quote_time: datetime | None = None
+    implied_volatility_source: ImpliedVolatilitySource = "missing"
     greeks_source: GreeksSource = "missing"
-    freshness_scope: Literal["market_quote"] = MARKET_FRESHNESS_SCOPE
+    freshness_scope: Literal["option_quote"] = OPTION_QUOTE_FRESHNESS_SCOPE
 
     def __post_init__(self) -> None:
         if not self.provider.strip():
@@ -228,6 +239,7 @@ class OptionQuoteSnapshot:
         _validate_choice(self.data_mode, DATA_MODES, "data_mode")
         _validate_choice(self.freshness_status, FRESHNESS_STATUSES, "freshness_status")
         _validate_choice(self.actionability_status, ACTIONABILITY_STATUSES, "actionability_status")
+        _validate_choice(self.implied_volatility_source, IMPLIED_VOLATILITY_SOURCES, "implied_volatility_source")
         _validate_choice(self.greeks_source, GREEKS_SOURCES, "greeks_source")
         for field_name in ("bid", "ask", "last", "mark", "implied_volatility", "gamma", "underlying_price"):
             _validate_non_negative(getattr(self, field_name), field_name)
@@ -249,7 +261,7 @@ class OptionChainSnapshot:
     actionability_status: ActionabilityStatus
     contracts: tuple[OptionQuoteSnapshot, ...] = field(default_factory=tuple)
     underlying_quote: UnderlyingQuoteSnapshot | None = None
-    freshness_scope: Literal["market_quote"] = MARKET_FRESHNESS_SCOPE
+    freshness_scope: Literal["option_chain"] = OPTION_CHAIN_FRESHNESS_SCOPE
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "underlying_symbol", _normalize_symbol(self.underlying_symbol))

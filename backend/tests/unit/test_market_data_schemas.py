@@ -11,6 +11,7 @@ from app.schemas.market_data import (
     ProviderCapabilitiesRead,
     QuoteFreshnessRead,
     StockQuoteSnapshotRead,
+    UnderlyingQuoteSnapshotRead,
 )
 from app.services.market_data import (
     OptionChainSnapshot,
@@ -18,6 +19,7 @@ from app.services.market_data import (
     OptionQuoteSnapshot,
     ProviderCapabilities,
     StockQuoteSnapshot,
+    UnderlyingQuoteSnapshot,
     evaluate_quote_freshness,
 )
 
@@ -133,6 +135,7 @@ def test_market_data_schema_field_sets_are_exact() -> None:
         "rho",
         "underlying_price",
         "underlying_quote_time",
+        "implied_volatility_source",
         "greeks_source",
         "freshness_scope",
     }
@@ -157,6 +160,7 @@ def test_market_data_schemas_do_not_contain_broker_or_cash_fields() -> None:
         ProviderCapabilitiesRead,
         MarketDataProviderStatusRead,
         StockQuoteSnapshotRead,
+        UnderlyingQuoteSnapshotRead,
         OptionContractIdentityRead,
         OptionQuoteSnapshotRead,
         OptionChainSnapshotRead,
@@ -201,10 +205,10 @@ def test_market_data_schemas_validate_domain_objects() -> None:
     quote_read = OptionQuoteSnapshotRead.model_validate(option_quote)
     chain_read = OptionChainSnapshotRead.model_validate(chain)
 
-    assert quote_read.freshness_scope == "market_quote"
+    assert quote_read.freshness_scope == "option_quote"
     assert quote_read.contract.canonical_symbol == "HOOD260618C00085000"
     assert len(chain_read.contracts) == 1
-    assert chain_read.freshness_scope == "market_quote"
+    assert chain_read.freshness_scope == "option_chain"
 
 
 def test_provider_status_schema_keeps_market_quote_scope() -> None:
@@ -248,3 +252,22 @@ def test_stock_quote_schema_serializes_market_quote_snapshot() -> None:
 
     assert payload["symbol"] == "VOO"
     assert payload["freshness_scope"] == "market_quote"
+
+
+def test_underlying_quote_schema_keeps_underlying_freshness_scope_distinct() -> None:
+    now = datetime(2026, 5, 18, 15, 0, tzinfo=UTC)
+    quote = UnderlyingQuoteSnapshot(
+        symbol="VOO",
+        provider="manual",
+        quote_time=now,
+        received_at=now,
+        data_mode="synthetic",
+        freshness_status="fresh",
+        actionability_status="analysis_only",
+        last=Decimal("500.00"),
+    )
+
+    payload = UnderlyingQuoteSnapshotRead.model_validate(quote).model_dump()
+
+    assert payload["freshness_scope"] == "underlying_quote"
+    assert payload["data_mode"] == "synthetic"

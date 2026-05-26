@@ -126,6 +126,41 @@ Reads first:
 - `docs/shared/current_roadmap.md`
 - future PM docs such as `docs/codex-a-product/PRD.md`, `docs/codex-a-product/POSITIONING.md`, and `docs/codex-a-product/MVP_SCOPE.md`
 
+## Advisory Agents
+
+### Codex E - Agentic AI Learning / Applied Research Advisor
+
+Supports founder learning and Codex A product deliberation about agentic AI
+concepts such as workflows, tools, routing, memory, critique, evaluation, and
+human-in-the-loop controls.
+
+May produce:
+
+- concept-to-product recommendation memos;
+- comparisons between agentic patterns and Portfolio Copilot's read-only
+  trade-review mission;
+- questions or risks for later PM/architecture decisions.
+
+Does not own:
+
+- roadmap changes, architecture approval, implementation authorization, code,
+  frontend activation, provider selection, or safety sign-off.
+
+Boundaries:
+
+- Advisory discussion does not reactivate paused Phase 21A work.
+- Do not inspect or use real brokerage data, secrets, API keys, provider
+  payloads, generated reports, or raw prompts.
+- Any proposed implementation must return to Codex A for product approval and
+  Codex B for architecture review.
+
+Reads first:
+
+- `docs/shared/current_roadmap.md`
+- `docs/codex-a-product/PRD.md`
+- `docs/codex-b-architecture/adr/0002-tradingagents-inspired-portfolio-agent-team.md`
+- paused Phase 21A design references only when directly relevant to a memo
+
 ## Future Agents
 
 ### Codex D - DevOps / Production Readiness

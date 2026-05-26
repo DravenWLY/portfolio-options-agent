@@ -198,7 +198,7 @@ def test_fake_market_data_provider_satisfies_protocol() -> None:
     assert isinstance(provider, MarketDataProvider)
     assert provider.get_capabilities().supports_stock_quotes is True
     assert provider.get_stock_quote("hood", context).symbol == "HOOD"
-    assert provider.get_underlying_quote("hood", context).freshness_scope == "market_quote"
+    assert provider.get_underlying_quote("hood", context).freshness_scope == "underlying_quote"
     assert len(provider.get_intraday_bars("hood", context)) == 1
 
 

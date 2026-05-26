@@ -71,15 +71,14 @@ export default function TradeReviewPage() {
         }
       />
 
-      <div style={styles.grid}>
-        <aside style={styles.formRail}>
+      <div className="mp-trade-review-grid" style={styles.grid}>
+        <aside className="mp-trade-review-form-rail" style={styles.formRail}>
           <TradeReviewForm onSubmit={handleSubmit} busy={status === "loading"} />
         </aside>
 
         <section style={styles.resultsCol}>
           {status === "idle" && (
             <EmptyState
-              icon="○"
               title="No analysis generated yet"
               body="Fill in the trade intent and portfolio context, then click Generate analysis."
             />
@@ -89,7 +88,7 @@ export default function TradeReviewPage() {
             <ErrorState message={error ?? "Preview request failed."} onRetry={() => setStatus("idle")} />
           )}
           {status === "empty" && (
-            <EmptyState icon="○" title="No content returned" body="The preview returned an empty payload. Adjust inputs and try again." />
+            <EmptyState title="No content returned" body="The preview returned an empty payload. Adjust inputs and try again." />
           )}
           {status === "success" && data && <TradeReviewResults data={data} />}
         </section>
@@ -109,11 +108,9 @@ export default function TradeReviewPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { display: "flex", flexDirection: "column", gap: "var(--space-6)", maxWidth: 1280, margin: "0 auto", color: "var(--mp-ink)" },
-  grid: { display: "grid", gridTemplateColumns: "320px 1fr", gap: "var(--space-6)", minWidth: 0 },
+  grid: { display: "grid", gap: "var(--space-6)", minWidth: 0 },
   formRail: {
-    position: "sticky", top: "var(--space-4)", alignSelf: "flex-start",
-    maxHeight: "calc(100vh - var(--topbar-height) - var(--space-8))",
-    overflowY: "auto", paddingRight: 2, minWidth: 0,
+    alignSelf: "flex-start", paddingRight: 2, minWidth: 0,
   },
   resultsCol: { display: "flex", flexDirection: "column", gap: "var(--space-4)", minWidth: 0 },
 };

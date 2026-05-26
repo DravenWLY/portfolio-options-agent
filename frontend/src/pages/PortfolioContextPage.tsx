@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Badge, DemoChip, KV, PageHeader, Panel, Pill, SafetyStrip } from "../components/shared/mp";
+import { Badge, DemoChip, KV, MpIcon, PageHeader, Panel, Pill, SafetyStrip } from "../components/shared/mp";
 import { LoadingSkeleton, ErrorState, EmptyState } from "../components/shared/StateViews";
 import { useAccountContext } from "../context/useAccountContext";
 import { portfolioContextApi } from "../api/portfolioContext";
@@ -114,7 +114,6 @@ export default function PortfolioContextPage() {
       {/* ── No user selected ───────────────────────────────────────────── */}
       {!userId && (
         <EmptyState
-          icon="○"
           title="No user selected"
           body="Select a user from the developer account selector to load portfolio context."
         />
@@ -137,7 +136,6 @@ export default function PortfolioContextPage() {
       {userId && listStatus === "empty" && (
         <Panel title="Portfolio contexts" right={isDemoMode ? <DemoChip /> : undefined}>
           <EmptyState
-            icon="○"
             title="No portfolio contexts available"
             body="No portfolio context references have been created yet."
           />
@@ -299,7 +297,7 @@ function ContextDetailView({ detail }: { detail: PortfolioContextDetailRead }) {
       ) : (
         <Panel title="Market quote freshness" tag="unavailable">
           <div style={styles.unavailableWrap}>
-            <span style={styles.unavailableIcon} aria-hidden="true">■</span>
+            <MpIcon name="alert" size={16} style={{ color: "var(--mp-block)", flexShrink: 0, marginTop: 2 }} />
             <div>
               <p style={styles.unavailableTitle}>Market data unavailable</p>
               <p style={styles.unavailableBody}>
@@ -460,7 +458,6 @@ const styles: Record<string, React.CSSProperties> = {
   flowsLabel: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 },
   flowsWrap: { display: "flex", gap: "var(--space-1)", flexWrap: "wrap" },
   unavailableWrap: { display: "flex", gap: "var(--space-3)", alignItems: "flex-start" },
-  unavailableIcon: { color: "var(--mp-block)", fontSize: 16, flexShrink: 0, marginTop: 2 },
   unavailableTitle: { fontSize: "var(--font-size-sm)", fontWeight: 600, color: "var(--mp-block)", margin: 0, marginBottom: 4 },
   unavailableBody: { fontSize: "var(--font-size-sm)", color: "var(--mp-ink-2)", lineHeight: 1.6, margin: 0 },
 };

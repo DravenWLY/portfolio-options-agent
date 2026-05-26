@@ -4,6 +4,7 @@
  * All data-driven panels must use these rather than rendering null or a blank
  * div — a blank render is indistinguishable from a bug.
  */
+import { MpIcon } from "./mp";
 
 /* ── Loading skeleton ───────────────────────────────────────────────────── */
 
@@ -41,7 +42,7 @@ export function ErrorState({
 }) {
   return (
     <div style={errorWrap} role="alert">
-      <span style={errorIcon} aria-hidden="true">⚠</span>
+      <span style={errorIcon} aria-hidden="true"><MpIcon name="alert" size={18} /></span>
       <div>
         <p style={errorTitle}>Failed to load data</p>
         <p style={errorMessage}>{message}</p>
@@ -94,7 +95,7 @@ const retryBtn: React.CSSProperties = {
 
 /* ── Empty state ────────────────────────────────────────────────────────── */
 
-export function EmptyState({ icon = "○", title, body }: { icon?: string; title: string; body?: string }) {
+export function EmptyState({ icon = <MpIcon name="circle" size={28} />, title, body }: { icon?: React.ReactNode; title: string; body?: string }) {
   return (
     <div style={emptyWrap} role="status" aria-live="polite">
       <span style={emptyIcon} aria-hidden="true">{icon}</span>

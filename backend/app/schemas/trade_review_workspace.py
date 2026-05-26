@@ -43,6 +43,7 @@ ReviewReadinessMode: TypeAlias = Literal["normal_review", "analysis_only", "manu
 ReadinessSnapshotStatus: TypeAlias = Literal["fresh", "manual_review", "stale", "unknown", "unavailable"]
 AgentProviderMode: TypeAlias = Literal["mock", "live", "unavailable"]
 ReadinessAgentProviderStatus: TypeAlias = Literal["available", "unavailable", "error", "mock_default"]
+DashboardDisplaySectionKind: TypeAlias = Literal["summary", "freshness", "shape", "caveats"]
 
 _OPAQUE_CONTEXT_REFERENCE_RE = re.compile(r"^ctx_[a-z0-9][a-z0-9_-]{5,79}$")
 _FORBIDDEN_CONTEXT_REFERENCE_TOKENS = (
@@ -451,6 +452,41 @@ class PortfolioContextDetailRead(BaseModel):
 
     @model_validator(mode="after")
     def context_detail_payload_must_be_safe(self) -> "PortfolioContextDetailRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class DashboardSummaryDisplaySectionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    section_key: DashboardDisplaySectionKind
+    title: str
+    display_label: str
+
+
+class DashboardAccountSummaryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    data_mode: Phase20BDataMode
+    demo_notice: str | None = None
+    generated_at: datetime
+    summary_reference: str = Field(pattern=r"^das_[a-z0-9][a-z0-9_-]{5,79}$")
+    source_label: str
+    broker_snapshot_freshness: PortfolioContextFreshnessRead
+    market_quote_freshness: PortfolioContextFreshnessRead | None = None
+    market_data_unavailable: bool
+    portfolio_shape: PortfolioContextShapeRead
+    cash_state: PortfolioCashState
+    cash_state_label: str
+    total_value_label: str | None = None
+    cash_label: str | None = None
+    stock_exposure_label: str | None = None
+    option_exposure_label: str | None = None
+    caveat_codes: tuple[str, ...]
+    display_sections: tuple[DashboardSummaryDisplaySectionRead, ...]
+
+    @model_validator(mode="after")
+    def dashboard_summary_payload_must_be_safe(self) -> "DashboardAccountSummaryRead":
         validate_trade_review_workspace_payload(self.model_dump(mode="python"))
         return self
 

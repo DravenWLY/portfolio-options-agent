@@ -1,5 +1,5 @@
 /**
- * TypeScript mirror of backend P20B dashboard-related read schemas.
+ * TypeScript mirror of backend P20B/P20D dashboard-related read schemas.
  *
  * Mirrors:
  *   backend/app/schemas/trade_review_workspace.py
@@ -8,6 +8,11 @@
  *     BrokerSnapshotReadinessRead, MarketQuoteReadinessRead,
  *     AgentProviderReadinessRead, ReviewReadinessRead
  *     DashboardSummaryDisplaySectionRead, DashboardAccountSummaryRead
+ *
+ * P20D-T1 added explicit display_scope, valuation_basis, market_data_mode,
+ * privacy_display_mode, and additional display-label-only fields for
+ * stock_etf_exposure, options_exposure, collateral_usage, portfolio_shape,
+ * and position_count.
  *
  * Strictly mirror the backend. The frontend never invents fields and never
  * performs financial calculations.
@@ -67,6 +72,38 @@ export type DashboardDisplaySectionKind =
   | "freshness"
   | "shape"
   | "caveats";
+
+export type DashboardAccountSummaryDataMode =
+  | "synthetic_demo"
+  | "private_real_source"
+  | "unavailable";
+
+export type DashboardAccountDisplayScope =
+  | "selected_context"
+  | "selected_account"
+  | "combined_portfolio"
+  | "manual_csv"
+  | "synthetic_demo"
+  | "unavailable";
+
+export type DashboardValuationBasis =
+  | "market_value"
+  | "book_value"
+  | "mixed"
+  | "indicative"
+  | "delayed"
+  | "unavailable";
+
+export type DashboardMarketDataMode =
+  | "synthetic"
+  | "indicative"
+  | "delayed"
+  | "unavailable"
+  | "live";
+
+export type DashboardPrivacyDisplayMode =
+  | "amounts_visible"
+  | "amounts_hidden";
 
 /* ── Trade review list ─────────────────────────────────────────────────── */
 
@@ -160,20 +197,31 @@ export interface DashboardSummaryDisplaySectionRead {
 }
 
 export interface DashboardAccountSummaryRead {
-  data_mode: Phase20BDataMode;
+  data_mode: DashboardAccountSummaryDataMode;
   demo_notice: string | null;
   generated_at: string;
   summary_reference: string;
+  display_scope: DashboardAccountDisplayScope;
   source_label: string;
+  valuation_basis: DashboardValuationBasis;
   broker_snapshot_freshness: PortfolioContextFreshnessRead;
   market_quote_freshness: PortfolioContextFreshnessRead | null;
+  market_data_mode: DashboardMarketDataMode;
+  privacy_display_mode: DashboardPrivacyDisplayMode;
   market_data_unavailable: boolean;
   portfolio_shape: PortfolioContextShapeRead;
   cash_state: PortfolioCashState;
   cash_state_label: string;
   total_value_label: string | null;
   cash_label: string | null;
+  stock_etf_exposure_label: string | null;
+  options_exposure_label: string | null;
+  collateral_usage_label: string | null;
+  portfolio_shape_label: string;
+  position_count_label: string;
+  /** @deprecated Compatibility alias for stock_etf_exposure_label */
   stock_exposure_label: string | null;
+  /** @deprecated Compatibility alias for options_exposure_label */
   option_exposure_label: string | null;
   caveat_codes: string[];
   display_sections: DashboardSummaryDisplaySectionRead[];

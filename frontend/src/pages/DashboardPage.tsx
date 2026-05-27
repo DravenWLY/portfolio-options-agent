@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Badge, DemoChip, KV, PageHeader, Panel, Pill, SafetyStrip, type MpTone } from "../components/shared/mp";
+import { Badge, DemoChip, FreshnessDial, KV, MpIcon, PageHeader, Panel, Pill, SafetyStrip, Stat, type MpTone } from "../components/shared/mp";
 import { LoadingSkeleton, ErrorState, EmptyState } from "../components/shared/StateViews";
 import { useAccountContext } from "../context/useAccountContext";
 import { dashboardApi } from "../api/dashboard";
@@ -18,14 +18,18 @@ import type { PortfolioContextListRead, PortfolioContextRead } from "../types/po
 import { DEMO_QUICK_REVIEWS } from "../components/demo/modernDeskDemoData";
 
 /**
- * DashboardPage — Modern Portfolio Desk overview (P20C-T1).
+ * DashboardPage — compact review-readiness cockpit (P20D-T2).
  *
- * Backend-backed via reviewed P20B contracts:
+ * Backend-backed via reviewed P20B / P20D contracts:
  *   GET /api/users/{uid}/trade-reviews
  *   GET /api/users/{uid}/risk-alerts
  *   GET /api/users/{uid}/readiness
- *   GET /api/users/{uid}/dashboard-account-summary
+ *   GET /api/users/{uid}/dashboard-account-summary  (P20D-T1 refined)
  *   GET /api/users/{uid}/portfolio-contexts
+ *
+ * First-viewport hierarchy: review action, readiness strip, account summary,
+ * portfolio context freshness. Synthetic demo activity panels are collapsed
+ * to avoid presenting fake history or fake urgency.
  *
  * Safety:
  *   - Read-only. No order ticket / execute / cancel / buy / sell.
@@ -58,7 +62,6 @@ export default function DashboardPage() {
   const nav = useNavigate();
   const { selectedUser } = useAccountContext();
   const userId = selectedUser?.id ?? null;
-  const displayName = selectedUser?.display_name ?? "Trader";
 
   const [state, setState] = useState<DashboardState>({
     reviews: INIT_SLOT,
@@ -125,8 +128,8 @@ export default function DashboardPage() {
     <div className="mp-surface" style={styles.page}>
       <PageHeader
         eyebrow="Workspace · overview"
-        title={`Good morning, ${displayName}.`}
-        sub="Your readiness snapshot. Numbers shown on this page come from backend demo contracts — real market prices are not connected; broker values arrive from broker sync when a real account is bound. Manual decision support only."
+        title="Dashboard"
+        sub="Review readiness, account summary, and portfolio context. Manual decision support only."
         right={
           <button style={styles.primaryBtn} type="button" onClick={() => nav("/trade-review")}>
             New trade review →
@@ -140,34 +143,34 @@ export default function DashboardPage() {
       {/* ── Main body ────────────────────────────────────────────────── */}
       <section style={styles.body}>
         <div style={styles.colLeft}>
-          {/* Recent trade reviews */}
-          <RecentReviewsPanel slot={state.reviews} onRetry={loadAll} />
-
-          {/* Risk alerts */}
-          <RiskAlertsPanel slot={state.alerts} onRetry={loadAll} />
-        </div>
-
-        <div style={styles.colRight}>
-          {/* Account summary — moved from readiness strip for legibility */}
+          {/* Account summary — primary: reviewed P20D-T1 contract */}
           <AccountSummaryPanel slot={state.summary} onRetry={loadAll} />
 
           {/* Portfolio context summary */}
           <PortfolioContextSummaryPanel slot={state.contexts} onRetry={loadAll} />
+        </div>
 
+        <div style={styles.colRight}>
           {/* Quick reviews — static presets, not backend-driven */}
           <Panel title="Quick reviews" tag="presets" right={<DemoChip />}>
             <div style={styles.quickGrid}>
               {DEMO_QUICK_REVIEWS.map((q) => (
                 <button key={q.flow} type="button" onClick={() => nav("/trade-review")} style={styles.quickBtn}>
-                  <span style={styles.quickLabel}>{q.label}</span>
-                  <span style={styles.quickSub}>{q.sub}</span>
+                  <MpIcon name={quickReviewIcon(q.flow)} size={15} style={{ color: "var(--mp-accent)", marginTop: 1 }} />
+                  <span style={styles.quickContent}>
+                    <span style={styles.quickLabel}>{q.label}</span>
+                    <span style={styles.quickSub}>{q.sub}</span>
+                  </span>
                 </button>
               ))}
             </div>
           </Panel>
 
-          {/* What's running — from readiness */}
-          <WhatsRunningPanel slot={state.readiness} onRetry={loadAll} />
+          {/* Recent trade reviews — collapsed when synthetic demo */}
+          <RecentReviewsPanel slot={state.reviews} onRetry={loadAll} />
+
+          {/* Risk alerts — collapsed when synthetic demo */}
+          <RiskAlertsPanel slot={state.alerts} onRetry={loadAll} />
         </div>
       </section>
 
@@ -198,16 +201,13 @@ function ReadinessStrip({
 
   return (
     <section style={styles.readinessGrid}>
-      {/* Broker snapshot — wider primary card */}
+      {/* Broker snapshot */}
       <ReadinessTile
         title="Broker snapshot"
         subtitle={r.broker_snapshot.display_label}
         status={r.broker_snapshot.status}
         tone={readinessTone(r.broker_snapshot.status, r.broker_snapshot.is_blocking)}
-        rows={[
-          ["Status", r.broker_snapshot.status],
-          ["As of", r.broker_snapshot.as_of_label ?? "—"],
-        ]}
+        asOf={r.broker_snapshot.as_of_label ?? undefined}
         isDemoMode={isDemoMode}
       />
       {/* Market quotes */}
@@ -216,10 +216,7 @@ function ReadinessStrip({
         subtitle={r.market_quotes.display_label}
         status={r.market_quotes.status}
         tone={readinessTone(r.market_quotes.status, r.market_quotes.is_blocking)}
-        rows={[
-          ["Status", r.market_quotes.status],
-          ["As of", r.market_quotes.as_of_label ?? "—"],
-        ]}
+        asOf={r.market_quotes.as_of_label ?? undefined}
         isDemoMode={isDemoMode}
       />
       {/* Agent provider */}
@@ -228,10 +225,6 @@ function ReadinessStrip({
         subtitle={r.agent_provider.display_label}
         status={r.agent_provider.provider_mode}
         tone={agentProviderTone(r.agent_provider.provider_status)}
-        rows={[
-          ["Mode", r.agent_provider.provider_mode],
-          ["Mock default", r.agent_provider.is_mock_default ? "yes" : "no"],
-        ]}
         isDemoMode={isDemoMode}
       />
     </section>
@@ -243,14 +236,14 @@ function ReadinessStrip({
 function AccountSummaryPanel({ slot, onRetry }: { slot: DashboardState["summary"]; onRetry: () => void }) {
   if (slot.status === "loading") {
     return (
-      <Panel title="Account summary" tag="book-value">
-        <LoadingSkeleton rows={3} label="Loading account summary…" />
+      <Panel title="Account summary" tag="summary">
+        <LoadingSkeleton rows={4} label="Loading account summary…" />
       </Panel>
     );
   }
   if (slot.status === "error") {
     return (
-      <Panel title="Account summary" tag="book-value" right={<DemoChip />}>
+      <Panel title="Account summary" tag="summary" right={<DemoChip />}>
         <ErrorState message={slot.error ?? "Failed to load account summary."} onRetry={onRetry} />
       </Panel>
     );
@@ -259,44 +252,82 @@ function AccountSummaryPanel({ slot, onRetry }: { slot: DashboardState["summary"
 
   const s = slot.data;
   const isDemoMode = s.data_mode === "synthetic_demo";
+  const isAmountsHidden = s.privacy_display_mode === "amounts_hidden";
 
   return (
-    <Panel title="Account summary" tag="book-value" right={isDemoMode ? <DemoChip /> : undefined}>
-      <KV rows={[
-        ["Source", s.source_label],
-        ["Total value", s.total_value_label ?? "—"],
-        ["Cash", s.cash_label ?? s.cash_state_label],
-        ["Stock exposure", s.stock_exposure_label ?? "—"],
-        ["Option exposure", s.option_exposure_label ?? "—"],
-        ["Stock positions", String(s.portfolio_shape.stock_position_count)],
-        ["Option positions", String(s.portfolio_shape.option_position_count)],
-      ]} />
+    <Panel
+      title="Account summary"
+      tag={s.display_scope.replace(/_/g, " ")}
+      right={isDemoMode ? <DemoChip /> : undefined}
+    >
+      {isAmountsHidden && (
+        <div style={styles.privacyNotice}>
+          <Badge tone="mute" dot>amounts hidden</Badge>
+        </div>
+      )}
+
+      {/* Headline value — backend-owned label rendered verbatim */}
+      {!isAmountsHidden && s.total_value_label && (
+        <Stat label="Total value" value={s.total_value_label} sub={s.source_label} />
+      )}
+      {(isAmountsHidden || !s.total_value_label) && (
+        <KV compact rows={[["Source", s.source_label]]} />
+      )}
+
+      {/* Position breakdown — backend display labels verbatim */}
+      <div style={styles.kvSection}>
+        <KV rows={[
+          ["Cash", s.cash_label ?? s.cash_state_label],
+          ["Stock/ETF exposure", s.stock_etf_exposure_label ?? s.stock_exposure_label ?? "—"],
+          ["Options exposure", s.options_exposure_label ?? s.option_exposure_label ?? "—"],
+          ["Collateral usage", s.collateral_usage_label ?? "—"],
+          ["Portfolio shape", s.portfolio_shape_label],
+          ["Positions", s.position_count_label],
+        ]} />
+      </div>
+
+      {/* Data provenance — valuation basis, market data, privacy */}
+      <div style={styles.kvSection}>
+        <KV compact rows={[
+          ["Valuation basis", s.valuation_basis.replace(/_/g, " ")],
+          ["Market data", s.market_data_mode],
+          ["Privacy", s.privacy_display_mode.replace(/_/g, " ")],
+        ]} />
+      </div>
+
       {s.market_data_unavailable && (
-        <p style={styles.acctNote}>
-          Market data unavailable — values shown are book values from broker snapshot.
-        </p>
+        <p style={styles.acctNote}>Market data unavailable.</p>
+      )}
+      {s.caveat_codes.length > 0 && (
+        <div style={styles.caveatWrap}>
+          {s.caveat_codes.map((c) => (
+            <Badge key={c} tone="stale" dot={false}>{c}</Badge>
+          ))}
+        </div>
       )}
     </Panel>
   );
 }
 
 function ReadinessTile({
-  title, subtitle, status, tone, rows, isDemoMode,
+  title, subtitle, status, tone, asOf, isDemoMode,
 }: {
   title: string;
   subtitle: string;
   status: string;
   tone: MpTone;
-  rows: ReadonlyArray<readonly [string, string]>;
+  asOf?: string;
   isDemoMode: boolean;
 }) {
   return (
     <div style={{ ...styles.readinessCard, borderLeftColor: `var(--mp-${tone === "mute" ? "mute" : tone})` }}>
       <div style={styles.readEyebrow}>{title}</div>
       <div style={styles.readSub}>{subtitle}</div>
-      <div><Badge tone={tone} dot>{status}</Badge></div>
-      <KV compact rows={rows} />
-      {isDemoMode && <div><DemoChip tight /></div>}
+      <div style={styles.readRow}>
+        <Badge tone={tone} dot>{status}</Badge>
+        {asOf && <FreshnessDial tone={tone} ago={status === "fresh" ? "ok" : "—"} label={asOf} />}
+      </div>
+      {isDemoMode && <DemoChip tight />}
     </div>
   );
 }
@@ -305,6 +336,21 @@ function ReadinessTile({
 
 function RecentReviewsPanel({ slot, onRetry }: { slot: DashboardState["reviews"]; onRetry: () => void }) {
   const isDemoMode = slot.data?.data_mode === "synthetic_demo";
+
+  // Collapse to compact note when synthetic demo — avoids presenting fake history
+  if (isDemoMode && slot.status === "success") {
+    return (
+      <Panel title="Recent trade reviews" tag="demo" right={<DemoChip />}>
+        <div style={styles.collapsedRow}>
+          <MpIcon name="info" size={14} style={{ color: "var(--mp-mute)", marginTop: 1 }} />
+          <p style={styles.collapsedNote}>
+            No persisted review history yet. Start a new trade review or connect a real portfolio context to generate review history.
+          </p>
+        </div>
+      </Panel>
+    );
+  }
+
   return (
     <Panel title="Recent trade reviews" tag="last 7 days" right={isDemoMode ? <DemoChip /> : undefined}>
       {slot.status === "loading" && <LoadingSkeleton rows={4} label="Loading reviews…" />}
@@ -338,6 +384,21 @@ function RecentReviewsPanel({ slot, onRetry }: { slot: DashboardState["reviews"]
 
 function RiskAlertsPanel({ slot, onRetry }: { slot: DashboardState["alerts"]; onRetry: () => void }) {
   const isDemoMode = slot.data?.data_mode === "synthetic_demo";
+
+  // Collapse to compact note when synthetic demo — avoids presenting fake urgency
+  if (isDemoMode && slot.status === "success") {
+    return (
+      <Panel title="Risk alerts" tag="demo" right={<DemoChip />}>
+        <div style={styles.collapsedRow}>
+          <MpIcon name="shield" size={14} style={{ color: "var(--mp-mute)", marginTop: 1 }} />
+          <p style={styles.collapsedNote}>
+            No real risk alerts. Deterministic risk rules activate when a real portfolio context is available.
+          </p>
+        </div>
+      </Panel>
+    );
+  }
+
   return (
     <Panel title="Risk alerts" tag="deterministic" right={isDemoMode ? <DemoChip /> : undefined}>
       {slot.status === "loading" && <LoadingSkeleton rows={3} label="Loading alerts…" />}
@@ -402,40 +463,6 @@ function PortfolioContextRows({ items }: { items: PortfolioContextRead[] }) {
   );
 }
 
-/* ── What's running ────────────────────────────────────────────────────── */
-
-function WhatsRunningPanel({ slot, onRetry }: { slot: DashboardState["readiness"]; onRetry: () => void }) {
-  const isDemoMode = slot.data?.data_mode === "synthetic_demo";
-  return (
-    <Panel title="What's running" tag="provider status" right={isDemoMode ? <DemoChip /> : undefined}>
-      {slot.status === "loading" && <LoadingSkeleton rows={3} label="Loading status…" />}
-      {slot.status === "error" && <ErrorState message={slot.error ?? "Failed to load status."} onRetry={onRetry} />}
-      {slot.status === "success" && slot.data && (
-        <ul style={styles.facts}>
-          <li style={styles.factRow}>
-            <span style={styles.factLabel}>Broker sync</span>
-            <Badge tone={readinessTone(slot.data.broker_snapshot.status, slot.data.broker_snapshot.is_blocking)} dot>
-              {slot.data.broker_snapshot.status}
-            </Badge>
-          </li>
-          <li style={styles.factRow}>
-            <span style={styles.factLabel}>Market data</span>
-            <Badge tone={readinessTone(slot.data.market_quotes.status, slot.data.market_quotes.is_blocking)} dot>
-              {slot.data.market_quotes.status}
-            </Badge>
-          </li>
-          <li style={styles.factRow}>
-            <span style={styles.factLabel}>Agent provider</span>
-            <Badge tone={agentProviderTone(slot.data.agent_provider.provider_status)} dot>
-              {slot.data.agent_provider.provider_mode} · {slot.data.agent_provider.provider_status}
-            </Badge>
-          </li>
-        </ul>
-      )}
-    </Panel>
-  );
-}
-
 /* ── Safety strip ──────────────────────────────────────────────────────── */
 
 function DashboardSafetyStrip() {
@@ -470,6 +497,16 @@ function agentProviderTone(status: string): MpTone {
     case "error": return "block";
     case "unavailable": return "mute";
     default: return "mute";
+  }
+}
+
+function quickReviewIcon(flow: string): import("../components/shared/mp").MpIconName {
+  switch (flow) {
+    case "stock_buy": return "spark";
+    case "stock_sell_trim": return "alert";
+    case "covered_call": return "shield";
+    case "cash_secured_put": return "lock";
+    default: return "review";
   }
 }
 
@@ -551,7 +588,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   readinessGrid: {
     display: "grid",
-    gridTemplateColumns: "1.4fr 1fr 1fr",
+    gridTemplateColumns: "repeat(3, 1fr)",
     gap: "var(--space-3)",
     minWidth: 0,
   },
@@ -561,16 +598,20 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "var(--space-4)", display: "flex", flexDirection: "column", gap: "var(--space-2)",
   },
   readEyebrow: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 },
-  readSub: { fontSize: "var(--font-size-sm)", color: "var(--mp-ink-2)" },
+  readSub: { fontSize: "var(--font-size-sm)", color: "var(--mp-ink-2)", lineHeight: 1.4 },
+  readRow: { display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" },
   body: {
     display: "grid",
-    gridTemplateColumns: "1.6fr 1fr",
+    gridTemplateColumns: "1.2fr 1fr",
     gap: "var(--space-6)",
     minWidth: 0,
   },
   colLeft: { display: "flex", flexDirection: "column", gap: "var(--space-4)", minWidth: 0 },
   colRight: { display: "flex", flexDirection: "column", gap: "var(--space-4)", minWidth: 0 },
   acctNote: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", lineHeight: 1.5, margin: 0 },
+  kvSection: { paddingTop: "var(--space-2)", borderTop: "1px solid var(--mp-rule)" },
+  privacyNotice: { marginBottom: "var(--space-2)" },
+  caveatWrap: { display: "flex", gap: "var(--space-1)", flexWrap: "wrap", marginTop: "var(--space-2)" },
   tbl: { width: "100%", borderCollapse: "collapse" },
   alertList: { listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "var(--space-2)" },
   alertRow: {
@@ -584,14 +625,14 @@ const styles: Record<string, React.CSSProperties> = {
   alertCode: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", fontFamily: "var(--mp-font-mono)" },
   quickGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-2)" },
   quickBtn: {
-    display: "flex", flexDirection: "column", gap: 2, alignItems: "flex-start",
+    display: "flex", flexDirection: "row", gap: "var(--space-3)", alignItems: "center",
     padding: "var(--space-3) var(--space-4)", border: "1px solid var(--mp-rule)",
     borderRadius: "var(--radius-sm)", backgroundColor: "var(--mp-card)", color: "var(--mp-ink)",
     cursor: "pointer", fontSize: "var(--font-size-sm)", textAlign: "left",
   },
-  quickLabel: { fontWeight: 600 },
-  quickSub: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)" },
-  facts: { listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "var(--space-2)" },
-  factRow: { display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "var(--font-size-sm)" },
-  factLabel: { color: "var(--mp-ink-2)" },
+  quickContent: { display: "flex", flexDirection: "column", gap: 1 },
+  quickLabel: { fontWeight: 600, lineHeight: 1.3 },
+  quickSub: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", textTransform: "uppercase", letterSpacing: "0.06em" },
+  collapsedRow: { display: "flex", gap: "var(--space-2)", alignItems: "flex-start" },
+  collapsedNote: { fontSize: "var(--font-size-sm)", color: "var(--mp-mute)", lineHeight: 1.5, margin: 0 },
 };

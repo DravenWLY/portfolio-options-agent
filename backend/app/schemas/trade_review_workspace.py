@@ -30,6 +30,25 @@ PortfolioCashState: TypeAlias = Literal["available", "unavailable", "not_exposed
 TradeReviewReportStatus: TypeAlias = Literal["preview_only", "saved", "generated", "unavailable"]
 TradeReviewListSourceMode: TypeAlias = Literal["synthetic_preview", "portfolio_preview", "saved_review"]
 Phase20BDataMode: TypeAlias = Literal["synthetic_demo", "persisted"]
+DashboardAccountSummaryDataMode: TypeAlias = Literal["synthetic_demo", "private_real_source", "unavailable"]
+DashboardAccountDisplayScope: TypeAlias = Literal[
+    "selected_context",
+    "selected_account",
+    "combined_portfolio",
+    "manual_csv",
+    "synthetic_demo",
+    "unavailable",
+]
+DashboardValuationBasis: TypeAlias = Literal[
+    "market_value",
+    "book_value",
+    "mixed",
+    "indicative",
+    "delayed",
+    "unavailable",
+]
+DashboardMarketDataMode: TypeAlias = Literal["synthetic", "indicative", "delayed", "unavailable", "live"]
+DashboardPrivacyDisplayMode: TypeAlias = Literal["amounts_visible", "amounts_hidden"]
 RiskAlertCategory: TypeAlias = Literal[
     "concentration",
     "cash_collateral",
@@ -467,19 +486,28 @@ class DashboardSummaryDisplaySectionRead(BaseModel):
 class DashboardAccountSummaryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
-    data_mode: Phase20BDataMode
+    data_mode: DashboardAccountSummaryDataMode
     demo_notice: str | None = None
     generated_at: datetime
     summary_reference: str = Field(pattern=r"^das_[a-z0-9][a-z0-9_-]{5,79}$")
+    display_scope: DashboardAccountDisplayScope
     source_label: str
+    valuation_basis: DashboardValuationBasis
     broker_snapshot_freshness: PortfolioContextFreshnessRead
     market_quote_freshness: PortfolioContextFreshnessRead | None = None
+    market_data_mode: DashboardMarketDataMode
+    privacy_display_mode: DashboardPrivacyDisplayMode
     market_data_unavailable: bool
     portfolio_shape: PortfolioContextShapeRead
     cash_state: PortfolioCashState
     cash_state_label: str
     total_value_label: str | None = None
     cash_label: str | None = None
+    stock_etf_exposure_label: str | None = None
+    options_exposure_label: str | None = None
+    collateral_usage_label: str | None = None
+    portfolio_shape_label: str
+    position_count_label: str
     stock_exposure_label: str | None = None
     option_exposure_label: str | None = None
     caveat_codes: tuple[str, ...]

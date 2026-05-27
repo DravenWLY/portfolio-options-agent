@@ -20,6 +20,7 @@ MarketMetricSource = Literal["provider", "calculated", "manual", "synthetic", "r
 GreeksSource = MarketMetricSource
 ImpliedVolatilitySource = MarketMetricSource
 MarketDataFreshnessScope = Literal["market_quote", "underlying_quote", "option_quote", "option_chain"]
+MarketCoverageStatus = Literal["unknown", "limited_source", "unavailable"]
 
 DATA_MODES: tuple[str, ...] = ("live", "delayed", "indicative", "cached", "eod", "manual", "synthetic", "unavailable", "unknown")
 FRESHNESS_STATUSES: tuple[str, ...] = ("fresh", "delayed", "stale", "eod_only", "manual", "unavailable", "unknown", "error")
@@ -36,6 +37,7 @@ OPTION_TYPES: tuple[str, ...] = ("call", "put")
 MARKET_METRIC_SOURCES: tuple[str, ...] = ("provider", "calculated", "manual", "synthetic", "replay", "unavailable", "missing")
 GREEKS_SOURCES: tuple[str, ...] = MARKET_METRIC_SOURCES
 IMPLIED_VOLATILITY_SOURCES: tuple[str, ...] = MARKET_METRIC_SOURCES
+MARKET_COVERAGE_STATUSES: tuple[str, ...] = ("unknown", "limited_source", "unavailable")
 
 MARKET_FRESHNESS_SCOPE = "market_quote"
 UNDERLYING_QUOTE_FRESHNESS_SCOPE = "underlying_quote"
@@ -186,6 +188,7 @@ class StockQuoteSnapshot:
     last: Decimal | None = None
     mark: Decimal | None = None
     freshness_scope: Literal["market_quote"] = MARKET_FRESHNESS_SCOPE
+    coverage_status: MarketCoverageStatus = "unknown"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "symbol", _normalize_symbol(self.symbol))
@@ -194,6 +197,7 @@ class StockQuoteSnapshot:
         _validate_choice(self.data_mode, DATA_MODES, "data_mode")
         _validate_choice(self.freshness_status, FRESHNESS_STATUSES, "freshness_status")
         _validate_choice(self.actionability_status, ACTIONABILITY_STATUSES, "actionability_status")
+        _validate_choice(self.coverage_status, MARKET_COVERAGE_STATUSES, "coverage_status")
         for field_name in ("bid", "ask", "last", "mark"):
             _validate_non_negative(getattr(self, field_name), field_name)
 
@@ -232,6 +236,7 @@ class OptionQuoteSnapshot:
     implied_volatility_source: ImpliedVolatilitySource = "missing"
     greeks_source: GreeksSource = "missing"
     freshness_scope: Literal["option_quote"] = OPTION_QUOTE_FRESHNESS_SCOPE
+    coverage_status: MarketCoverageStatus = "unknown"
 
     def __post_init__(self) -> None:
         if not self.provider.strip():
@@ -241,6 +246,7 @@ class OptionQuoteSnapshot:
         _validate_choice(self.actionability_status, ACTIONABILITY_STATUSES, "actionability_status")
         _validate_choice(self.implied_volatility_source, IMPLIED_VOLATILITY_SOURCES, "implied_volatility_source")
         _validate_choice(self.greeks_source, GREEKS_SOURCES, "greeks_source")
+        _validate_choice(self.coverage_status, MARKET_COVERAGE_STATUSES, "coverage_status")
         for field_name in ("bid", "ask", "last", "mark", "implied_volatility", "gamma", "underlying_price"):
             _validate_non_negative(getattr(self, field_name), field_name)
         for field_name in ("volume", "open_interest"):
@@ -262,6 +268,7 @@ class OptionChainSnapshot:
     contracts: tuple[OptionQuoteSnapshot, ...] = field(default_factory=tuple)
     underlying_quote: UnderlyingQuoteSnapshot | None = None
     freshness_scope: Literal["option_chain"] = OPTION_CHAIN_FRESHNESS_SCOPE
+    coverage_status: MarketCoverageStatus = "unknown"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "underlying_symbol", _normalize_symbol(self.underlying_symbol))
@@ -270,6 +277,7 @@ class OptionChainSnapshot:
         _validate_choice(self.data_mode, DATA_MODES, "data_mode")
         _validate_choice(self.freshness_status, FRESHNESS_STATUSES, "freshness_status")
         _validate_choice(self.actionability_status, ACTIONABILITY_STATUSES, "actionability_status")
+        _validate_choice(self.coverage_status, MARKET_COVERAGE_STATUSES, "coverage_status")
         object.__setattr__(self, "contracts", tuple(self.contracts))
         for option_quote in self.contracts:
             if option_quote.contract.underlying_symbol != self.underlying_symbol:

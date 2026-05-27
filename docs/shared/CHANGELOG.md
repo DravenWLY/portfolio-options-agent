@@ -4,9 +4,12 @@ This changelog is for human-readable project changes. It should summarize meanin
 
 ## Unreleased
 
+- Completed and reviewed Phase 20D Dashboard account-summary contract, cockpit cleanup, and visual/content polish; the next Dashboard design step is constrained Claude Design exploration with panel-level contract classification before implementation.
+- Recorded the Phase 20D private Dashboard account-detail decision: account summary may show backend-formatted private display labels in principle, but only after `P20D-T1` refines the backend contract with privacy mode, display scope, valuation basis, and separate freshness/provenance.
 - Completed and reviewed Phase 20C Modern Portfolio Desk wiring and presentation refinements through shared state/icon cleanup; future Dashboard expansion now begins with an explicit content-definition gate.
+- Approved planning for P22A-T4 as an Alpaca Basic backend-only injected/mock-client evaluation adapter with no external call path, parked the commercial provider/RFI track, and opened P20D-T0 as docs-only Dashboard information-architecture planning.
 - Opened Phase 22A as an offline, provider-neutral market-data evaluation foundation; amended ADR 0003 so Tradier is reference/prototyping-only rather than the assumed scalable production provider, and added a reusable vendor RFI template.
-- Split Phase 22A market-data follow-through into early evaluation and later commercial selection tracks; assessed Alpaca Basic, Tradier Sandbox, and Intrinio delayed trial paths, recommending Alpaca Basic for a future PM-approved local/internal indicative evaluation while deferring RFI outreach.
+- Split Phase 22A market-data follow-through into early evaluation and later commercial selection tracks; assessed Alpaca Basic, Tradier Sandbox, and Intrinio delayed trial paths, leading to the completed P22A-T4 injected/mock-client Alpaca evaluation adapter while deferring RFI outreach.
 - Paused Phase 21A agentic/realtime console expansion pending founder learning and future PM reactivation; retained the contract and ADR 0007 as inactive design references and added Codex E as an advisory-only learning role.
 - Drafted Phase 21A realtime Agent Console architecture and proposed ADR 0007: backend-owned HTTP commands plus validated SSE progress, mock-first, with interactive frontend activation deferred until review.
 - Archived completed Phase 18A into `docs/shared/completed_phases_log.md` and shifted the active roadmap/task pointers to Phase 18B workspace expansion.

@@ -22,6 +22,7 @@ The app is layered around portfolio-aware trade review:
 16. Phase 20B/P20C Modern Portfolio Desk contracts and wiring: demo-labeled backend read contracts for dashboard/portfolio-context surfaces plus reviewed Dashboard, Agent Console, and Settings layout integration.
 17. Phase 21A Realtime Agent Console contract draft: retained as a paused design reference after PM postponed further agentic/realtime expansion; no backend implementation or composer activation is authorized.
 18. Phase 22A Market Data Evaluation Foundation: approved offline, provider-neutral, synthetic/replay-first market-data contract and scenario-test work; provider selection is reopened and commercial integration is not yet authorized.
+19. Phase 20D Dashboard Information Architecture: docs-only planning gate completed; private account-detail display is approved in principle behind a backend display-label contract, privacy mode, and explicit freshness/provenance.
 
 ## Backend / Frontend Boundaries
 
@@ -59,7 +60,7 @@ Frontend must not:
 - Agent-safe projection is required before LLM/agent paths receive trade-review report data.
 - Portfolio Snapshot Actionability Policy is a backend-owned gate consumed by Phase 16 agent/orchestrator outputs. See `docs/codex-b-architecture/adr/0001-portfolio-snapshot-actionability-policy.md`.
 - Portfolio Copilot is TradingAgents-inspired, not TradingAgents-centered. See `docs/codex-b-architecture/adr/0002-tradingagents-inspired-portfolio-agent-team.md`.
-- Real market-data provider integration is not required for local MVP. Phase 22A replaces the Tradier-first production assumption with provider-neutral synthetic/replay evaluation, an early free/delayed evaluation gate, and later written RFI/licensing review for commercial scale. Tradier is reference/prototyping-only unless later approved. REST snapshots remain preferred before any separately approved streaming work. See `docs/codex-b-architecture/adr/0003-market-data-timing-tradier-rest-snapshots.md`, `docs/codex-b-architecture/PHASE_22A_MARKET_DATA_EVALUATION_CONTRACT.md`, and `docs/codex-b-architecture/PHASE_22A_EARLY_EVALUATION_PROVIDER_ASSESSMENT.md`.
+- Real market-data provider integration is not required for local MVP. Phase 22A replaces the Tradier-first production assumption with provider-neutral synthetic/replay evaluation and a bounded Alpaca Basic injected/mock-client mapping adapter for internal evaluation only. The commercial RFI/licensing track is parked until scale or external-display planning reopens it. Tradier is reference/prototyping-only unless later approved. REST snapshots remain preferred before any separately approved streaming work. See `docs/codex-b-architecture/adr/0003-market-data-timing-tradier-rest-snapshots.md`, `docs/codex-b-architecture/PHASE_22A_MARKET_DATA_EVALUATION_CONTRACT.md`, `docs/codex-b-architecture/PHASE_22A_EARLY_EVALUATION_PROVIDER_ASSESSMENT.md`, and `docs/codex-b-architecture/PHASE_22A_ALPACA_BASIC_EVALUATION_ADAPTER_CONTRACT.md`.
 - Real LLM provider support is a backend-only explicit gate with Google/Gemini as the first candidate and mock provider as default. See `docs/codex-b-architecture/adr/0005-real-llm-provider-gate-google-first.md`.
 - Live LLM/API smoke testing remains a separate future gate after Phase 19C. It must be backend-owned, explicit opt-in, synthetic-first, budget/rate-limit aware, and reviewed before any user-facing reliance.
 - Realtime Agent Console HTTP/SSE is a paused proposed option only, pending future PM reactivation after founder agentic-AI study. See proposed, paused `docs/codex-b-architecture/adr/0007-agent-console-http-commands-sse-streaming.md`.
@@ -87,8 +88,9 @@ Phases 16A, 16B, 17A, 18A, 18B, 18C, 19A, 19B, and 19C are complete and archived
 
 The active delivery focus is:
 
-- **Phase 20B / 20C**: finish reviewed Modern Portfolio Desk data wiring and visual follow-through when Claude A is available.
-- **Phase 22A**: `P22A-T1` synthetic/replay contracts and `P22A-T3` early-provider assessment are complete; wait for Codex A to decide whether Alpaca Basic may become a bounded backend-only local/internal evaluation adapter.
+- **Phase 20B / 20C**: Phase 20C is the completed reviewed Modern Portfolio Desk frontend checkpoint; P20B-T5/T6 remain blocked on persistence/auth decisions.
+- **Phase 20D**: `P20D-T0` through `P20D-T3` are complete: Dashboard content decision, private account-summary contract, cockpit cleanup, and reviewed visual/content polish. The next Dashboard design step may use Claude Design only with a content inventory that classifies each panel as available now, future backend contract needed, or out of scope before implementation.
+- **Phase 22A**: `P22A-T1` synthetic/replay contracts, `P22A-T3` early-provider assessment, and `P22A-T4` backend-only Alpaca Basic injected/mock-client evaluation adapter are complete; no actual provider call, frontend display, agent ingestion, or production-provider decision is authorized.
 
 **Phase 21A is paused**: Codex B's mock-first realtime Agent Console draft is
 preserved for future discussion, but Codex C must not implement it and Claude A
@@ -107,10 +109,12 @@ Phase 22A is approved as a separate evaluation foundation:
 - require explicit data modes and IV/Greeks provenance;
 - treat Alpaca Basic as the recommended first candidate only for a separately
   approved local/internal `limited_source`/`indicative`, analysis-only
-  evaluation adapter;
+  evaluation adapter; `P22A-T4` is now approved only for injected/mock-client
+  mapping with no authorized external API call or credential path;
 - retain the RFI template in
   `docs/codex-b-architecture/MARKET_DATA_PROVIDER_RFI.md` for later commercial
-  selection; do not contact providers or choose a production provider yet.
+  selection; commercial outreach, licensing/pricing negotiation, and
+  production-provider choice are parked.
 
 Active frontend contract boundaries:
 
@@ -209,11 +213,12 @@ Recommended first backend slice:
 
 ## Recommended First Tasks for Codex B
 
-1. Ask Codex A whether to authorize a narrow Alpaca Basic local/internal evaluation adapter task after reviewing `P22A-T3`; do not assign Codex C an external provider adapter before that decision.
-2. Keep Phase 20B/P20C frontend wiring behind Codex B-reviewed contracts and visible demo labels for synthetic responses.
-3. Review P20B-T5 reports list/detail and P20B-T6 safe profile/display only after their persistence/auth decisions exist.
-4. Keep Phase 21A realtime agent expansion and Phase 19D live LLM smoke testing paused or separately gated.
-5. Retain vendor RFI comparison for later commercial selection; defer outreach while the early evaluation path is decided, and do not expose a live/current UI claim until separately approved.
+1. Preserve the completed `P22A-T4` evaluation boundary in `PHASE_22A_ALPACA_BASIC_EVALUATION_ADAPTER_CONTRACT.md`; do not authorize external smoke testing, frontend display, or agent consumption without a new PM decision.
+2. Use the completed `P20D-T0` memo, `PHASE_20D_DASHBOARD_ACCOUNT_DETAIL_CONTRACT.md`, and accepted `P20D-T3` Dashboard polish as the boundary for the next Dashboard slice. Claude Design may explore visual hierarchy only if unsupported panels are explicitly labelled as future-contract-needed or out of scope.
+3. Keep Phase 20B/P20C frontend wiring behind Codex B-reviewed contracts and visible demo labels for synthetic responses.
+4. Review P20B-T5 reports list/detail and P20B-T6 safe profile/display only after their persistence/auth decisions exist.
+5. Keep Phase 21A realtime agent expansion and Phase 19D live LLM smoke testing paused or separately gated.
+6. Retain vendor RFI comparison as parked reference material; do not expose a live/current UI claim or reopen commercial selection until Codex A approves it.
 
 ## Engineering Framework Sections To Apply First
 

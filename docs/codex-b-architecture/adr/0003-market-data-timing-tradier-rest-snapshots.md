@@ -2,7 +2,7 @@
 
 Status: amended
 Date: 2026-05-20
-Amended: 2026-05-25
+Amended: 2026-05-25; 2026-05-26
 Owner: Codex B - Architecture / Tech Lead
 
 ## Amendment Note
@@ -15,6 +15,13 @@ earlier Tradier-first provider posture no longer reflects product direction.
 Tradier is no longer the assumed scalable production provider. It may remain a
 prototyping or reference candidate only. No production market-data provider is
 currently selected.
+
+Codex A further decided on 2026-05-26 to park the commercial provider/RFI
+track until commercial-scale or external-display planning makes it timely.
+Codex A approved a bounded Alpaca Basic local/internal evaluation-adapter
+implementation task only as an injected/mock-client mapping exercise:
+`indicative`/`limited_source`, analysis-only, backend-only, and with no
+authorized external request or runtime provider selection.
 
 ## Context
 
@@ -46,6 +53,11 @@ provider-neutral, synthetic/replay-based backend evaluation foundation:
 Optional external evaluations, including Alpaca Basic limited-source/indicative
 smoke testing or an Intrinio delayed-options trial, are not authorized by the
 initial Phase 22A slice and require separate approval.
+
+`P22A-T4` authorizes only an Alpaca Basic-shaped mapping adapter exercised by
+injected fake clients and synthetic responses. It does not authorize Alpaca
+smoke testing, credential/config loading, network access, frontend display, or
+production selection.
 
 Before purchase, paid beta, or any public live/current quote claim, select a
 provider only after written RFI/licensing review of U.S. equity coverage,

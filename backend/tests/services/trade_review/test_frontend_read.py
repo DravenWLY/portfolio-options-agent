@@ -18,6 +18,7 @@ from app.services.trade_review.actionability import evaluate_portfolio_snapshot_
 from app.services.trade_review.frontend_read import (
     build_trade_review_workspace_portfolio_preview,
     build_trade_review_workspace_read,
+    get_dashboard_account_summary_for_user,
     _resolve_portfolio_context,
 )
 from app.services.trade_review.payoff import PayoffReview, PayoffScenarioPoint
@@ -463,6 +464,52 @@ def test_portfolio_preview_service_preserves_no_context_available_state() -> Non
     assert read.actionability.review_actionability_status == "blocked_unknown_freshness"
     assert any(warning.code == "unknown_freshness" for warning in read.deterministic_review.missing_data_warnings)
     assert not find_forbidden_keys(read.model_dump(mode="python"), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_dashboard_account_summary_contract_uses_hidden_display_labels_only() -> None:
+    read = get_dashboard_account_summary_for_user(
+        "11111111-1111-1111-1111-111111111111",
+        generated_at=NOW,
+    )
+
+    payload = read.model_dump(mode="python")
+    assert read.data_mode == "synthetic_demo"
+    assert read.display_scope == "synthetic_demo"
+    assert read.valuation_basis == "unavailable"
+    assert read.market_data_mode == "synthetic"
+    assert read.privacy_display_mode == "amounts_hidden"
+    assert read.total_value_label == "Total value hidden · demo not connected"
+    assert read.cash_label == "Cash amount hidden · demo not connected"
+    assert read.stock_etf_exposure_label == "Stock/ETF exposure hidden · demo not connected"
+    assert read.options_exposure_label == "Options exposure hidden · demo not connected"
+    assert read.collateral_usage_label == "Collateral usage hidden · demo not connected"
+    assert read.stock_exposure_label == read.stock_etf_exposure_label
+    assert read.option_exposure_label == read.options_exposure_label
+    assert read.broker_snapshot_freshness.freshness_scope == "broker_snapshot"
+    assert read.market_quote_freshness is not None
+    assert read.market_quote_freshness.freshness_scope == "market_quote"
+    assert "amounts_hidden" in read.caveat_codes
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_dashboard_account_summary_empty_state_stays_unavailable_and_hidden() -> None:
+    read = get_dashboard_account_summary_for_user(
+        "00000000-0000-0000-0000-000000000000",
+        generated_at=NOW,
+    )
+
+    assert read.data_mode == "synthetic_demo"
+    assert read.display_scope == "unavailable"
+    assert read.valuation_basis == "unavailable"
+    assert read.market_data_mode == "unavailable"
+    assert read.privacy_display_mode == "amounts_hidden"
+    assert read.market_quote_freshness is None
+    assert read.market_data_unavailable is True
+    assert read.portfolio_shape.stock_position_count == 0
+    assert read.portfolio_shape.option_position_count == 0
+    assert read.portfolio_shape_label == "Portfolio shape unavailable"
+    assert read.position_count_label == "No portfolio context available"
+    assert "market_data_unavailable" in read.caveat_codes
 
 
 def _projection(

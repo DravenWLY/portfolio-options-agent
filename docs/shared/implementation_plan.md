@@ -742,6 +742,438 @@ Shared Phase 20C rules:
   - **No regressions:** Agent Console composer remains disabled. Phase 21A remains paused. No storage, network, computation, or safety-language changes.
   - **Codex B review (2026-05-26): PASS.** Verified the scoped `MpIcon` replacements, shared `React.ReactNode` icon boundary, absence of remaining ambiguous glyphs/storage writes/new request paths in the touched files, and unchanged Agent Console/Phase 21A boundary. Independent `npm run typecheck`, `npm run lint -- --max-warnings 0`, `npm run build` (`103` modules), and `git diff --check` passed. Phase 20C is accepted as the current Modern Desk frontend integration checkpoint.
 
+## Phase 20D - Dashboard Information Architecture And Contract Readiness
+
+Phase goal: decide the Dashboard's information hierarchy and contract needs
+before adding new data surfaces, visual panels, or backend endpoints. This is
+product/UX and architecture planning only, not implementation.
+
+Shared Phase 20D rules:
+
+- Preserve the completed Phase 20C Dashboard until a later implementation task
+  is separately approved.
+- Do not create frontend cards, routes, API clients, or backend endpoints in
+  this phase.
+- Classify every proposed panel as already contract-backed, blocked on an
+  approved future contract, or deferred/out of scope.
+- Keep private user-facing portfolio aggregates separate from any future
+  agent-safe evidence projection.
+- Do not turn the Dashboard into a market terminal, quote watchlist, brokerage
+  account mirror, AI recommendation feed, options screener, or execution UI.
+
+### P20D-T0 - Dashboard Content Definition And Contract Gap Map
+
+- Task id: `P20D-T0`
+- Title: Dashboard Content Definition And Contract Gap Map
+- Owner: Codex A with Codex B architecture support and Claude A UX input when available
+- Objective: Define what the Dashboard should tell a manual investor in the
+  first viewport, map approved information to existing reviewed contracts, and
+  rank missing contract needs before any new implementation task is opened.
+- Dependencies:
+  - completed and reviewed Phase 20C frontend checkpoint
+  - completed P20B demo-labelled Dashboard contracts
+  - current Phase 22A market-data evaluation boundary
+- Expected documents to create or update:
+  - `docs/codex-a-product/DASHBOARD_CONTENT_DECISION.md`
+  - `docs/shared/implementation_plan.md`, verification notes only
+  - `docs/shared/current_roadmap.md` and `docs/shared/TASKS.md`, only if the
+    approved content definition opens a later implementation slice
+- Definition questions:
+  - What must be understandable within five seconds of opening the Dashboard?
+  - Which currently supported items remain in the first viewport: review
+    readiness, broker snapshot freshness, market-data availability/data mode,
+    safe portfolio/account summary labels, and start-new-review action?
+  - Should recent analysis appear only after persistence-backed report/review
+    contracts exist?
+  - Which proposed market overview, economic-calendar/news, report, identity,
+    or account-summary additions require a new reviewed backend contract?
+  - Which private aggregates may be user-visible on an authenticated private
+    surface but must remain excluded from LLM/agent prompts by default?
+- Implementation steps:
+  1. Inventory currently rendered Dashboard panels and their existing reviewed
+     P20B contracts.
+  2. Define first-viewport user goals and rank panel priority for a read-only
+     manual-review cockpit.
+  3. Prepare a panel/contract gap map with categories: existing contract,
+     new contract required, deferred for safety/product reason, and not in
+     Dashboard scope.
+  4. Separate user-private display candidates from any later agent-safe
+     evidence concepts.
+  5. Return ranked follow-up contract proposals to Codex A; do not implement
+     them in this task.
+- Acceptance criteria:
+  - The first viewport prioritizes review readiness, broker/portfolio context
+    freshness, market-data availability/data mode, and a start-new-review
+    action.
+  - Recent analysis status is included only where persistence contracts exist
+    or is explicitly labelled blocked.
+  - No proposed panel implies trade execution, recommendation, current quote
+    availability, or provider connection without a reviewed contract.
+  - Market/news/account/report additions are each assigned an explicit
+    contract-readiness status.
+  - No code, schema, route, endpoint, prototype rewrite, API call, or provider
+    integration is performed.
+- Verification:
+  - Documentation-only review against PM direction and existing contracts.
+  - `git diff --check` for any subsequent documentation output.
+- Rollback notes:
+  - Remove only the Dashboard planning memo and its plan verification notes if
+    PM replaces the information architecture.
+  - Preserve completed Phase 20B/P20C implementation.
+- Status: `done` (docs-only planning; no backend or frontend implementation authorized).
+- Verification notes (2026-05-26, Codex A):
+  - Created `docs/codex-a-product/DASHBOARD_CONTENT_DECISION.md` as the
+    first-viewport content decision and contract-gap map.
+  - Decision: the Dashboard is a review-readiness cockpit, not a collection
+    of synthetic activity panels, brokerage mirrors, quote terminals,
+    screeners, or recommendation surfaces.
+  - Kept the start-review action and readiness/freshness hierarchy as the
+    primary eventual first-viewport content; classified account summary,
+    recent reviews, risk alerts, portfolio context, reports, market/news, and
+    profile display by current contract readiness and product value.
+  - Recorded that P20B display contracts used by Phase 20C remain
+    `synthetic_demo`/demo-labelled development surfaces unless and until a
+    separately approved real-source/private-display mapping exists.
+  - Explicitly excluded P22A-T4 Alpaca evaluation output from Dashboard
+    consumption: `indicative`/`limited_source` remains backend evaluation only
+    until a separate frontend-display decision.
+  - Ranked future contract needs, led by a real-source private Dashboard
+    account-summary decision and real-source readiness mapping, followed by
+    persisted recent reviews and attributable deterministic risk alerts.
+  - No frontend/backend code, endpoint, schema, provider call, or Agent
+    Console activation is authorized by this planning memo.
+
+### P20D-T1 - Private Dashboard Account Summary Contract
+
+- Task id: `P20D-T1`
+- Title: Private Dashboard Account Summary Contract
+- Owner: Codex C implementation, Codex B architecture/privacy review, Claude B safety review if frontend implications broaden
+- Objective: Refine the existing Dashboard account-summary backend contract so
+  a private authenticated Dashboard can later show account-detail labels
+  without exposing raw account values, holdings, positions, identifiers, or
+  agent prompt inputs.
+- Dependencies:
+  - completed `P20D-T0` Dashboard content decision
+  - Codex A 2026-05-26 approval-in-principle for private account-detail labels
+  - `docs/codex-b-architecture/PHASE_20D_DASHBOARD_ACCOUNT_DETAIL_CONTRACT.md`
+  - completed `P20B-T7` synthetic/demo account-summary contract
+- Files expected to inspect or change:
+  - `backend/app/schemas/trade_review_workspace.py`
+  - `backend/app/services/trade_review/frontend_read.py`
+  - `backend/app/api/routes/users.py`, only if route/query shape must expose
+    privacy display mode
+  - `backend/tests/api/test_trade_review_workspace.py`
+  - `backend/tests/services/trade_review/test_frontend_read.py`
+  - `docs/shared/implementation_plan.md`
+- Contract direction:
+  - Revise the existing `DashboardAccountSummaryRead` /
+    `GET /users/{uid}/dashboard-account-summary` contract rather than adding a
+    duplicate endpoint.
+  - Add or refine display-only fields for account details, provenance, and
+    privacy mode. Candidate fields include `display_scope`,
+    `valuation_basis`, `market_data_mode`, `privacy_display_mode`,
+    `total_value_label`, `cash_label`, `cash_state_label`,
+    `stock_etf_exposure_label`, `options_exposure_label`,
+    `collateral_usage_label`, `portfolio_shape_label`,
+    `position_count_label`, `broker_snapshot_freshness`,
+    `market_quote_freshness`, `source_label`, `summary_reference`, and
+    `caveat_codes`.
+  - Default real-source scope should be selected context or selected account
+    until combined portfolio aggregation is explicitly safe and clearly
+    labelled.
+  - Keep `combined_portfolio` as an allowed display scope only when the backend
+    can prove and label aggregation semantics, source freshness, and caveats.
+  - Preserve existing synthetic/demo behavior with visible demo metadata.
+  - Use `privacy_display_mode="amounts_hidden"` as the safest default for any
+    real-source path until a reviewed frontend toggle exists.
+- Implementation steps:
+  1. Compare the existing `DashboardAccountSummaryRead` with
+     `PHASE_20D_DASHBOARD_ACCOUNT_DETAIL_CONTRACT.md`.
+  2. Propose the smallest backward-compatible schema refinement needed for the
+     approved private display labels and provenance.
+  3. Implement synthetic/read-contract behavior only unless a separately
+     approved real-source mapping already exists in safe app-owned services.
+  4. Add or update service/API tests for field shape, privacy mode,
+     selected-scope default, hidden-amount behavior, synthetic/demo behavior,
+     freshness separation, valuation basis, market-data mode, caveats, and
+     forbidden-field sweeps.
+  5. Add explicit tests proving the response does not include raw holdings,
+     raw positions, quantities, raw cash balances, buying power, raw account
+     values, account/broker/provider ids, raw provider payloads, raw CSV rows,
+     thresholds, prompts, LLM traces, or agent context envelopes.
+  6. Document any contract gap that prevents real-source mapping; do not
+     improvise raw fields to satisfy Dashboard visuals.
+- Acceptance criteria:
+  - Backend owns all calculation and formatting; frontend can render labels
+    verbatim.
+  - No raw numeric account values are returned unless a later task explicitly
+    approves a specific sanitized value field.
+  - Broker snapshot freshness and market quote freshness remain separate.
+  - Valuation basis, market-data mode, display scope, source label, as-of data,
+    and caveats are explicit.
+  - Privacy display mode is represented and defaults safely.
+  - Synthetic/demo values cannot look like real account data in normal product
+    mode.
+  - Account-detail labels remain private user-facing display fields and are not
+    added to LLM/agent prompt inputs.
+  - No frontend changes, market-data provider calls, LLM calls, broker calls,
+    TradingAgents work, Phase 21A work, execution UI, or order behavior.
+- Tests:
+  - Focused backend API/service tests for the account-summary contract.
+  - Forbidden-field and forbidden-wording sweeps.
+  - Existing trade-review/front-end-read regression tests.
+  - `git diff --check`.
+- Rollback notes:
+  - Revert only the schema/service/test refinements for `P20D-T1`.
+  - Preserve completed `P20B-T7`, `P20C-T1`, and `P20D-T0` history unless the
+    PM explicitly replaces the Dashboard account-detail decision.
+- Verification notes:
+  - 2026-05-26 Codex C refined the existing `DashboardAccountSummaryRead` /
+    `GET /users/{uid}/dashboard-account-summary` contract for private
+    dashboard account-detail display labels without adding a duplicate
+    endpoint.
+  - Added explicit `display_scope`, `valuation_basis`, `market_data_mode`,
+    and `privacy_display_mode` fields. Synthetic/demo responses now default to
+    `privacy_display_mode="amounts_hidden"` and keep visible
+    `data_mode="synthetic_demo"` / `demo_notice="demo · not yet connected"`.
+  - Added display-label-only fields for `stock_etf_exposure_label`,
+    `options_exposure_label`, `collateral_usage_label`,
+    `portfolio_shape_label`, and `position_count_label`; preserved the
+    previous `stock_exposure_label` / `option_exposure_label` fields as
+    compatibility aliases.
+  - Broker snapshot freshness and market quote freshness remain separate;
+    synthetic market data is labelled with `market_data_mode="synthetic"` or
+    `market_data_mode="unavailable"` and no live/current/official quote claim.
+  - No frontend, provider, agent-team, LLM, broker, route-expansion,
+    migration, external API, or real-data work was added.
+  - Tests: `cd backend && ./.venv/bin/python -m pytest tests/api/test_trade_review_workspace.py tests/services/trade_review/test_frontend_read.py -q`
+    passed with `71 passed in 0.59s`.
+  - Codex B review (2026-05-27): **PASS**. The existing
+    `GET /users/{uid}/dashboard-account-summary` endpoint was safely refined
+    without creating a duplicate endpoint. New fields are display-label-only
+    and backend-owned; `privacy_display_mode="amounts_hidden"` is the safe
+    default; broker snapshot freshness and market quote freshness remain
+    separate; synthetic/demo responses stay clearly labelled and hidden. No
+    frontend, agent/LLM, provider, route-expansion, migration, external API, or
+    real-data work was added. Independent verification:
+    `cd backend && ./.venv/bin/python -m pytest tests/api/test_trade_review_workspace.py tests/services/trade_review/test_frontend_read.py -q`
+    -> `71 passed in 0.33s`; `git diff --check` -> clean.
+  - 2026-05-27 Claude A frontend consumption of reviewed P20D-T1 contract:
+    - Updated `frontend/src/types/dashboard.ts`:
+      - Added `DashboardAccountSummaryDataMode`, `DashboardAccountDisplayScope`,
+        `DashboardValuationBasis`, `DashboardMarketDataMode`, and
+        `DashboardPrivacyDisplayMode` enum literal types mirroring backend.
+      - Updated `DashboardAccountSummaryRead` interface with all P20D-T1 fields:
+        `display_scope`, `valuation_basis`, `market_data_mode`,
+        `privacy_display_mode`, `stock_etf_exposure_label`,
+        `options_exposure_label`, `collateral_usage_label`,
+        `portfolio_shape_label`, `position_count_label`.
+      - Changed `data_mode` type from `Phase20BDataMode` to
+        `DashboardAccountSummaryDataMode`.
+      - Kept `stock_exposure_label` and `option_exposure_label` as deprecated
+        compatibility aliases.
+    - Updated `frontend/src/pages/DashboardPage.tsx` AccountSummaryPanel:
+      - Panel tag now uses dynamic `display_scope` instead of static `"book-value"`.
+      - KV rows now render all backend-owned labels verbatim: total value, cash,
+        stock/ETF exposure, options exposure, collateral usage, portfolio shape,
+        positions, valuation basis, market data mode, privacy display mode.
+      - Prefers new `stock_etf_exposure_label` / `options_exposure_label` fields
+        with fallback to compatibility aliases.
+      - Shows `amounts hidden` Badge when `privacy_display_mode === "amounts_hidden"`.
+      - Shows `caveat_codes` as stale-toned badges when present.
+    - No new endpoints, localStorage/sessionStorage writes, financial computation,
+      provider calls, agent/LLM changes, or forbidden wording added.
+    - Verification: `npm run typecheck` PASS, `npm run lint -- --max-warnings 0`
+      PASS, `npm run build` PASS (103 modules, 888ms), `git diff --check` clean.
+  - Codex B frontend consumption re-review (2026-05-27): **PASS** after
+    Claude A replaced the only invented account-summary note with neutral
+    wording: `Market data unavailable.` The Dashboard no longer claims book
+    value, broker-snapshot value, market value, current value, live data, or
+    official quote status unless provided by backend-owned fields. Type
+    fidelity, verbatim label rendering, privacy mode, freshness separation,
+    compatibility aliases, caveat rendering, no new endpoints, no storage
+    writes, no frontend financial computation, and no Agent Console / Phase
+    21A activation remain intact.
+- Status: `done`.
+
+### P20D-T2 - Dashboard Cockpit Cleanup From Reviewed Contracts
+
+- Task id: `P20D-T2`
+- Title: Dashboard Cockpit Cleanup From Reviewed Contracts
+- Owner: Claude A implementation, Codex B contract/safety review, Claude B UX/safety review if requested
+- Objective: Reorganize the existing Dashboard into a compact
+  review-readiness cockpit using only reviewed contracts and existing
+  frontend-safe fields, reducing demo-card clutter without adding backend
+  fields, endpoints, provider data, or a new Claude Design concept.
+- Dependencies:
+  - completed `P20D-T0` content decision
+  - completed `P20D-T1` backend contract and frontend consumption
+  - completed Phase 20C Dashboard wiring checkpoint
+- Files expected to inspect or change:
+  - `frontend/src/pages/DashboardPage.tsx`
+  - `frontend/src/types/dashboard.ts`, only if needed to remove stale imports
+    or preserve exact current contract types
+  - `docs/shared/implementation_plan.md`, verification notes only
+- Explicitly out of scope:
+  - backend changes, new endpoints, new API clients, market/news/symbol search,
+    Alpaca/P22A display, reports/profile contracts, Agent Console changes,
+    Phase 21A activation, Claude Design import, or new prototype translation
+- Implementation direction:
+  - Keep the first viewport focused on:
+    - clear `New trade review` action;
+    - review-readiness summary;
+    - separate broker snapshot and market quote/data limitations;
+    - compact account summary using P20D-T1 backend labels;
+    - optional portfolio context support if it stays clearly secondary.
+  - Reduce, collapse, or visually demote synthetic/demo-only activity panels
+    such as recent reviews and risk alerts so they do not feel like real user
+    history or urgent portfolio warnings.
+  - Remove or collapse `What's running` unless it can be presented as a
+    non-live, non-activity summary without implying active runs.
+  - Keep portfolio context as supporting context, not a large fake-data
+    surface.
+  - Preserve visible `demo · not yet connected` labeling wherever backend
+    `data_mode` remains `synthetic_demo`.
+  - Preserve separate broker snapshot freshness, market quote freshness,
+    market-data mode, privacy display mode, valuation basis, and caveat codes.
+- Acceptance criteria:
+  - Dashboard reads as a risk-and-review cockpit, not a brokerage mirror,
+    quote terminal, watchlist, options screener, market-data viewer, or AI
+    recommendation feed.
+  - All displayed account-summary values are backend-owned labels rendered
+    verbatim; no frontend numeric parsing, formatting, computation, or
+    inference.
+  - Synthetic recent reviews and risk alerts are not presented as real user
+    history or real risk urgency.
+  - No raw holdings, raw positions, quantities, raw cash balances, buying
+    power, raw account values, account/broker/provider ids, raw payloads,
+    thresholds, prompts, LLM traces, or provider traces are introduced.
+  - No execution, order, advice, guaranteed-return, `safe to trade`,
+    `ready to trade`, live-provider, buy-now, or sell-now wording.
+  - No localStorage/sessionStorage writes beyond existing approved UI keys.
+  - No new endpoint paths, API clients, provider calls, or agent/LLM changes.
+  - Responsive layout remains usable at 1024, 1280, and 1440 px.
+- Verification:
+  - `cd frontend && npm run typecheck`
+  - `cd frontend && npm run lint -- --max-warnings 0`
+  - `cd frontend && npm run build`
+  - `git diff --check`
+  - Browser smoke if a dev server is available: `/` in light/dark at 1024,
+    1280, and 1440 px; no horizontal overflow; demo labels visible on
+    synthetic panels; no new network calls beyond existing Dashboard
+    endpoints.
+- Rollback notes:
+  - Revert only the Dashboard page and P20D-T2 verification notes.
+  - Preserve P20D-T1 contract/types unless a separate contract review requires
+    changes.
+- Status: `done`.
+- Claude A frontend implementation verification (2026-05-27):
+  - **Neutral header**: Removed personalized greeting `Good morning, ${displayName}.`
+    and verbose sub-text. Title is now `"Dashboard"`, sub is
+    `"Review readiness, account summary, and portfolio context. Manual decision support only."`
+    Removed unused `displayName` const.
+  - **Column swap**: Left column (primary) now holds Account Summary + Portfolio Context.
+    Right column (secondary) holds Quick Reviews + demoted Recent Reviews + demoted Risk Alerts.
+  - **WhatsRunningPanel removed**: Entire function and its styles (`facts`, `factRow`,
+    `factLabel`) deleted. This panel duplicated readiness strip info and implied active runs.
+  - **Synthetic demo reviews collapsed**: When `isDemoMode && status === "success"`,
+    `RecentReviewsPanel` renders a compact note instead of the full table. Tag changes
+    from `"last 7 days"` to `"demo"`. DemoChip always visible.
+  - **Synthetic demo risk alerts collapsed**: Same pattern — compact note when demo.
+    Tag changes from `"deterministic"` to `"demo"`. DemoChip always visible.
+  - **Grid proportions updated**: Body grid from `1.6fr 1fr` to `1.2fr 1fr`.
+  - **New style**: `collapsedNote` for collapsed demo panel text.
+  - `tsc --noEmit`: clean.
+  - `eslint DashboardPage.tsx`: clean.
+  - `vite build`: 103 modules, no warnings.
+  - Scoped static checks: no `WhatsRunning`/`displayName`/`factRow`/`factLabel` references
+    remain; no `Good morning`/personalized greeting; no forbidden order/execute/localStorage
+    patterns outside safety JSDoc; no frontend financial computation.
+  - Browser smoke (no-user state): Neutral `"Dashboard"` title renders correctly at
+    1024px light and 1440px dark. Safety strip intact. No horizontal overflow.
+  - Full cockpit smoke (Docker Compose stack):
+    - `docker compose up --build -d`: postgres healthy, backend up on :8000, frontend on :5173.
+    - `/health` → 200 `{"status":"ok"}`.
+    - `/` → 200 Vite HTML.
+    - `/api/users` → 200 JSON (user "Local Trader" auto-selected).
+    - Dashboard at 1024px light: two-column layout, no overflow, all panels rendered with
+      backend data, DemoChips visible, collapsed demo reviews + alerts show compact notes.
+    - Dashboard at 1280px dark: same — clean rendering, no overflow.
+    - Dashboard at 1440px dark: same — clean rendering, no overflow.
+    - Account Summary shows all P20D-T1 fields verbatim: display_scope, amounts_hidden
+      badge, source_label, value labels, valuation_basis, market_data_mode, privacy,
+      caveat_codes.
+    - No WhatsRunningPanel in DOM.
+    - No personalized greeting in DOM.
+    - Safety strip visible at page bottom.
+    - `docker compose down`: clean shutdown.
+  - File: `frontend/src/pages/DashboardPage.tsx` — 608 lines (down from 624).
+  - No other files changed. No backend changes. No new endpoints or API clients.
+
+### P20D-T3 - Dashboard Visual/Content Polish
+
+- Task id: `P20D-T3`
+- Title: Dashboard Visual/Content Polish With Real Local Smoke Testing
+- Owner: Claude A implementation, Codex B contract/safety review
+- Objective: Polish the Dashboard as a compact risk-and-review cockpit:
+  improve readiness strip density, Account Summary readability, Quick Review
+  button fidelity, and collapsed demo panel clarity without changing backend
+  contracts, endpoints, types, or safety boundaries.
+- Dependencies:
+  - completed `P20D-T2` Dashboard cockpit cleanup
+  - completed `P20D-T1` account summary contract and frontend consumption
+- Files changed:
+  - `frontend/src/pages/DashboardPage.tsx`
+  - `docs/shared/implementation_plan.md` (this verification block)
+- Explicitly out of scope:
+  - backend changes, new endpoints, new API clients, type changes,
+    Agent Console, Phase 21A, market/news/symbol search, reports/profile,
+    Claude Design import, `../TradingAgents`
+- Changes made:
+  - **Readiness strip**: Equal-width tiles (`repeat(3, 1fr)` grid). Replaced
+    verbose KV rows with `FreshnessDial` for as-of labels. Added `readRow`
+    flex layout for badge + dial on one line. Removed redundant status/as-of
+    KV pairs.
+  - **Account Summary**: Structured into three visual sections separated by
+    rules. Uses `Stat` component for headline total value when amounts are
+    visible. Position breakdown KV rows in middle section. Data provenance
+    (valuation basis, market data, privacy) in compact bottom section. Source
+    label rendered as Stat sub-line or standalone KV when amounts hidden.
+  - **Quick Reviews**: Added semantic MpIcon SVGs to buttons (spark, alert,
+    shield, lock — matching prototype icon mapping). Buttons now use row
+    layout with icon + column for label/sub. Sub text uses uppercase
+    letter-spacing for scanability. Added `quickReviewIcon` helper.
+  - **Collapsed demo panels**: Added MpIcon (info, shield) alongside compact
+    notes. Wrapped in `collapsedRow` flex container. Improved review history
+    note wording to guide users toward starting a review.
+  - **New styles**: `readRow`, `kvSection`, `collapsedRow`, `quickContent`.
+    Updated `quickBtn` from column to row layout. Updated `quickSub` with
+    uppercase styling. Added `lineHeight` to `readSub`.
+  - All backend display labels remain verbatim. No frontend financial
+    computation. No new endpoints, API clients, localStorage/sessionStorage
+    writes, or forbidden wording.
+- Verification:
+  - `npm run typecheck`: clean.
+  - `npm run lint -- --max-warnings 0`: clean.
+  - `npm run build`: 103 modules, no warnings.
+  - `git diff --check`: clean.
+  - Static checks: no forbidden trading/advice wording, no localStorage,
+    no new fetch/endpoint, no frontend numeric formatting, no emoji.
+  - Docker Compose stack (`docker compose up --build -d`):
+    - `/health` → 200.
+    - `/` → 200 Vite HTML.
+    - `/api/users` → 200 JSON.
+    - Dashboard at 1024px light: no overflow, all panels readable.
+    - Dashboard at 1280px light: clean, Account Summary structured sections
+      visible, Quick Review icons render, collapsed panels with MpIcon.
+    - Dashboard at 1280px dark: clean.
+    - Dashboard at 1440px dark: clean, all panels above fold.
+    - Other pages verified: `/trade-review`, `/agent-team-analysis`,
+      `/portfolio-context`, `/settings` — no regressions.
+    - `docker compose down`: clean shutdown.
+  - File: `frontend/src/pages/DashboardPage.tsx` — 138 lines added, 97 removed.
+- Status: `done`.
+
 ## Phase 21A - Realtime Agent Console backend contract
 
 Phase goal, if reactivated later: define and implement the backend foundation required for the prototype Agent Console's persisted transcript, ordered progress stream, follow-up input, direct-to-agent routing, broadcast-to-team routing, and quick-question suggestions.
@@ -910,9 +1342,18 @@ honest delayed/indicative/limited-source labels. Commercial vendor RFI
 outreach is retained for later scale planning and is not required before an
 approved local/internal evaluation adapter.
 
+PM follow-up decision (2026-05-26): **APPROVE WITH REVISIONS** for
+`P22A-T4 - Alpaca Basic Local/Internal Evaluation Adapter`. Commercial vendor
+comparison and RFI material are parked as future references; no outreach,
+licensing negotiation, pricing negotiation, or production-provider selection
+is active. `P22A-T4` authorizes a backend-only, injected/mock-client mapping
+adapter with indicative/limited-source, analysis-only semantics; it does not
+authorize an external/API smoke test.
+
 Architecture reference:
 
 - `docs/codex-b-architecture/PHASE_22A_MARKET_DATA_EVALUATION_CONTRACT.md`
+- `docs/codex-b-architecture/PHASE_22A_ALPACA_BASIC_EVALUATION_ADAPTER_CONTRACT.md`
 - `docs/codex-b-architecture/adr/0003-market-data-timing-tradier-rest-snapshots.md`
 - `docs/codex-b-architecture/MARKET_DATA_PROVIDER_RFI.md`
 
@@ -1207,6 +1648,110 @@ Shared Phase 22A rules:
   - Verification: documentation/source review only; `git diff --check` ->
     clean.
 - Status: `done`.
+
+### P22A-T4 - Alpaca Basic Local/Internal Evaluation Adapter
+
+- Task id: `P22A-T4`
+- Title: Alpaca Basic Local/Internal Evaluation Adapter
+- Owner: Codex C
+- Objective: Implement a backend-only, app-owned mapping adapter that uses
+  injected fake clients and synthetic Alpaca-shaped responses to test whether
+  Alpaca Basic can exercise existing provider-neutral stock/ETF and
+  listed-options market-data contracts without creating any live/default
+  provider path.
+- Dependencies:
+  - completed `P22A-T1` provider-neutral snapshot contracts and tests
+  - completed `P22A-T3` early-evaluation assessment
+  - Codex A approval dated 2026-05-26
+  - `docs/codex-b-architecture/PHASE_22A_ALPACA_BASIC_EVALUATION_ADAPTER_CONTRACT.md`
+- Expected bounded modules to inspect or change:
+  - `backend/app/services/market_data/interfaces.py`
+  - `backend/app/services/market_data/models.py`
+  - `backend/app/services/market_data/freshness.py`
+  - `backend/app/services/market_data/snapshots.py`
+  - new `backend/app/services/market_data/alpaca_evaluation_provider.py`, or
+    an equivalently narrow app-owned adapter module
+  - `backend/app/services/market_data/__init__.py`, only for safe exports
+  - focused tests under `backend/tests/services/market_data/`
+  - `backend/tests/unit/test_market_data_schemas.py` and
+    `backend/tests/unit/test_risk_schemas.py`, only if a narrowly necessary
+    typed provenance/read alignment is added
+  - `docs/shared/implementation_plan.md`, verification notes only
+- Explicitly excluded files/surfaces:
+  - frontend files, routes, migrations, agent-team services, LLM/provider
+    config, `../TradingAgents`, `.env` files, credentials, API keys, and any
+    external provider client setup
+- Contract gap to resolve or report:
+  - Alpaca Basic evaluation data must be represented as `indicative`, with
+    `limited_source` captured through safe typed coverage/provenance language
+    where needed. Existing `DataMode` intentionally does not treat
+    `limited_source` as quote truth. Codex C must not hide this limitation in
+    untyped prose or represent it as `live`; propose the smallest
+    backend-only typed refinement or stop with a blocker.
+- Implementation steps:
+  1. Read the P22A contracts, amended ADR 0003, existing market-data
+     interfaces/models/freshness/snapshot code, and focused tests.
+  2. Add a narrow Alpaca evaluation adapter behind an injected client
+     boundary. Default tests use fake clients and fixed synthetic responses
+     only.
+  3. Map stock/ETF underlying quote, option quote, and option-chain responses
+     into existing provider-neutral snapshots with distinct freshness scopes.
+  4. Preserve IV and Greeks provenance or explicit missing/unavailable states;
+     do not calculate or invent provider values.
+  5. Apply backend-owned freshness/actionability semantics so indicative or
+     limited-source input remains `analysis_only` unless a stricter existing
+     blocked state applies.
+  6. Add deterministic tests for supported, incomplete, unavailable, stale,
+     and injected-client failure cases, plus typed limitation provenance.
+  7. Confirm there is no route, frontend surface, credential loader, runtime
+     provider selector, default network path, agent ingestion, or raw payload
+     exposure.
+- Acceptance criteria:
+  - Adapter is app-owned, backend-only, snapshot-oriented, and provider-neutral
+    at its output boundary.
+  - Tests construct it only with injected fakes; no external API request,
+    credential, SDK setup, provider account, or live smoke test is introduced.
+  - Alpaca-derived evaluation results are never labelled `live`, official, or
+    current market truth.
+  - Equity and options responses carry `indicative` semantics and safe
+    `limited_source` coverage/provenance where required.
+  - Underlying quote, option quote, and option-chain freshness stay distinct;
+    broker snapshot freshness remains separate.
+  - IV/Greeks values are mapped only when present and have explicit
+    provenance; absent/unsupported values degrade safely.
+  - Provider errors and incomplete data produce safe unavailable/blocked or
+    analysis-only behavior under existing backend policy, without raw
+    exception/provider payload exposure.
+  - No frontend, route, migration, provider credential/config, agent/LLM,
+    Phase 21A, TradingAgents, execution, or commercial-provider work is added.
+- Tests to run:
+  - `cd backend && ./.venv/bin/python -m pytest tests/services/market_data tests/unit/test_market_data_schemas.py tests/unit/test_risk_schemas.py -q`
+  - If actionability integration changes: `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_actionability.py tests/services/agents/ tests/services/trade_review/test_trade_review_snapshots.py -q`
+  - `git diff --check`
+- Rollback notes:
+  - Revert only the Alpaca evaluation adapter, any narrowly justified
+    provider-neutral limitation-provenance refinement, focused tests, and its
+    verification notes.
+  - Preserve completed P22A-T1 synthetic/replay contracts and P22A-T2/T3
+    reference documents.
+- Status: `done` (no external/API smoke test or frontend/agent consumption authorized).
+- Verification notes (2026-05-26, Codex C):
+  - Added `backend/app/services/market_data/alpaca_evaluation_provider.py` as a backend-only mapping adapter that requires an injected client boundary. It adds no SDK import, credential/config loader, runtime provider selector, route, persistence, frontend surface, or network implementation.
+  - Added provider-neutral `coverage_status` vocabulary (`unknown`, `limited_source`, `unavailable`) to quote/chain snapshots and frozen snapshot references. Alpaca Basic-shaped mapped inputs are represented as `data_mode="indicative"` plus `coverage_status="limited_source"`; missing or failed inputs use `unavailable`. The limitation is typed and is never encoded as `live`.
+  - Preserved `underlying_quote`, `option_quote`, and `option_chain` freshness scopes. Frozen risk/report references continue to use aggregate `freshness_scope="market_quote"` while retaining granular `input_freshness_scope` and now `coverage_status`.
+  - Mapped IV and Greeks only when present in injected synthetic payloads with `provider` provenance under the same limited-source boundary; absent supported quote fields use `missing`, while unavailable/failed quote inputs use `unavailable`. No calculated or invented provider metrics were added.
+  - Added synthetic adapter coverage for indicative underlying/option/chain mapping, no-call capability inspection, limited-source provenance, missing and incomplete fields, missing IV/Greeks, stale indicative input, sanitized injected-client failure, and risk/report snapshot-reference compatibility.
+  - Files changed for this task: `backend/app/services/market_data/alpaca_evaluation_provider.py`, `backend/app/services/market_data/models.py`, `backend/app/services/market_data/snapshots.py`, `backend/app/services/market_data/manual_provider.py`, `backend/app/services/market_data/__init__.py`, `backend/app/schemas/market_data.py`, `backend/app/schemas/risk.py`, `backend/tests/services/market_data/test_alpaca_evaluation_provider.py`, `backend/tests/services/market_data/test_domain_models.py`, `backend/tests/unit/test_market_data_schemas.py`, `backend/tests/unit/test_risk_schemas.py`, and this verification note.
+  - Tests: `cd backend && ./.venv/bin/python -m pytest tests/services/market_data tests/unit/test_market_data_schemas.py tests/unit/test_risk_schemas.py -q` -> `56 passed in 0.16s`; compatibility run `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_actionability.py tests/services/agents/ tests/services/trade_review/test_trade_review_snapshots.py tests/services/risk tests/unit/test_risk_schemas.py -q` -> `142 passed in 0.18s`; `git diff --check` -> clean.
+  - Codex B blocker fix-up (2026-05-26): chain mapping now accepts an injected `symbol` as `occ_symbol` only when it is a normalized OCC-format identity matching the mapped underlying, expiration, call/put side, and strike; malformed/provider-looking identifiers are omitted and cannot become frozen contract reference keys. Numeric mapping now rejects malformed and non-finite (`NaN`/`Infinity`) values without raising, so unusable underlying, option, and chain inputs degrade to existing unavailable/blocked semantics without raw error disclosure. Added synthetic regressions in `backend/tests/services/market_data/test_alpaca_evaluation_provider.py`. Verification: `cd backend && ./.venv/bin/python -m pytest tests/services/market_data tests/unit/test_market_data_schemas.py tests/unit/test_risk_schemas.py -q` -> `58 passed in 0.15s`; `cd backend && ./.venv/bin/python -m pytest tests/services/trade_review/test_actionability.py tests/services/agents/ tests/services/trade_review/test_trade_review_snapshots.py tests/services/risk tests/unit/test_risk_schemas.py -q` -> `142 passed in 0.21s`; `git diff --check` -> clean. Status remains `in_progress` pending Codex B re-review.
+  - Codex B re-review conclusion supplied to Codex A (2026-05-26): **PASS**.
+    The symbol-boundary blocker is resolved through validated normalized OCC
+    identity and an app-owned fallback identity; malformed/non-finite numeric
+    inputs safely degrade without exception. Valid mapping remains
+    `data_mode="indicative"`, `coverage_status="limited_source"`, and
+    analysis-only. Offline suites passed with `58 passed` and `142 passed`;
+    `git diff --check` was clean. No live API/network/provider, frontend, or
+    agent expansion is authorized by administrative closure.
 
 ## Future Layer - Broker Activities, Transactions, and Strategy Memory
 

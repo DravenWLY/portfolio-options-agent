@@ -1,6 +1,6 @@
 # Phase 22A Market Data Evaluation Foundation Contract
 
-Status: approved architecture contract for initial backend slice
+Status: approved architecture contract through local/internal adapter planning
 Date: 2026-05-25
 Owner: Codex B - Architecture / Systems / Integration
 Product approval: Codex A - APPROVE WITH REVISIONS
@@ -21,6 +21,29 @@ and requires written commercial-rights, licensing, pricing, and engineering
 review.
 
 Phase 21A remains paused. The Agent Console composer remains disabled.
+
+## PM Follow-Up Decision - 2026-05-26
+
+Codex A approved planning for `P22A-T4 - Alpaca Basic Local/Internal
+Evaluation Adapter`, with revisions:
+
+- the implementation is backend-only and uses injected/mock clients first;
+- it maps into the existing provider-neutral contracts;
+- it has no authorized provider/API call, credential, frontend, agent, or
+  runtime-default path;
+- every mapped output is `indicative` with safe `limited_source`
+  coverage/provenance representation where needed;
+- output remains `analysis_only` unless existing backend-owned actionability
+  policy produces a stricter blocked state;
+- it must never claim `live`, official, current, or production market truth.
+
+The bounded adapter handoff is defined in
+`docs/codex-b-architecture/PHASE_22A_ALPACA_BASIC_EVALUATION_ADAPTER_CONTRACT.md`.
+
+Codex A also approved parking the commercial-provider track. The vendor
+comparison and RFI template remain reference material only; outreach,
+licensing negotiation, pricing negotiation, production selection, and public
+realtime positioning are not active work.
 
 ## Phase Goal
 
@@ -64,17 +87,18 @@ foundation for U.S. stock, ETF, and listed-options trade review that:
 
 ### Stage 1 - Early Evaluation
 
-The only authorized initial implementation is synthetic/replay-based and
-offline. Synthetic fixtures are not disposable test scaffolding; they are the
+The initial authorized implementation was synthetic/replay-based and offline.
+Synthetic fixtures are not disposable test scaffolding; they are the
 permanent CI and regression foundation for market-data behavior.
 
-Optional later evaluation paths may be considered only after a separate PM and
-architecture approval:
+Optional evaluation paths may be considered only after a separate PM and
+architecture approval. As of 2026-05-26, only the mock-driven implementation
+boundary for the Alpaca Basic mapping adapter has been approved:
 
-- **Alpaca Basic smoke testing**: limited-source or IEX-equity and indicative
-  options evaluation only. Any output must be labelled `indicative` or
-  `limited_source`. It must never be described as official, current, or live
-  market truth.
+- **Alpaca Basic mapping adapter**: backend-only, injected/mock-client
+  evaluation of limited-source equity and indicative options mapping. Any
+  output must be labelled `indicative`, with `limited_source` provenance where
+  needed. No external smoke test is authorized.
 - **Intrinio delayed-options trial**: only after written trial/use terms are
   reviewed. Output must be labelled `delayed` and `evaluation_only`.
 - **Tradier Sandbox testing**: only for internal/local evaluation of its
@@ -93,10 +117,11 @@ written responses for coverage, entitlements, display rights, derived-use
 rights, retention/replay, possible later sanitized agent-evidence use,
 engineering behavior, and scaling cost.
 
-The RFI template and vendor comparison may be prepared in parallel as
-documentation. Actual RFI outreach is deferred until early evaluation
-clarifies the required product fields and Codex A reopens the commercial-scale
-selection gate.
+The RFI template and vendor comparison are retained documentation. Actual RFI
+outreach is parked until planning for external paid beta, public current-quote
+display, multi-user commercial deployment, production options-data licensing,
+or separately approved agent use of sanitized real market evidence causes
+Codex A to reopen the commercial-scale selection gate.
 
 The initial vendor RFI set is:
 
@@ -219,9 +244,10 @@ or agent ingestion outside that bounded slice.
 2. `P22A-T3` completed an official-public-documentation assessment and
    recommends Alpaca Basic for PM consideration as a bounded local/internal
    indicative evaluation candidate.
-3. Codex A decides whether to authorize a new adapter task; until then there
-   are no provider calls, accounts, credentials, SDKs, or trials.
-4. External provider evaluation or later RFI-driven implementation requires a
+3. Codex A approved `P22A-T4` as a mock-driven, backend-only Alpaca Basic
+   mapping-adapter task. It adds no provider calls, accounts, credentials,
+   SDKs, frontend display, or trials.
+4. Any actual external provider request or later RFI-driven implementation requires a
    separately approved task and the rights review appropriate to its intended
    use.
 

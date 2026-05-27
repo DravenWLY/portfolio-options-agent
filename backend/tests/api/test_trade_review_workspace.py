@@ -665,18 +665,57 @@ def test_user_dashboard_account_summary_returns_sanitized_synthetic_contract(cli
 
     assert response.status_code == 200
     payload = response.json()
+    assert set(payload) == {
+        "data_mode",
+        "demo_notice",
+        "generated_at",
+        "summary_reference",
+        "display_scope",
+        "source_label",
+        "valuation_basis",
+        "broker_snapshot_freshness",
+        "market_quote_freshness",
+        "market_data_mode",
+        "privacy_display_mode",
+        "market_data_unavailable",
+        "portfolio_shape",
+        "cash_state",
+        "cash_state_label",
+        "total_value_label",
+        "cash_label",
+        "stock_etf_exposure_label",
+        "options_exposure_label",
+        "collateral_usage_label",
+        "portfolio_shape_label",
+        "position_count_label",
+        "stock_exposure_label",
+        "option_exposure_label",
+        "caveat_codes",
+        "display_sections",
+    }
     assert payload["data_mode"] == "synthetic_demo"
     assert payload["demo_notice"] == "demo · not yet connected"
     assert payload["summary_reference"] == "das_demo_current"
+    assert payload["display_scope"] == "synthetic_demo"
     assert payload["source_label"] == "Synthetic demo portfolio summary"
+    assert payload["valuation_basis"] == "unavailable"
+    assert payload["market_data_mode"] == "synthetic"
+    assert payload["privacy_display_mode"] == "amounts_hidden"
     assert payload["portfolio_shape"] == {"stock_position_count": 2, "option_position_count": 1}
     assert payload["cash_state"] == "available"
     assert payload["cash_state_label"] == "Cash state available"
-    assert payload["total_value_label"] == "Demo total value · not connected"
-    assert payload["cash_label"] == "Demo cash state available · not connected"
-    assert payload["stock_exposure_label"] == "Demo stock exposure summary · not connected"
-    assert payload["option_exposure_label"] == "Demo option exposure summary · not connected"
+    assert payload["total_value_label"] == "Total value hidden · demo not connected"
+    assert payload["cash_label"] == "Cash amount hidden · demo not connected"
+    assert payload["stock_etf_exposure_label"] == "Stock/ETF exposure hidden · demo not connected"
+    assert payload["options_exposure_label"] == "Options exposure hidden · demo not connected"
+    assert payload["collateral_usage_label"] == "Collateral usage hidden · demo not connected"
+    assert payload["portfolio_shape_label"] == "2 stock/ETF positions · 1 option position · counts only"
+    assert payload["position_count_label"] == "3 positions · counts only"
+    assert payload["stock_exposure_label"] == payload["stock_etf_exposure_label"]
+    assert payload["option_exposure_label"] == payload["options_exposure_label"]
     assert "summary_demo_only" in payload["caveat_codes"]
+    assert "amounts_hidden" in payload["caveat_codes"]
+    assert "synthetic_demo" in payload["caveat_codes"]
     assert {section["section_key"] for section in payload["display_sections"]} == {
         "freshness",
         "shape",
@@ -700,6 +739,7 @@ def test_user_dashboard_account_summary_preserves_broker_and_market_freshness_se
     assert payload["market_quote_freshness"]["status"] == "manual_review"
     assert payload["market_quote_freshness"]["reason_codes"] == ["market_quote_manual_review"]
     assert payload["market_quote_freshness"]["is_blocking"] is False
+    assert payload["market_data_mode"] == "synthetic"
     assert payload["market_data_unavailable"] is False
 
 
@@ -711,12 +751,21 @@ def test_user_dashboard_account_summary_handles_empty_unavailable_state(client: 
     assert payload["data_mode"] == "synthetic_demo"
     assert payload["demo_notice"] == "demo · not yet connected"
     assert payload["summary_reference"] == "das_demo_unavailable"
+    assert payload["display_scope"] == "unavailable"
+    assert payload["valuation_basis"] == "unavailable"
+    assert payload["market_data_mode"] == "unavailable"
+    assert payload["privacy_display_mode"] == "amounts_hidden"
     assert payload["portfolio_shape"] == {"stock_position_count": 0, "option_position_count": 0}
     assert payload["cash_state"] == "unavailable"
+    assert payload["total_value_label"] == "Total value hidden · demo not connected"
+    assert payload["cash_label"] == "Cash amount hidden · demo not connected"
+    assert payload["portfolio_shape_label"] == "Portfolio shape unavailable"
+    assert payload["position_count_label"] == "No portfolio context available"
     assert payload["broker_snapshot_freshness"]["freshness_scope"] == "broker_snapshot"
     assert payload["broker_snapshot_freshness"]["status"] == "unknown"
     assert payload["market_quote_freshness"] is None
     assert payload["market_data_unavailable"] is True
+    assert "amounts_hidden" in payload["caveat_codes"]
     assert "market_data_unavailable" in payload["caveat_codes"]
 
 

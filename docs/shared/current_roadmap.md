@@ -67,6 +67,16 @@ Phase 20C - Modern Portfolio Desk contract wiring and layout follow-through.
 - Before expanding the Dashboard, create a product/UX content definition that separates currently backed panels from proposed market/news/account/report additions and identifies the backend contract required for each approved addition.
 - Phase 21A remains paused after these frontend refinements: the Agent Console composer stays visibly disabled and makes no network or storage writes.
 
+Phase 20D - Dashboard Information Architecture And Contract Readiness.
+
+- Codex A completed `P20D-T0` on 2026-05-26 as a docs-only planning task in `docs/codex-a-product/DASHBOARD_CONTENT_DECISION.md`.
+- The approved Dashboard direction is a compact review-readiness cockpit: prioritize the start-review action, broker/market freshness limitations, and later approved private summary/history surfaces rather than expanding synthetic activity cards.
+- Codex A approved private authenticated account-detail display in principle on 2026-05-26. Codex B defined the backend display-label boundary in `docs/codex-b-architecture/PHASE_20D_DASHBOARD_ACCOUNT_DETAIL_CONTRACT.md`.
+- `P20D-T1`, `P20D-T2`, and `P20D-T3` are complete and reviewed: the backend account-summary contract is refined, the Dashboard cockpit is cleaned up from reviewed contracts, and the first visual/content polish pass is accepted.
+- The next Dashboard design step may use Claude Design only as a constrained visual exploration tool: it may propose hierarchy and future panels, but every panel must be classified as available now, future backend contract needed, or out of scope before Claude A implements it.
+- First-viewport principles are review readiness, broker/portfolio context freshness, market-data availability/data mode, and a clear start-new-review action.
+- Do not turn this planning task into frontend changes, backend endpoints, a market terminal, a watchlist, a brokerage-account mirror, an AI recommendation feed, or an options screener.
+
 Paused design reference - Phase 21A Realtime Agent Console backend contract.
 
 - Codex B drafted a mock-first realtime console option and proposed ADR 0007; both are preserved as reference material.
@@ -76,15 +86,15 @@ Paused design reference - Phase 21A Realtime Agent Console backend contract.
 
 Phase 22A - Provider-Neutral Market Data Evaluation Foundation.
 
-- Codex A approved Phase 22A on 2026-05-25 as the next backend-only evaluation phase while Phase 21A stays paused.
-- The only initial implementation task is offline and synthetic/replay-only: provider-neutral stock/ETF and listed-options snapshot contracts, provenance/freshness semantics, and deterministic scenario tests.
+- Codex A approved Phase 22A on 2026-05-25 as a backend-only evaluation phase while Phase 21A stays paused; `P22A-T1` synthetic/replay contracts are complete.
+- `P22A-T4` is complete after Codex B PASS re-review on 2026-05-26: the Alpaca Basic local/internal mapping adapter is exercised only through injected fake clients and synthetic responses.
 - Tradier is no longer the assumed scalable production provider; it remains a possible prototype/reference candidate only.
-- No production market-data provider is selected. Written RFI/licensing review is required before any commercial provider choice or live/current quote claim.
-- No external provider calls, credentials, frontend live-price surface, streaming, agent ingestion, or TradingAgents work is authorized by the initial slice.
-- Market-data work now has two tracks: early free/delayed evaluation first, and
-  commercial-scale provider/RFI selection later. RFI outreach is deferred
-  while PM decides whether to authorize a bounded local/internal evaluation
-  adapter.
+- No production market-data provider is selected. The commercial vendor/RFI track is parked until commercial-scale or external-display planning reopens it.
+- `P22A-T4` represents Alpaca evaluation results as indicative, preserves `limited_source` coverage/provenance, remains analysis-only unless existing policy blocks more strictly, and authorizes no external provider call or frontend/agent consumption.
+- No credentials, actual API smoke test, frontend live-price surface, streaming, agent ingestion, or TradingAgents work is authorized.
+- Market-data work remains split into an approved local/internal evaluation
+  path (`P22A-T4`) and a parked commercial provider/RFI path that may reopen
+  only for later scale or external-display planning.
 
 ## Next Phases
 
@@ -96,22 +106,31 @@ Phase 20B / 20C delivery sequence.
 - Claude B reviews frontend safety, UX clarity, no execution affordances, and no private-data leakage after wiring.
 - Phase 20C is complete; new Dashboard work begins with a content-definition gate rather than opportunistic new cards or endpoints.
 
+Phase 20D, docs-only planning.
+
+- `P20D-T0` is complete in `docs/codex-a-product/DASHBOARD_CONTENT_DECISION.md`; it authorizes no implementation.
+- `P20D-T1` through `P20D-T3` are complete and reviewed. The next Dashboard step is a constrained Claude Design concept pass or follow-up implementation task based only on reviewed contracts; unsupported content must be marked as future-contract-needed or out of scope before implementation.
+- Founder decisions are still needed before persisted review-history work, real market-data display, news/economic-calendar content, or profile-backed personalization. Claude A may later refine visual hierarchy only from approved contracts.
+
 Phase 21A, paused.
 
 - No current Codex C or Claude A implementation assignment exists for Phase 21A.
 - If PM later reactivates a slice, the retained contract/ADR must first be reviewed against founder learning and any updated product direction.
 
-Phase 22A, current decision gate.
+Phase 22A, evaluation checkpoint.
 
 - `P22A-T1` provider-neutral synthetic/replay contract work is complete.
-- `P22A-T3` identifies Alpaca Basic as the recommended first local/internal
-  evaluation candidate, labelled `limited_source`/`indicative` and
-  `analysis_only`; Codex A approval is required before any adapter task.
+- `P22A-T3` identified Alpaca Basic as the recommended first local/internal
+  evaluation candidate. `P22A-T4` is complete and reviewed as backend-only,
+  injected/mock-client mapping labelled `limited_source`/`indicative` and
+  `analysis_only`.
+- Actual Alpaca network or credential testing, frontend display, or agent
+  market-evidence consumption requires a separate future PM decision.
 - Tradier Sandbox remains a secondary delayed-data candidate without sandbox
   Greeks; Intrinio delayed remains conditional on written trial terms.
 - Stage 2 RFI materials for Intrinio, Databento, dxFeed, and Massive are
-  retained for commercial scale, but outreach is deferred and does not select
-  or integrate a provider.
+  retained as parked commercial-scale references; no outreach or selection is
+  active.
 
 Phase 19D / live LLM smoke gate, future only.
 

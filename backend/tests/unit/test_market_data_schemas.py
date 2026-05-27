@@ -93,6 +93,7 @@ def test_market_data_schema_field_sets_are_exact() -> None:
         "last",
         "mark",
         "freshness_scope",
+        "coverage_status",
     }
     assert set(OptionContractIdentityRead.model_fields) == {
         "underlying_symbol",
@@ -138,6 +139,7 @@ def test_market_data_schema_field_sets_are_exact() -> None:
         "implied_volatility_source",
         "greeks_source",
         "freshness_scope",
+        "coverage_status",
     }
     assert set(OptionChainSnapshotRead.model_fields) == {
         "underlying_symbol",
@@ -151,6 +153,7 @@ def test_market_data_schema_field_sets_are_exact() -> None:
         "contracts",
         "underlying_quote",
         "freshness_scope",
+        "coverage_status",
     }
 
 

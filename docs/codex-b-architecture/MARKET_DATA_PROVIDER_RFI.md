@@ -1,6 +1,6 @@
 # Market Data Provider Request For Information
 
-Status: evaluation template - no provider selected
+Status: parked reference template - no provider selected or outreach authorized
 Date: 2026-05-25
 Owner: Codex B - Architecture / Systems / Integration
 
@@ -13,6 +13,10 @@ Intrinio, Databento, dxFeed, and optionally Massive.
 
 This document is not a selection, procurement commitment, or authorization to
 integrate any provider.
+
+Codex A parked commercial vendor outreach on 2026-05-26. Retain this template
+for later commercial-scale planning only; do not send it or begin negotiation
+without a future PM reactivation decision.
 
 ## Product Use Case
 

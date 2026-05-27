@@ -8,6 +8,7 @@ from app.services.market_data.models import (
     DataMode,
     GreeksSource,
     ImpliedVolatilitySource,
+    MarketCoverageStatus,
     MarketMetricSource,
     OptionChainSnapshot,
     OptionContractIdentity,
@@ -106,6 +107,7 @@ class ManualMarketDataProvider(MarketDataProvider, OptionDataProvider, GreeksPro
             ask=stock_quote.ask,
             last=stock_quote.last,
             mark=stock_quote.mark,
+            coverage_status=stock_quote.coverage_status,
         )
 
     def get_intraday_bars(
@@ -180,6 +182,7 @@ class ManualMarketDataProvider(MarketDataProvider, OptionDataProvider, GreeksPro
                 freshness_status=first_quote.freshness_status,
                 actionability_status=first_quote.actionability_status,
                 contracts=tuple(quotes),
+                coverage_status=first_quote.coverage_status,
             )
 
     def get_option_quote_with_greeks(
@@ -212,6 +215,7 @@ def build_manual_stock_quote(
     last: Decimal | None = None,
     mark: Decimal | None = None,
     max_age_seconds: int = DEFAULT_MAX_QUOTE_AGE_SECONDS,
+    coverage_status: MarketCoverageStatus = "unknown",
 ) -> StockQuoteSnapshot:
     _validate_manual_provider_data_mode(data_mode)
     decision = evaluate_quote_freshness(
@@ -234,6 +238,7 @@ def build_manual_stock_quote(
         ask=ask,
         last=last,
         mark=mark,
+        coverage_status=coverage_status,
     )
 
 
@@ -262,6 +267,7 @@ def build_manual_option_quote(
     implied_volatility_source: ImpliedVolatilitySource | None = None,
     greeks_source: GreeksSource | None = None,
     max_age_seconds: int = DEFAULT_MAX_QUOTE_AGE_SECONDS,
+    coverage_status: MarketCoverageStatus = "unknown",
 ) -> OptionQuoteSnapshot:
     _validate_manual_provider_data_mode(data_mode)
     decision = evaluate_quote_freshness(
@@ -299,6 +305,7 @@ def build_manual_option_quote(
         or _fixture_metric_source(data_mode, value_available=implied_volatility is not None),
         greeks_source=greeks_source
         or _fixture_metric_source(data_mode, value_available=any(value is not None for value in (delta, gamma, theta, vega, rho))),
+        coverage_status=coverage_status,
     )
 
 

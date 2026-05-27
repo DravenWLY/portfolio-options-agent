@@ -13,6 +13,7 @@ from typing import Literal
 
 from app.services.market_data.models import (
     MARKET_FRESHNESS_SCOPE,
+    MarketCoverageStatus,
     MarketDataFreshnessScope,
     OptionChainSnapshot,
     OptionQuoteSnapshot,
@@ -39,6 +40,7 @@ class MarketDataSnapshotReference:
     freshness_status: str
     actionability_status: str
     input_freshness_scope: MarketDataFreshnessScope = MARKET_FRESHNESS_SCOPE
+    coverage_status: MarketCoverageStatus = "unknown"
 
 
 @dataclass(frozen=True)
@@ -69,6 +71,7 @@ def stock_quote_snapshot_reference(
         freshness_status=quote.freshness_status,
         actionability_status=quote.actionability_status,
         input_freshness_scope=quote.freshness_scope,
+        coverage_status=quote.coverage_status,
     )
 
 
@@ -91,6 +94,7 @@ def option_quote_snapshot_reference(
         freshness_status=quote.freshness_status,
         actionability_status=quote.actionability_status,
         input_freshness_scope=quote.freshness_scope,
+        coverage_status=quote.coverage_status,
     )
 
 
@@ -114,6 +118,7 @@ def option_chain_snapshot_reference(
         freshness_status=chain.freshness_status,
         actionability_status=chain.actionability_status,
         input_freshness_scope=chain.freshness_scope,
+        coverage_status=chain.coverage_status,
     )
 
 

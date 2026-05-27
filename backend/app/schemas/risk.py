@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from app.services.market_data.models import MarketDataFreshnessScope
+from app.services.market_data.models import MarketCoverageStatus, MarketDataFreshnessScope
 from app.services.market_data.snapshots import SnapshotKind, SnapshotPurpose
 from app.services.risk.violations import RiskSeverity
 
@@ -71,6 +71,7 @@ class MarketDataSnapshotReferenceRead(BaseModel):
     quote_time: datetime | None
     freshness_scope: Literal["market_quote"]
     input_freshness_scope: MarketDataFreshnessScope
+    coverage_status: MarketCoverageStatus
     data_mode: str
     freshness_status: str
     actionability_status: str

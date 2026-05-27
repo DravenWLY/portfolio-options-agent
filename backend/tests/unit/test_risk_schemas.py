@@ -61,6 +61,7 @@ def test_risk_schema_field_sets_are_exact() -> None:
         "quote_time",
         "freshness_scope",
         "input_freshness_scope",
+        "coverage_status",
         "data_mode",
         "freshness_status",
         "actionability_status",
@@ -109,6 +110,7 @@ def test_risk_report_schema_validates_domain_report_with_snapshot_reference() ->
         quote_time=captured_at,
         freshness_scope="market_quote",
         input_freshness_scope="option_quote",
+        coverage_status="limited_source",
         data_mode="manual",
         freshness_status="manual",
         actionability_status="analysis_only",
@@ -123,6 +125,7 @@ def test_risk_report_schema_validates_domain_report_with_snapshot_reference() ->
         quote_time=captured_at,
         freshness_scope="market_quote",
         input_freshness_scope="option_chain",
+        coverage_status="limited_source",
         data_mode="manual",
         freshness_status="manual",
         actionability_status="analysis_only",
@@ -156,8 +159,10 @@ def test_risk_report_schema_validates_domain_report_with_snapshot_reference() ->
     assert read.input_snapshot is not None
     assert read.input_snapshot.quote_references[0].freshness_scope == "market_quote"
     assert read.input_snapshot.quote_references[0].input_freshness_scope == "option_quote"
+    assert read.input_snapshot.quote_references[0].coverage_status == "limited_source"
     assert read.input_snapshot.chain_references[0].freshness_scope == "market_quote"
     assert read.input_snapshot.chain_references[0].input_freshness_scope == "option_chain"
+    assert read.input_snapshot.chain_references[0].coverage_status == "limited_source"
     assert not hasattr(read, "account_id")
 
 

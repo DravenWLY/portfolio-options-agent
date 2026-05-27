@@ -5,7 +5,7 @@ This file is a lightweight task index. The detailed task specs remain in `docs/s
 ## Current State
 
 - Completed foundation: Phases 1-16, Phase 17A, Phase 18A, Phase 18B, Phase 18C, Phase 19A, Phase 19B, Phase 19C, and Phase 20A.
-- Active roadmap phases: Phase 20B - remaining blocked Modern Portfolio Desk contracts; Phase 22A - provider-neutral market-data evaluation decision gate.
+- Active roadmap phases: Phase 20B - remaining blocked Modern Portfolio Desk contracts; Phase 20D - completed Dashboard cockpit cleanup/polish checkpoint with constrained Claude Design exploration next; Phase 22A - completed internal adapter evaluation checkpoint with no external test authorized.
 - Completed frontend integration sequence: Phase 20C - Modern Portfolio Desk reviewed wiring and presentation refinements.
 - Paused design reference: Phase 21A - Realtime Agent Console backend contract. Do not begin implementation unless Codex A explicitly reactivates a scoped task.
 - Current safety foundation: broker portfolio snapshot freshness/actionability is explicit, Phase 16 agent components consume it, and Phase 16B enforces private/public context boundaries.
@@ -27,9 +27,9 @@ This file is a lightweight task index. The detailed task specs remain in `docs/s
 
 Do not treat this list as authorization to implement. Each item needs an approved task spec before code changes.
 
-1. Product/UX definition gate: specify what belongs on the Dashboard before opening more Dashboard backend or frontend work. Preserve already wired safe panels; classify new market/news/account/report concepts as reviewed contract needs, deferred placeholders, or out of scope. This design-definition work may proceed in parallel with the market-data decision and must not activate new integrations.
-2. Market-data PM gate: `P22A-T1` and `P22A-T3` are complete. Codex A should decide whether to authorize an Alpaca Basic backend-only local/internal evaluation adapter under `limited_source`/`indicative`, analysis-only constraints; do not implement it before approval.
-3. Product/architecture: retain vendor RFI documentation for later commercial-scale selection across Intrinio, Databento, dxFeed, and Massive, but defer outreach for now. News/economic-calendar data and symbol-search remain separate future evaluations.
+1. Dashboard design checkpoint: `P20D-T1` through `P20D-T3` are complete and reviewed. Claude Design may be used next only for constrained Dashboard visual exploration. Every proposed panel must be classified as available now, future backend contract needed, or out of scope before Claude A implements anything. Do not add fields, endpoints, market/news data, or real/demo values that feel connected without a reviewed contract.
+2. Market-data evaluation checkpoint: `P22A-T4` is complete after Codex B PASS re-review. No actual Alpaca API request, credential path, frontend data display, agent ingestion, or production-provider work is authorized.
+3. Product/architecture: commercial vendor/RFI work is parked. Retain reference documentation for later scale planning; do not begin outreach, licensing/pricing negotiation, or provider selection now. News/economic-calendar data and symbol-search remain separate future evaluations.
 4. Remaining data contracts: P20B-T5 reports and P20B-T6 profile/display stay blocked until their persistence/auth and product decisions are approved.
 5. Pause gate: do not start any Phase 21A realtime/agent expansion work or activate the Agent Console composer until Codex A explicitly reactivates a scoped slice.
 6. Advisory: Codex E may produce agentic-AI learning memos for Codex A; those memos do not authorize implementation or roadmap changes.

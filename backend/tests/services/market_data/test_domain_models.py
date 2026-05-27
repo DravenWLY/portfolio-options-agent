@@ -7,6 +7,7 @@ from app.services.market_data import (
     ACTIONABILITY_STATUSES,
     DATA_MODES,
     FRESHNESS_STATUSES,
+    MARKET_COVERAGE_STATUSES,
     OptionChainSnapshot,
     OptionContractIdentity,
     OptionQuoteSnapshot,
@@ -27,6 +28,7 @@ def test_market_data_vocabulary_contains_actionability_and_freshness_values() ->
     assert "unavailable" in DATA_MODES
     assert "eod_only" in FRESHNESS_STATUSES
     assert "unavailable" in FRESHNESS_STATUSES
+    assert "limited_source" in MARKET_COVERAGE_STATUSES
     assert "blocked_stale_quote" in ACTIONABILITY_STATUSES
     assert "blocked_provider_error" in ACTIONABILITY_STATUSES
 

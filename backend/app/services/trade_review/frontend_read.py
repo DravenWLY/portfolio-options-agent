@@ -332,14 +332,18 @@ def get_dashboard_account_summary_for_user(
     *,
     generated_at: datetime | None = None,
 ) -> DashboardAccountSummaryRead:
-    """Return a synthetic, display-ready Dashboard account summary."""
+    """Return a display-ready Dashboard account summary read contract."""
 
     generated = generated_at or datetime.now(UTC)
     if str(user_id) == _DEMO_EMPTY_USER_REFERENCE:
         read = _dashboard_account_summary_read(
             generated_at=generated,
             summary_reference="das_demo_unavailable",
+            display_scope="unavailable",
             source_label="Synthetic demo summary unavailable",
+            valuation_basis="unavailable",
+            market_data_mode="unavailable",
+            privacy_display_mode="amounts_hidden",
             stock_position_count=0,
             option_position_count=0,
             cash_state="unavailable",
@@ -351,17 +355,29 @@ def get_dashboard_account_summary_for_user(
             market_display_label=None,
             market_reason_codes=(),
             market_is_blocking=True,
-            total_value_label="Demo total value unavailable",
-            cash_label="Demo cash state unavailable",
-            stock_exposure_label="Demo stock exposure unavailable",
-            option_exposure_label="Demo option exposure unavailable",
-            caveat_codes=("summary_demo_only", "portfolio_context_unavailable", "market_data_unavailable"),
+            total_value_label="Total value hidden · demo not connected",
+            cash_label="Cash amount hidden · demo not connected",
+            stock_etf_exposure_label="Stock/ETF exposure hidden · demo not connected",
+            options_exposure_label="Options exposure hidden · demo not connected",
+            collateral_usage_label="Collateral usage hidden · demo not connected",
+            portfolio_shape_label="Portfolio shape unavailable",
+            position_count_label="No portfolio context available",
+            caveat_codes=(
+                "summary_demo_only",
+                "amounts_hidden",
+                "portfolio_context_unavailable",
+                "market_data_unavailable",
+            ),
         )
     else:
         read = _dashboard_account_summary_read(
             generated_at=generated,
             summary_reference="das_demo_current",
+            display_scope="synthetic_demo",
             source_label="Synthetic demo portfolio summary",
+            valuation_basis="unavailable",
+            market_data_mode="synthetic",
+            privacy_display_mode="amounts_hidden",
             stock_position_count=2,
             option_position_count=1,
             cash_state="available",
@@ -373,11 +389,20 @@ def get_dashboard_account_summary_for_user(
             market_display_label="Market quote freshness requires review",
             market_reason_codes=("market_quote_manual_review",),
             market_is_blocking=False,
-            total_value_label="Demo total value · not connected",
-            cash_label="Demo cash state available · not connected",
-            stock_exposure_label="Demo stock exposure summary · not connected",
-            option_exposure_label="Demo option exposure summary · not connected",
-            caveat_codes=("summary_demo_only", "broker_snapshot_stale", "market_quote_manual_review"),
+            total_value_label="Total value hidden · demo not connected",
+            cash_label="Cash amount hidden · demo not connected",
+            stock_etf_exposure_label="Stock/ETF exposure hidden · demo not connected",
+            options_exposure_label="Options exposure hidden · demo not connected",
+            collateral_usage_label="Collateral usage hidden · demo not connected",
+            portfolio_shape_label="2 stock/ETF positions · 1 option position · counts only",
+            position_count_label="3 positions · counts only",
+            caveat_codes=(
+                "summary_demo_only",
+                "amounts_hidden",
+                "synthetic_demo",
+                "broker_snapshot_stale",
+                "market_quote_manual_review",
+            ),
         )
     validate_trade_review_workspace_payload(read.model_dump(mode="python"))
     return read
@@ -523,7 +548,11 @@ def _dashboard_account_summary_read(
     *,
     generated_at: datetime,
     summary_reference: str,
+    display_scope: str,
     source_label: str,
+    valuation_basis: str,
+    market_data_mode: str,
+    privacy_display_mode: str,
     stock_position_count: int,
     option_position_count: int,
     cash_state: str,
@@ -537,8 +566,11 @@ def _dashboard_account_summary_read(
     market_is_blocking: bool,
     total_value_label: str,
     cash_label: str,
-    stock_exposure_label: str,
-    option_exposure_label: str,
+    stock_etf_exposure_label: str,
+    options_exposure_label: str,
+    collateral_usage_label: str,
+    portfolio_shape_label: str,
+    position_count_label: str,
     caveat_codes: tuple[str, ...],
 ) -> DashboardAccountSummaryRead:
     market_quote_freshness = None
@@ -557,7 +589,9 @@ def _dashboard_account_summary_read(
         demo_notice=_PHASE20B_DEMO_NOTICE,
         generated_at=generated_at,
         summary_reference=summary_reference,
+        display_scope=display_scope,
         source_label=source_label,
+        valuation_basis=valuation_basis,
         broker_snapshot_freshness=PortfolioContextFreshnessRead(
             freshness_scope="broker_snapshot",
             status=broker_status,
@@ -567,6 +601,8 @@ def _dashboard_account_summary_read(
             is_blocking=broker_is_blocking,
         ),
         market_quote_freshness=market_quote_freshness,
+        market_data_mode=market_data_mode,
+        privacy_display_mode=privacy_display_mode,
         market_data_unavailable=market_quote_freshness is None,
         portfolio_shape=PortfolioContextShapeRead(
             stock_position_count=stock_position_count,
@@ -576,8 +612,13 @@ def _dashboard_account_summary_read(
         cash_state_label=_cash_state_label(cash_state),
         total_value_label=total_value_label,
         cash_label=cash_label,
-        stock_exposure_label=stock_exposure_label,
-        option_exposure_label=option_exposure_label,
+        stock_etf_exposure_label=stock_etf_exposure_label,
+        options_exposure_label=options_exposure_label,
+        collateral_usage_label=collateral_usage_label,
+        portfolio_shape_label=portfolio_shape_label,
+        position_count_label=position_count_label,
+        stock_exposure_label=stock_etf_exposure_label,
+        option_exposure_label=options_exposure_label,
         caveat_codes=caveat_codes,
         display_sections=(
             DashboardSummaryDisplaySectionRead(

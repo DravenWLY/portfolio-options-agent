@@ -1,6 +1,6 @@
 # Phase 22A Market Data Vendor Capability And Licensing Comparison
 
-Status: completed comparison for PM review - no provider selected
+Status: completed parked reference - no provider selected or outreach authorized
 Date: 2026-05-25
 Owner: Codex B - Architecture / Systems / Integration
 Task: `P22A-T2`
@@ -18,10 +18,11 @@ display, or authorize implementation.
 ## Recommendation
 
 Keep the provider-neutral Phase 22A architecture unchanged and retain this
-commercial comparison for the later scale-selection track. Following founder
-clarification on 2026-05-25, **do not send the RFI yet**: the immediate next
-track is a free or low-friction early-evaluation provider assessment, recorded
-in `PHASE_22A_EARLY_EVALUATION_PROVIDER_ASSESSMENT.md`.
+commercial comparison for a future scale-selection track. Codex A parked
+commercial provider work on 2026-05-26: do not send the RFI, start licensing
+or pricing discussions, or select a production provider unless that track is
+explicitly reopened. `P22A-T4` is a separate local/internal Alpaca Basic
+fake-client mapping evaluation, not commercial provider selection.
 
 When commercial selection becomes timely, the same written RFI should be sent
 to:
@@ -104,9 +105,10 @@ to all four candidates, subject to PM approval:
   meaningfully different way, so its raw-versus-calculated data and license
   boundaries should be tested by the same RFI.
 
-RFI outreach is deferred during the early free/delayed evaluation track. This
-memo does not authorize outreach, an adapter, trial, provider request, frontend
-data display, market-data streaming, or agent ingestion.
+RFI outreach is parked under the Codex A decision of 2026-05-26 and remains a
+future reference only until commercial-scale planning is explicitly reopened.
+This memo does not authorize outreach, an adapter, trial, provider request,
+frontend data display, market-data streaming, or agent ingestion.
 
 ## Product Documentation Alignment Finding
 

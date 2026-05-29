@@ -28,6 +28,9 @@ services:
       # Override DATABASE_URL so the backend reaches postgres by service name, not localhost.
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-portfolio_options_agent}:${POSTGRES_PASSWORD:-portfolio_options_agent_dev_password}@postgres:5432/${POSTGRES_DB:-portfolio_options_agent}
       LOCAL_DEV_ACCESS_TOKEN: ${LOCAL_DEV_ACCESS_TOKEN:?Set LOCAL_DEV_ACCESS_TOKEN in .env for local brokerage-data routes}
+      # Personal-demo symbol lookup: fetch the public Nasdaq Trader symbol directory on startup,
+      # then use the normalized last-good cache for autocomplete.
+      SYMBOL_DIRECTORY_REFRESH_ON_STARTUP: ${SYMBOL_DIRECTORY_REFRESH_ON_STARTUP:-true}
     ports:
       # Loopback-only: backend serves real read-only brokerage data.
       - "127.0.0.1:8000:8000"

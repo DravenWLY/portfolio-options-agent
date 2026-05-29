@@ -1174,6 +1174,69 @@ Shared Phase 20D rules:
   - File: `frontend/src/pages/DashboardPage.tsx` — 138 lines added, 97 removed.
 - Status: `done`.
 
+### P20D-T4 - Dashboard Claude Design Visual Refinement
+
+- Task id: `P20D-T4`
+- Title: Dashboard Claude Design Visual Refinement From Reviewed Contracts
+- Owner: Claude A implementation, Codex B contract/safety review
+- Objective: Implement only "Available now" visual refinements from the Claude
+  Design feasibility review — better first-viewport hierarchy, action context
+  surfacing, readiness section structure, and account summary section labeling.
+  No new backend fields, endpoints, types, or safety boundary changes.
+- Dependencies:
+  - completed `P20D-T3` Dashboard visual/content polish
+  - completed Claude Design feasibility review (panel inventory memo)
+  - completed `P20D-T1` account summary and readiness contracts
+- Files changed:
+  - `frontend/src/pages/DashboardPage.tsx`
+  - `docs/shared/implementation_plan.md` (this verification block)
+- Explicitly out of scope:
+  - backend changes, new endpoints, new API clients, type changes
+  - market/news widgets, watchlist, options chain browser, symbol search
+  - charts, sparklines, percentage changes, financial computation
+  - Claude Design prototype JavaScript paste
+  - Agent Console, Phase 21A, `../TradingAgents`
+- Changes made:
+  - **Action context bar** (new): Renders `recommended_user_action_label`
+    and `overall_review_mode` badge from the reviewed `ReviewReadinessRead`
+    contract. Accent-tinted background (`--mp-accent-soft`) with accent
+    border (`--mp-accent-line`), matching Claude Design v2 dashboard
+    prototype. MpIcon("review"), flexbox layout with badge right-aligned.
+    Only appears when readiness data is loaded.
+  - **Readiness section restructure**: Added section label row ("REVIEW
+    READINESS") with DemoChip at section level instead of per-card. Cards
+    now use header row layout: eyebrow left + status Badge right. Removed
+    per-card DemoChip (redundant with section-level chip). Removed unused
+    `isDemoMode` prop from `ReadinessTile`. Tighter card padding (space-3
+    vertical, space-4 horizontal) with 6px internal gap.
+  - **Account summary section headers**: Added "POSITION BREAKDOWN" and
+    "DATA PROVENANCE" uppercase section headers above existing KV sections.
+    Increased section padding-top from space-2 to space-3 for visual weight.
+  - **reviewModeTone helper** (new): Maps `ReviewReadinessMode` enum values
+    to `MpTone` for the overall review mode badge.
+  - **Density refinements**: Page gap reduced from space-6 to space-5.
+    Body column gap reduced from space-6 to space-5. Primary button gets
+    letter-spacing. Quick review content gap increased from 1px to 2px.
+    Styles block reorganized with section comments.
+  - All backend display labels remain verbatim. No frontend financial
+    computation. No new endpoints, API clients, localStorage/sessionStorage
+    writes, or forbidden wording.
+- Verification:
+  - `npx tsc --noEmit`: clean (0 errors after removing unused isDemoMode prop).
+  - `npx vite build`: 103 modules, no warnings.
+  - Docker Compose stack (`docker compose up --build -d`):
+    - Frontend: 200 Vite HTML.
+    - Backend: 200 docs endpoint.
+    - Dashboard at 1024px light: action bar visible, readiness section label
+      visible, account summary section headers readable, two-column holds.
+    - Dashboard at 1280px light: clean, all P20D-T4 additions visible.
+    - Dashboard at 1280px dark: clean, all tokens respect dark theme.
+    - Dashboard at 1440px light: compact, everything above fold.
+    - Other pages verified: `/trade-review`, `/agent-console` — no regressions.
+    - `docker compose down`: clean shutdown.
+  - File: `frontend/src/pages/DashboardPage.tsx` — 724 lines total.
+- Status: `done`.
+
 ## Phase 21A - Realtime Agent Console backend contract
 
 Phase goal, if reactivated later: define and implement the backend foundation required for the prototype Agent Console's persisted transcript, ordered progress stream, follow-up input, direct-to-agent routing, broadcast-to-team routing, and quick-question suggestions.
@@ -1752,6 +1815,1166 @@ Shared Phase 22A rules:
     analysis-only. Offline suites passed with `58 passed` and `142 passed`;
     `git diff --check` was clean. No live API/network/provider, frontend, or
     agent expansion is authorized by administrative closure.
+
+## Phase 23A - Symbol Lookup / Instrument Reference Foundation
+
+Phase goal: add a backend-owned, provider-neutral symbol lookup and validation
+foundation for Trade Review input ergonomics and later Dashboard quick entry.
+The initial slice is synthetic/replay-first and backend-only.
+
+Shared Phase 23A rules:
+
+- No live provider, SDK, credential, `.env`, external API, frontend, market
+  quote, option-chain browser, watchlist, screener, agent, or TradingAgents
+  work in the initial slice.
+- Symbol lookup is public reference data, not quote truth, broker tradability,
+  or a recommendation.
+- Return safe display/reference fields only. Do not expose raw provider
+  payloads, entitlement metadata, broker/account data, or private portfolio
+  context.
+- Frontend autocomplete may start only after Codex B reviews the backend
+  contract.
+
+### P23A-T1 - Symbol Search And Validation Contracts With Synthetic Fixtures
+
+- Task id: `P23A-T1`
+- Title: Symbol Search And Validation Contracts With Synthetic Fixtures
+- Owner: Codex C implementation, Codex B architecture/safety review
+- Objective: Implement backend contracts for ticker/instrument lookup and exact
+  validation using deterministic synthetic/replay fixtures. The contract should
+  support typeahead suggestions such as `NV` -> `NVDA` and a clear `Symbol Not
+  Found` response when no supported match exists.
+- Dependencies:
+  - completed Phase 20D Dashboard content boundary
+  - completed Phase 22A provider-neutral market-data evaluation foundation
+  - architecture contract:
+    `docs/codex-b-architecture/PHASE_23A_SYMBOL_LOOKUP_CONTRACT.md`
+- Files expected to inspect or change:
+  - `backend/app/schemas/`
+  - `backend/app/services/`
+  - `backend/app/api/routes/`
+  - `backend/tests/`
+  - `docs/shared/implementation_plan.md` verification notes only
+- Suggested endpoint shape:
+  - `GET /symbols/search?q={query}`
+  - `GET /symbols/validate?symbol={symbol}`
+- Conceptual response fields:
+  - search wrapper: `query`, `normalized_query`, `data_mode`,
+    `source_label`, `as_of_label`, `items`, `no_match`, `message`
+  - item: `symbol`, `name`, `asset_class`, `exchange`, `region`,
+    `currency`, `is_supported`, `match_type`, `score_label`,
+    `source_label`, `as_of_label`
+  - validation: `symbol`, `normalized_symbol`, `is_found`, `is_supported`,
+    `asset_class`, `exchange`, `name`, `data_mode`, `source_label`,
+    `as_of_label`, `message`
+- Implementation steps:
+  1. Define typed backend schemas for search and validation.
+  2. Add a deterministic synthetic/replay symbol reference service with a small
+     fixture set sufficient for prefix, exact, unsupported, and no-match tests.
+  3. Add read-only routes using the app's existing protected/local API
+     posture.
+  4. Normalize case and whitespace consistently in backend service code.
+  5. Return backend-owned `Symbol Not Found` style copy for no-match states.
+  6. Add forbidden-field and forbidden-wording tests.
+  7. Document any contract gaps; do not add frontend wiring.
+- Acceptance criteria:
+  - `NV` returns deterministic safe suggestions such as `NVDA` from fixtures.
+  - Unknown input returns a safe no-match response without raising.
+  - Exact validation distinguishes found/supported, found/unsupported, and
+    not-found symbols.
+  - Responses include data mode, source label, and as-of label.
+  - Responses do not include quotes, prices, volumes, rankings as
+    recommendations, broker/account data, raw provider payloads, credentials,
+    or execution/order language.
+  - Default tests make no external calls.
+- Tests:
+  - backend schema tests for response shape and enum literals
+  - service tests for prefix, exact, alias/contains if included, no-match,
+    unsupported, case/whitespace normalization
+  - API tests for route behavior and local access guard
+  - forbidden-field and forbidden-wording sweep
+  - `git diff --check`
+- Rollback notes:
+  - Revert only symbol lookup schemas, service, routes, tests, and verification
+    notes.
+  - Preserve Phase 22A market-data contracts; symbol lookup is not a quote
+    provider.
+- Verification notes:
+  - 2026-05-27 Codex C added provider-neutral symbol lookup schemas,
+    service/provider contracts, and protected read routes for
+    `GET /symbols/search?q={query}` and
+    `GET /symbols/validate?symbol={symbol}`.
+  - Added `backend/app/schemas/symbols.py` with typed
+    `SymbolSearchRead`, `SymbolSearchItemRead`, and `SymbolValidationRead`
+    contracts. Responses expose normalized display-safe symbol reference
+    fields only: symbol/name, asset class, exchange, region, currency,
+    support status, match type, data mode, source label, as-of label,
+    no-match state, and backend-owned messages.
+  - Added `backend/app/services/symbols.py` with a `SymbolProvider`
+    protocol, deterministic `DemoSymbolProvider`, and `SymbolService` for
+    normalization, strict prefix matching, ordering, deduplication, exact
+    validation, unsupported/test-issue filtering, and sanitized provider
+    failure behavior.
+  - Added `backend/app/api/routes/symbols.py` and registered it through the
+    existing protected FastAPI router path. The implementation is offline
+    synthetic/demo-provider only: no frontend changes, live provider, SDK,
+    network path, Nasdaq file fetch, market quote, option chain, news,
+    agent/LLM, TradingAgents, broker, order, or execution behavior was added.
+  - Added tests in `backend/tests/services/test_symbol_lookup.py` and
+    `backend/tests/api/test_symbols.py` for strict prefix behavior, case and
+    whitespace normalization, no fuzzy/contains matching, no-match display,
+    ETF/stock labels, duplicate handling, unsupported/test-issue filtering,
+    provider failure sanitization, response shape, forbidden-field/wording
+    sweeps, and local access guard.
+  - Verification: `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/api/test_symbols.py -q`
+    passed with `14 passed in 0.08s`; `cd backend && ./.venv/bin/python -m pytest tests/api/test_trade_review_workspace.py tests/services/trade_review/test_frontend_read.py -q`
+    passed with `71 passed in 0.40s`; full backend
+    `cd backend && ./.venv/bin/python -m pytest -q` passed with
+    `699 passed, 92 skipped, 1 deselected in 2.87s`.
+- Status: `done`
+
+### P23A-T2 - Trade Review Symbol Autocomplete Frontend
+
+- Task id: `P23A-T2`
+- Title: Trade Review Symbol Autocomplete Frontend
+- Owner: Claude A implementation, Codex B frontend contract review
+- Objective: Wire the reviewed symbol search/validation contracts into Trade
+  Review symbol inputs with typeahead suggestions and `Symbol Not Found`
+  handling.
+- Dependencies:
+  - completed and Codex B-reviewed `P23A-T1`
+- Status: `done`
+- Verification notes:
+  - Files created:
+    - `frontend/src/types/symbols.ts` — TypeScript mirror of backend
+      `SymbolSearchItemRead`, `SymbolSearchRead`, `SymbolValidationRead`,
+      plus `SymbolLookupDataMode`, `SymbolAssetClass`, `SymbolMatchType`
+      enum literals.
+    - `frontend/src/api/symbols.ts` — provider-neutral API wrapper using
+      `apiClient.get`. `symbolsApi.search(query, limit)` →
+      `GET /symbols/search`, `symbolsApi.validate(symbol)` →
+      `GET /symbols/validate`. No direct broker/market-data calls.
+    - `frontend/src/components/trade-review/SymbolAutocomplete.tsx` —
+      reusable combobox autocomplete with 250 ms debounced search,
+      keyboard navigation (ArrowDown/Up/Enter/Escape), mouse selection,
+      outside-click close, active-item scroll-into-view, ARIA combobox
+      pattern (`role="combobox"`, `aria-expanded`, `aria-autocomplete`,
+      `aria-controls`, `aria-activedescendant`). Uses MP design tokens.
+  - Files modified:
+    - `frontend/src/components/trade-review/TradeReviewForm.tsx` — replaced
+      plain `<TextField>` for Symbol and Underlying fields with
+      `<SymbolAutocomplete>`. No changes to form submission logic,
+      validation, or request payload shapes.
+  - Form fields wired: Symbol (stock/ETF flows), Underlying (option flows).
+  - UX states implemented:
+    - Typing prefix → debounced search → suggestion dropdown with symbol,
+      name, asset class, exchange, supported status.
+    - No-match → backend `message` rendered verbatim (e.g. "Symbol Not
+      Found").
+    - Loading → "Searching…" indicator.
+    - Error → error message displayed in dropdown.
+    - Selection → fills field, closes dropdown, no re-search.
+    - No dropdown on mount despite default values (`hasInteractedRef`
+      gates search until user focus/type).
+  - Safety checks:
+    - No `localStorage` / `sessionStorage` writes (verified: 0 keys).
+    - No prices, quotes, volume, or market data displayed.
+    - No frontend fuzzy matching or recommendation ranking.
+    - Results are not ranked as recommendations.
+    - Backend-owned messages rendered verbatim.
+    - No order/execute/place/cancel controls added.
+  - Commands run:
+    - `cd frontend && npx tsc --noEmit` — clean (0 errors).
+    - `cd frontend && npx eslint --max-warnings 0 src/types/symbols.ts
+      src/api/symbols.ts src/components/trade-review/SymbolAutocomplete.tsx
+      src/components/trade-review/TradeReviewForm.tsx` — clean (0 warnings).
+    - `cd frontend && npx vite build` — clean (105 modules, 962 ms).
+    - Docker Compose full-stack smoke test:
+      - "NV" → NVDA + NVDL suggestions ✅
+      - "ZZZZZ" → "Symbol Not Found" ✅
+      - Select NVDA → fills field, closes dropdown ✅
+      - Underlying in Covered Call flow → "AA" shows AAPL ✅
+      - No dropdown on mount with default "XYZ" ✅
+      - 0 localStorage / 0 sessionStorage keys ✅
+  - Codex B review — blocker fix (disabled-state race):
+    - Problem: if the dropdown was open when `disabled` flipped to `true`,
+      suggestion rows could still be clicked, `selectItem()` could still
+      call `onChange`, and a pending debounce or in-flight search could
+      reopen/update the dropdown after disabled mode started.
+    - Fix applied to `SymbolAutocomplete.tsx`:
+      1. Added `disabledRef` (mutable ref mirroring prop) so async
+         callbacks can read the current disabled state.
+      2. Added `useEffect` on `disabled`: when true, clears pending
+         debounce timer, closes dropdown, resets activeIndex, clears
+         suggestions/loading/error state.
+      3. `doSearch()` bails immediately if `disabledRef.current` is true
+         at call time, and drops results if disabled flipped during the
+         await.
+      4. `selectItem()` guards on `disabled` — returns immediately if
+         true.
+      5. Suggestion row `onMouseDown` and `onMouseEnter` handlers guard
+         on `disabled`.
+    - No backend changes. No payload shape changes. No validation wiring.
+      No storage writes. No new endpoints.
+    - Post-fix verification:
+      - `cd frontend && npx tsc --noEmit` — clean.
+      - `cd frontend && npx eslint --max-warnings 0` (4 files) — clean.
+      - `cd frontend && npx vite build` — clean (105 modules, 815 ms).
+
+### P23A-T3 - Broad Symbol Directory Search And Recent-List Contract
+
+- Task id: `P23A-T3`
+- Title: Broad Symbol Directory Search And Recent-List Contract
+- Owner: Codex C implementation, Codex B architecture/safety review
+- Objective: Expand symbol lookup from a tiny synthetic example set into a
+  broader provider-neutral symbol directory foundation, while adding the
+  backend contract behavior needed for the target autocomplete UX:
+  empty input returns a non-search empty state for a future browser-local
+  recents layer, and non-empty input returns exact-first, deterministic
+  suggestions such as `NOK` -> `NOK` before other `NOK*` / contains matches.
+- Desired product behavior:
+  - Empty query/focus state:
+    - return an empty non-search state from the backend;
+    - do not return global default symbols;
+    - true recent-symbol history belongs to a later browser/user-local LRU
+      layer.
+  - Non-empty query:
+    - normalize case and whitespace in the backend;
+    - return up to five or six symbols;
+    - exact symbol match appears first;
+    - symbol-prefix matches appear before symbol-contains/name-contains
+      matches;
+    - no fuzzy/edit-distance matching;
+    - no frontend-side ranking.
+- Dependencies:
+  - completed `P23A-T1`
+  - completed `P23A-T2`
+  - updated architecture contract:
+    `docs/codex-b-architecture/PHASE_23A_SYMBOL_LOOKUP_CONTRACT.md`
+- Files expected to inspect or change:
+  - `backend/app/schemas/symbols.py`
+  - `backend/app/services/symbols.py`
+  - `backend/app/api/routes/symbols.py`
+  - optional backend-only normalized symbol fixture/parser modules
+  - `backend/tests/services/test_symbol_lookup.py`
+  - `backend/tests/api/test_symbols.py`
+  - `docs/shared/implementation_plan.md` verification notes only
+- Implementation steps:
+  1. Revisit the `SymbolSearchRead` contract and decide whether existing
+     fields are sufficient for recent/search/no-match states or whether a
+     narrow backend-owned field such as `result_mode` or `section_label` is
+     needed. If a field is added, update backend schemas and tests only in
+     this slice; frontend consumption remains a later task.
+  2. Add deterministic ordering for non-empty queries:
+     exact symbol match first, then symbol prefix, then symbol contains,
+     then name contains, with stable tie-breakers.
+  3. Keep ordering labels neutral. Use wording like "Exact symbol match",
+     "Symbol prefix match", or "Reference match"; never use recommendation,
+     popularity, liquidity, or tradability language.
+  4. Add a broader normalized symbol reference source. Default tests must use
+     synthetic Nasdaq-style fixture rows or checked-in normalized demo rows.
+     Do not fetch live provider files or call external APIs.
+  5. If a Nasdaq-directory parser is introduced, parse only local fixture
+     files in tests and normalize into app-owned records before search. Do
+     not expose raw source rows or raw file payloads.
+  6. Add an empty-query path that returns no backend symbols and clearly
+     signals non-search state. Do not infer recent symbols from holdings,
+     accounts, prompts, LLM context, trade history, or portfolio context.
+  7. Preserve exact validation behavior from P23A-T1.
+  8. Add forbidden-field and forbidden-wording tests.
+  9. Document that true recents are deferred to a browser/user-local LRU
+     frontend layer.
+- Acceptance criteria:
+  - Empty query returns an empty non-search state without exposing private,
+    user, broker, or global fallback symbol data.
+  - Query `NOK` returns an exact `NOK` symbol first when present.
+  - Other `NOK*`, symbol-contains, or name-contains matches may follow in a
+    deterministic order, capped at five or six items.
+  - No fuzzy/edit-distance matching is introduced.
+  - No frontend changes are included in this backend slice.
+  - Responses remain provider-neutral and contain no quotes, prices, volumes,
+    account/broker data, raw provider payloads, credentials, prompts, LLM
+    traces, or order/execution/advice language.
+  - Default tests make no network or external provider calls.
+- Tests:
+  - service tests for empty-query non-search state
+  - service tests for exact-first ordering
+  - service tests for symbol prefix, symbol contains, and name contains
+    ordering
+  - service tests for no fuzzy/edit-distance behavior
+  - service tests for duplicate and unsupported/test-issue filtering
+  - API response shape tests
+  - provider failure sanitization tests
+  - forbidden-field and forbidden-wording sweep
+  - compatibility tests for existing P23A-T1 validation behavior
+  - `git diff --check`
+- Rollback notes:
+  - Revert only P23A-T3 symbol schema/service/route/test changes and
+    verification notes.
+  - Preserve P23A-T1/T2 baseline search/autocomplete if the broader directory
+    or recent-list behavior needs to be backed out.
+- Verification notes:
+  - 2026-05-28 Codex C expanded the backend-only symbol search contract while
+    preserving `GET /symbols/search?q={query}&limit={limit}` and
+    `GET /symbols/validate?symbol={symbol}`.
+  - Added narrow backend-owned `SymbolSearchRead.result_mode` and
+    `SymbolSearchRead.section_label` fields to distinguish
+    `recent`, `search`, `no_match`, and `unavailable` states without requiring
+    frontend-side inference.
+  - Superseded by P23B-T5: empty query now returns an empty non-search state.
+    True recents belong only to a browser/user-local LRU layer and are not
+    inferred from holdings, broker accounts, portfolio context, prompts, LLM
+    context, or persisted user history.
+  - Non-empty search now uses deterministic backend-owned ordering:
+    exact symbol match, symbol-prefix match, symbol-contains match, then
+    name/reference match, with stable asset/exchange/symbol tie-breakers and a
+    six-result cap. Labels remain neutral (`Exact symbol match`,
+    `Symbol prefix match`, `Symbol contains match`, `Reference match`) and do
+    not imply recommendation, popularity, liquidity, tradability, or
+    performance.
+  - Broadened the synthetic Nasdaq-style fixture set with NOK-related rows
+    (`NOK`, `NOKBF`, `LNOK`, `NOKPF`, `NKRKY`, `NKRKF`), `NVDA`, `AMD`,
+    `IREN`, `DRAM`, and additional stock/ETF/ADR examples to exercise
+    exact-first, prefix, contains, name-reference, duplicate, unsupported, and
+    test-issue filtering behavior.
+  - Preserved exact validation behavior from P23A-T1 and provider failure
+    sanitization. No frontend, provider, network file fetch, broker, market
+    quote, option chain, watchlist, screener, SDK, credential/config loader,
+    LLM, agent, TradingAgents, persistence, localStorage/sessionStorage, or
+    execution/order behavior was added.
+  - Tests: `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/api/test_symbols.py -q`
+    passed with `21 passed in 0.11s`; `cd backend && ./.venv/bin/python -m pytest tests/api/test_trade_review_workspace.py tests/services/trade_review/test_frontend_read.py -q`
+    passed with `71 passed in 0.33s`.
+- Status: `done`
+
+### P23A-T4 - Autocomplete UX V2 Recent And Contains Search Consumption
+
+- Task id: `P23A-T4`
+- Title: Autocomplete UX V2 Recent And Contains Search Consumption
+- Owner: Claude A implementation, Codex B frontend contract review
+- Objective: After P23A-T3 passes backend review, update the Trade Review
+  autocomplete UI so empty focus/input can render the backend empty state and
+  non-empty input displays exact-first contains-search results using only
+  backend-owned ordering and messages.
+- Dependencies:
+  - completed and Codex B-reviewed `P23A-T3`
+- Status: `done`
+- Verification notes (2026-05-28, Claude A):
+  - Files changed:
+    - `frontend/src/types/symbols.ts` — added `SymbolSearchResultMode`
+      union (now `"empty" | "search" | "no_match" | "unavailable"`) and added
+      `result_mode` + `section_label` fields to the `SymbolSearchRead`
+      interface, in backend field order (between `data_mode` and
+      `source_label`). Header comment updated to reference the P23A-T3
+      extension. Strictly mirrors `backend/app/schemas/symbols.py`.
+    - `frontend/src/components/trade-review/SymbolAutocomplete.tsx` —
+      consumes the new backend fields and renders empty / search / no-match
+      states verbatim.
+  - UX behavior implemented (all backend-owned, no frontend reinterpretation):
+    - Superseded by P23B-T5: empty focus / empty input now receives a backend
+      empty non-search state. A later frontend LRU layer may show local
+      recents before or instead of that empty state.
+    - Non-empty input renders backend exact-first search results under the
+      backend `section_label` ("Search results"), in backend order, capped
+      by the backend.
+    - No-match renders the backend "Symbol Not Found" message with no
+      section header.
+    - Section header is a presentational `<li role="presentation"
+      aria-hidden="true">`; it is not focusable and does not shift option
+      indexing (active-option scroll uses a stable id lookup, not child
+      index).
+  - Frontend does NOT rank, sort, filter, fuzzy match, or reinterpret
+    results. `items`, `section_label`, `result_mode`, and `message` are
+    consumed as returned. No quote, price, volume, % move, market status,
+    liquidity, tradability, recommendation, or ranking language rendered.
+  - Preserved: Trade Review request payload shape; existing form validation
+    and submit behavior; the P23A-T2 disabled-state race fix (debounce
+    clear, dropdown close, activeIndex reset, in-flight result drop,
+    `selectItem`/mouse-handler guards); ARIA combobox/listbox semantics.
+  - Safety: no `symbolsApi.validate` wiring (validation remains a future
+    task); no `localStorage`/`sessionStorage` reads or writes; no external
+    provider, market-data, broker, or TradingAgents calls; no symbol
+    lookup data sent to LLM agents; no backend code modified.
+  - Commands run:
+    - `cd frontend && npx tsc --noEmit` — clean.
+    - `cd frontend && npx eslint --max-warnings 0` (4 files) — clean.
+    - `cd frontend && npx vite build` — clean (105 modules).
+  - Docker Compose full-stack smoke test (postgres + backend:8000 +
+    frontend:5173, Vite proxy injecting `X-Local-Access-Token`):
+    - Backend contract via proxy curl: current empty `q` should return
+      `result_mode="empty"` with no items; `q=NOK` → `result_mode="search"`, `section_label="Search
+      results"`, NOK first; `q=ZZZZZ` → `result_mode="no_match"`,
+      `section_label="Symbol Not Found"`.
+    - Browser (Claude Preview, historical before P23B-T5): empty focus used
+      the backend fallback list. Current direction is empty backend response
+      plus future browser-local LRU recents. `NOK` → "Search results" header,
+      NOK first ✅; `ZZZZZ` → "Symbol Not Found", no header ✅; select first
+      option → fills field with `NOK`, closes dropdown ✅; 0 localStorage / 0
+      sessionStorage keys ✅.
+    - Network log: only `/api/symbols/search?q=...` calls (empty, NOK,
+      ZZZZZ); no `/symbols/validate`, no external/provider calls ✅.
+  - No backend, provider, external API, storage, LLM/agent, or
+    TradingAgents work was added in this task.
+
+### P23A-T5 - Scheduled Nasdaq Symbol Directory Refresh Provider
+
+- Task id: `P23A-T5`
+- Title: Scheduled Nasdaq Symbol Directory Refresh Provider
+- Owner: Codex C implementation, Codex B architecture/safety review
+- Objective: Replace the tiny in-code symbol universe with a provider-neutral
+  normalized symbol directory backed by public Nasdaq Symbol Directory files,
+  with a personal-demo scheduled refresh path. Preserve the existing
+  `/symbols/search` and `/symbols/validate` frontend contracts.
+- Product goal:
+  - support broad U.S. stock/ETF/ADR autocomplete coverage for personal demo
+    use;
+  - keep autocomplete as symbol reference data only;
+  - avoid quote, price, volume, option-chain, broker tradability, and
+    recommendation claims.
+- Dependencies:
+  - completed `P23A-T1`
+  - completed `P23A-T2`
+  - completed `P23A-T3`
+  - completed `P23A-T4`
+  - architecture contract:
+    `docs/codex-b-architecture/PHASE_23A_SYMBOL_LOOKUP_CONTRACT.md`
+- Data source direction:
+  - public Nasdaq Symbol Directory text files such as `nasdaqlisted.txt` and
+    `otherlisted.txt`;
+  - app-owned parser normalizes rows into provider-neutral symbol records;
+  - raw source rows are not returned by APIs and should not leak into
+    frontend contracts.
+- Files expected to inspect or change:
+  - `backend/app/schemas/symbols.py`
+  - `backend/app/services/symbols.py`
+  - new backend-only symbol directory parser/cache/refresh modules if useful
+  - `backend/app/api/routes/symbols.py` only if dependency wiring is needed
+  - backend app startup/scheduler wiring only if the scheduled job is bounded
+    and does not block startup
+  - `backend/tests/services/test_symbol_lookup.py`
+  - `backend/tests/api/test_symbols.py`
+  - new parser/refresh tests using local fixture files
+  - `docs/shared/implementation_plan.md` verification notes only
+- Implementation steps:
+  1. Define normalized app-owned symbol records for imported directory rows.
+     Keep the API response shape provider-neutral.
+  2. Add a parser for local Nasdaq-style fixture files. Cover at least
+     Nasdaq-listed and other-listed row shapes in tests.
+  3. Normalize symbol, name, exchange, asset class, test-issue status,
+     region/currency, support status, and as-of/source labels.
+  4. Add a last-good snapshot cache or storage boundary. Refresh should only
+     replace the active snapshot after a successful parse/validation pass.
+  5. Add a scheduled refresh job for personal-demo use. It may download public
+     Symbol Directory files when the scheduler/job runs, but it must not run
+     during unit tests and must not block application startup.
+  6. Add a manual refresh function/command entrypoint for debugging the same
+     importer path.
+  7. Preserve synthetic fallback behavior if no imported snapshot exists or
+     refresh fails.
+  8. Preserve current symbol search semantics: empty non-search state, exact first,
+     prefix next, contains next, name/reference contains after that, no fuzzy
+     matching.
+  9. Add source/as-of labels that clearly identify symbol reference data and
+     do not imply quote truth or broker tradability.
+  10. Add forbidden-field and forbidden-wording tests.
+- Scheduled refresh rules:
+  - allowed for personal-demo symbol reference data only;
+  - never fetch quotes, prices, volume, options chains, broker data, news, or
+    market-data feeds;
+  - never require credentials, API keys, `.env`, broker accounts, or paid
+    provider setup;
+  - never expose raw source rows or raw downloaded payloads in API responses;
+  - failures must be sanitized and must keep the last good normalized snapshot
+    active;
+  - default tests must use local fixture files and make no network calls;
+  - commercial/public use remains subject to later provider/licensing review.
+- Acceptance criteria:
+  - Existing `/symbols/search` and `/symbols/validate` response contracts stay
+    compatible for Claude A's autocomplete.
+  - Search can use imported normalized symbol records when a good snapshot is
+    available.
+  - If the imported snapshot is unavailable or refresh fails, search falls
+    back safely to synthetic/reference records or returns a sanitized
+    unavailable state.
+  - Empty-query backend response remains empty and non-search.
+  - Non-empty search remains backend-owned and deterministic.
+  - No frontend changes are included.
+  - No raw provider payload, account/broker data, credential, prompt, LLM
+    trace, quote, price, volume, order/execution/advice wording, or
+    tradability claim is introduced.
+- Tests:
+  - parser tests for local Nasdaq-listed fixture rows
+  - parser tests for local other-listed fixture rows
+  - parser tests for footer/header/as-of handling
+  - parser tests for ETF/stock/ADR/test-issue normalization
+  - snapshot activation tests: successful refresh replaces active snapshot
+  - failure tests: malformed/download failure keeps last good snapshot and
+    sanitizes errors
+  - service/API compatibility tests for existing search and validation
+  - no-network default test assertion or dependency injection guard
+  - forbidden-field and forbidden-wording sweep
+  - `git diff --check`
+- Rollback notes:
+  - Revert only importer/cache/scheduler wiring and P23A-T5 verification
+    notes.
+  - Preserve P23A-T1 through P23A-T4 provider-neutral API and synthetic search
+    behavior as fallback.
+- Verification notes:
+  - 2026-05-28 Codex C added a backend-only Nasdaq Symbol Directory
+    parser/importer/cache/refresh foundation while preserving the existing
+    `/symbols/search` and `/symbols/validate` response shape consumed by
+    P23A-T4 autocomplete.
+  - Files changed for this task: `backend/app/services/symbol_directory.py`,
+    `backend/app/services/symbols.py`,
+    `backend/tests/services/test_symbol_directory.py`,
+    `backend/tests/services/test_symbol_lookup.py`,
+    `backend/tests/api/test_symbols.py`, and this plan note.
+  - Parser/importer design: `symbol_directory.py` parses local
+    Nasdaq-style `nasdaqlisted.txt` and `otherlisted.txt` rows into
+    app-owned `SymbolRecord`s. It extracts footer file-creation labels,
+    normalizes symbol/name/exchange/asset class/test-issue/support fields,
+    and never returns raw source rows or raw file payloads through API
+    schemas.
+  - Provider integration: `SymbolService()` now prefers an active last-good
+    `SymbolDirectorySnapshot` via `SymbolDirectorySnapshotProvider` with
+    `data_mode="provider_reference"`, `source_label="Nasdaq Symbol
+    Directory"`, and safe file/import as-of labels. If no imported snapshot
+    exists, the synthetic `DemoSymbolProvider` remains the fallback.
+  - Last-good behavior: `SymbolDirectorySnapshotStore` replaces the active
+    snapshot only after successful fetch/parse/normalization/validation.
+    Failed refreshes raise a sanitized `SymbolDirectoryRefreshError` and keep
+    the previous active snapshot.
+  - Manual refresh entrypoint: `manual_refresh_nasdaq_symbol_directory_snapshot`
+    runs the same importer path with an injected fetcher boundary for local
+    demo/debug use.
+  - Scheduled refresh design: `SymbolDirectoryRefreshJob` is a
+    dependency-free scheduled hook with `enabled=False` by default. It never
+    runs at import time, never blocks app startup, and performs no network
+    work unless local deployment wiring explicitly enables and invokes the
+    job. No scheduler dependency was added.
+  - Preserved current symbol search semantics: empty query non-search state,
+    exact-first deterministic ordering, prefix/contains/name-reference ordering,
+    validation behavior, unsupported/test-issue filtering, provider failure
+    sanitization, forbidden-field/wording protections, and local access guard.
+  - No frontend, broker, quote, price, volume, option-chain, watchlist,
+    screener, market-data SDK, credential/config loader, LLM/agent,
+    TradingAgents, persistence, localStorage/sessionStorage, order/execution,
+    advice, recommendation, tradability, or raw provider-payload behavior was
+    added. Tests use local fixture strings/files only and make no network
+    calls.
+  - Tests: `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/services/test_symbol_directory.py tests/api/test_symbols.py -q`
+    passed with `29 passed in 0.17s`; requested compatibility run
+    `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/api/test_symbols.py -q`
+    passed with `21 passed in 0.09s`; `cd backend && ./.venv/bin/python -m pytest tests/api/test_trade_review_workspace.py tests/services/trade_review/test_frontend_read.py -q`
+    passed with `71 passed in 0.33s`.
+  - Codex B review (2026-05-28): PASS. No blockers. Deferred polish only:
+    update the stale route docstring that still says strict-prefix suggestions,
+    and optionally strip footer padding delimiters from Nasdaq file-time labels
+    for cleaner display.
+- Status: `done`
+
+## Phase 23B - Complete Symbol Lookup Personal Demo
+
+Phase goal: finish the symbol lookup feature end-to-end for a personal demo:
+the app should use a refreshed broad Nasdaq-style symbol directory when
+available, keep a last-good normalized snapshot across backend restarts, keep
+autocomplete provider-neutral, and make symbol inputs uppercase in the UI and
+submitted payloads.
+
+Shared Phase 23B rules:
+
+- Symbol lookup remains public instrument-reference data only.
+- Do not fetch or display quotes, prices, volume, option chains, watchlists,
+  screeners, broker tradability, recommendations, or performance signals.
+- Do not expose raw downloaded rows, raw source files, provider payloads,
+  credentials, `.env`, broker/account data, prompts, LLM traces, or agent
+  context.
+- Default tests must be offline and use fixture/injected fetch paths.
+- Automatic refresh must be opt-in for local/personal demo and must not block
+  application startup.
+- Frontend must not call Nasdaq or any provider directly; it consumes only the
+  backend `/symbols/*` contracts.
+- The refreshed symbol directory is global app reference data shared by all
+  users; any "recently selected/viewed" list is user/browser-specific state and
+  must not be inferred from holdings, broker accounts, portfolio context,
+  prompts, LLM context, or trade history.
+- Commercial/public use of refreshed symbol-reference data remains subject to
+  later licensing/provider review.
+
+### P23B-T1 - Persistent Last-Good Symbol Directory Snapshot
+
+- Task id: `P23B-T1`
+- Title: Persistent Last-Good Symbol Directory Snapshot
+- Owner: Codex C implementation, Codex B architecture/safety review
+- Objective: Persist the normalized last-good Nasdaq Symbol Directory snapshot
+  locally so the backend can restore broad symbol coverage after restart
+  without re-fetching at startup.
+- Dependencies:
+  - completed `P23A-T5`
+  - architecture contract:
+    `docs/codex-b-architecture/PHASE_23A_SYMBOL_LOOKUP_CONTRACT.md`
+- Recommended storage posture:
+  - Prefer a small backend-owned local JSON snapshot file or SQLite table
+    under an app-data boundary.
+  - Do not store raw source files or raw provider rows.
+  - Store only normalized app-owned symbol records plus safe source/as-of
+    metadata.
+- Files expected to inspect or change:
+  - `backend/app/services/symbol_directory.py`
+  - `backend/app/services/symbols.py`
+  - backend settings/app-data helper modules only if an existing pattern exists
+  - `backend/tests/services/test_symbol_directory.py`
+  - `backend/tests/services/test_symbol_lookup.py`
+  - `backend/tests/api/test_symbols.py`
+  - `docs/shared/implementation_plan.md` verification notes only
+- Implementation steps:
+  1. Add a persistence boundary for normalized `SymbolDirectorySnapshot`
+     records and safe metadata.
+  2. Add load/save helpers that reject malformed snapshots and never expose
+     raw source rows.
+  3. Ensure `SymbolService()` can use a restored valid snapshot before falling
+     back to `DemoSymbolProvider`.
+  4. Ensure failed or malformed persisted snapshots fall back safely to the
+     synthetic provider.
+  5. Preserve existing `/symbols/search` and `/symbols/validate` response
+     shape.
+- Acceptance criteria:
+  - A saved normalized snapshot can be restored after process restart in tests.
+  - Malformed snapshot data is ignored or reported through sanitized internal
+    errors without breaking search/validation.
+  - Synthetic fallback still works when no persisted snapshot exists.
+  - No raw source rows, raw files, provider payloads, credentials, quotes,
+    prices, broker data, order/execution/advice wording, or frontend changes
+    are introduced.
+- Tests:
+  - persistence save/load round trip with normalized records
+  - restart-style restore test
+  - malformed snapshot fallback test
+  - existing symbol search/validation compatibility tests
+  - forbidden-field/wording sweep
+  - `git diff --check`
+- Rollback notes:
+  - Revert only snapshot persistence/load helpers and verification notes.
+  - Preserve P23A-T5 in-memory parser/refresh behavior.
+- Verification notes:
+  - 2026-05-28 Codex C added normalized last-good symbol directory snapshot
+    persistence in `backend/app/services/symbol_directory.py`.
+  - Persistence design: a bounded JSON snapshot file stores only
+    app-owned normalized `SymbolRecord` fields plus safe `source_label`,
+    `as_of_label`, and `imported_at` metadata. It does not store raw
+    downloaded files, raw provider rows, provider payloads, credentials,
+    broker/account data, quotes, prices, volume, prompts, LLM traces, or
+    agent context.
+  - Added `save_symbol_directory_snapshot`,
+    `load_symbol_directory_snapshot`, and
+    `restore_active_symbol_directory_snapshot`. Malformed or missing
+    persisted snapshots return `None` and allow `SymbolService` to fall back
+    to `DemoSymbolProvider` without changing `/symbols/search` or
+    `/symbols/validate` response shapes.
+  - Added default repo-local cache path
+    `cache/symbol_directory_snapshot.json`, which is covered by the existing
+    `/cache/` `.gitignore` boundary and is not written during normal tests.
+  - Tests added/updated in `backend/tests/services/test_symbol_directory.py`,
+    `backend/tests/services/test_symbol_lookup.py`, and
+    `backend/tests/api/test_symbols.py` for save/load round trip,
+    restart-style restore, malformed snapshot fallback, synthetic fallback,
+    forbidden-field/wording sweeps, and existing search/validation
+    compatibility.
+  - Verification: `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/services/test_symbol_directory.py tests/api/test_symbols.py -q`
+    passed with `39 passed in 0.16s`; requested compatibility run
+    `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/api/test_symbols.py -q`
+    passed with `24 passed in 0.12s`; `cd backend && ./.venv/bin/python -m pytest tests/api/test_trade_review_workspace.py tests/services/trade_review/test_frontend_read.py -q`
+    passed with `71 passed in 0.30s`.
+- Status: `done` (2026-05-28, Codex B reviewed PASS)
+
+### P23B-T2 - Opt-In Local Symbol Directory Refresh Wiring
+
+- Task id: `P23B-T2`
+- Title: Opt-In Local Symbol Directory Refresh Wiring
+- Owner: Codex C implementation, Codex B architecture/safety review
+- Objective: Wire a local/personal-demo refresh trigger that can fetch public
+  Nasdaq Symbol Directory files, parse them through the reviewed importer, save
+  the normalized last-good snapshot, and keep the app running on the previous
+  snapshot if refresh fails.
+- Dependencies:
+  - completed `P23B-T1`
+- Allowed trigger shape:
+  - a backend-only CLI/helper function, or
+  - a guarded local-admin endpoint if and only if it uses the existing local
+    access posture and returns sanitized status only.
+- Scheduled refresh:
+  - may be added behind an explicit opt-in flag/config;
+  - disabled by default in tests and default app startup;
+  - must not block startup;
+  - must not make network calls unless explicitly invoked/enabled.
+- Files expected to inspect or change:
+  - `backend/app/services/symbol_directory.py`
+  - backend route/CLI modules only if needed for the chosen trigger
+  - `backend/tests/services/test_symbol_directory.py`
+  - `backend/tests/api/test_symbols.py` or route tests only if a route is added
+  - `docs/shared/implementation_plan.md` verification notes only
+- Implementation steps:
+  1. Reuse `refresh_nasdaq_symbol_directory_snapshot` and the same injected
+     fetch boundary.
+  2. Save the normalized snapshot only after successful parse/validation.
+  3. Preserve and continue serving the previous last-good snapshot on failure.
+  4. Return only sanitized status metadata from any manual trigger.
+  5. Add no frontend consumption in this task.
+- Acceptance criteria:
+  - Manual local refresh can be exercised in tests with injected fixture
+    fetchers.
+  - Refresh failure keeps the last-good snapshot active and persisted.
+  - Default tests and default startup make no network calls.
+  - No credentials, `.env`, provider SDK, quotes, prices, broker data,
+    watchlists, recommendations, frontend changes, agents, or TradingAgents
+    scope is introduced.
+- Tests:
+  - successful opt-in refresh with injected fixtures
+  - failed refresh keeps active and persisted snapshot
+  - disabled scheduler does not call fetch
+  - startup/import no-network assertion
+  - existing symbol search/validation compatibility tests
+  - `git diff --check`
+- Rollback notes:
+  - Revert only refresh trigger/scheduler wiring and verification notes.
+  - Preserve persistent last-good snapshot helper if `P23B-T1` remains useful.
+- Verification notes:
+  - 2026-05-28 Codex C added opt-in local refresh wiring that reuses the
+    reviewed Nasdaq Symbol Directory parser/importer path and persists only
+    the normalized last-good snapshot after full success.
+  - Refresh trigger design: added `refresh_and_persist_nasdaq_symbol_directory_snapshot`
+    and `manual_refresh_and_persist_nasdaq_symbol_directory_snapshot`. These
+    build a snapshot through the injected fetch boundary, save the normalized
+    JSON snapshot, and only then activate it. If any step fails, a sanitized
+    `SymbolDirectoryRefreshError` is raised and the active/persisted
+    last-good snapshot remains unchanged.
+  - Added protected opt-in route `POST /symbols/directory/refresh` returning
+    sanitized status only (`status`, `data_mode`, `source_label`,
+    `as_of_label`, `imported_at`, `record_count`, `message`). The route uses
+    the existing app-level local access guard and a dependency-injected
+    refresh runner for offline tests.
+  - Scheduler wiring remains dependency-free and disabled by default through
+    `SymbolDirectoryRefreshJob(enabled=False)`. No app startup hook, default
+    import path, or test path performs a network call or blocks startup.
+  - No frontend, broker, quote, price, volume, option-chain, watchlist,
+    screener, market-data SDK, credential/config loader, `.env`, LLM/agent,
+    TradingAgents, localStorage/sessionStorage, order/execution, advice,
+    recommendation, tradability, or raw provider-payload behavior was added.
+  - Tests added/updated for successful opt-in refresh with injected fixture
+    fetchers, failed refresh preserving active and persisted last-good
+    snapshots, disabled scheduler no-fetch behavior, refresh route success
+    and sanitized failure, local access guard, and default no-network service
+    path.
+  - Verification: `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/services/test_symbol_directory.py tests/api/test_symbols.py -q`
+    passed with `39 passed in 0.16s`; requested compatibility run
+    `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/api/test_symbols.py -q`
+    passed with `24 passed in 0.12s`; `cd backend && ./.venv/bin/python -m pytest tests/api/test_trade_review_workspace.py tests/services/trade_review/test_frontend_read.py -q`
+    passed with `71 passed in 0.30s`.
+- Status: `done` (2026-05-28, Codex B reviewed PASS)
+
+### P23B-T3 - Trade Review Autocomplete Uppercase And Recent Selection Polish
+
+- Task id: `P23B-T3`
+- Title: Trade Review Autocomplete Uppercase And Recent Selection Polish
+- Owner: Claude A implementation, Codex B frontend contract review
+- Objective: Finish the Trade Review autocomplete UX so Symbol and Underlying
+  inputs are always displayed/submitted uppercase, empty focus respects the
+  backend empty non-search state, search consumes backend ordering exactly,
+  and no-match still shows backend-owned `Symbol Not Found`.
+- Dependencies:
+  - completed and Codex B-reviewed `P23B-T2`
+- Files expected to inspect or change:
+  - `frontend/src/components/trade-review/SymbolAutocomplete.tsx`
+  - `frontend/src/components/trade-review/TradeReviewForm.tsx`
+  - `frontend/src/types/symbols.ts` only if backend contract fields changed
+  - `frontend/src/api/symbols.ts` only if route contract changed
+  - `docs/shared/implementation_plan.md` verification notes only
+- Implementation steps:
+  1. Force uppercase in the visible input value as the user types.
+  2. Ensure `onChange` and submitted Trade Review payload values for symbol
+     and underlying are uppercase.
+  3. Preserve backend-owned search/ranking: no frontend sorting, fuzzy
+     matching, scoring, filtering, or provider-specific parsing.
+  4. Preserve backend-owned `section_label`, `result_mode`, and `message`,
+     including the empty non-search state for empty query.
+  5. Preserve disabled-state race protections from `P23A-T2`.
+  6. Keep recent symbols non-private for this slice: no inference from
+     holdings, broker accounts, portfolio context, prompts, LLM context, or
+     trade history.
+- Acceptance criteria:
+  - Typing lowercase `nvda` displays/submits `NVDA`.
+  - Typing `nok` displays/submits `NOK`; exact `NOK` remains first because the
+    backend orders it first.
+  - Empty focus does not fabricate recents; true recents are deferred to a
+    browser-local LRU follow-up.
+  - Unknown input shows backend-owned `Symbol Not Found`.
+  - No frontend provider calls, quotes, prices, volume, recommendations,
+    tradability claims, localStorage/sessionStorage writes, or form payload
+    shape changes.
+- Tests:
+  - frontend typecheck
+  - frontend lint on changed files with `--max-warnings 0`
+  - frontend build
+  - browser smoke: lowercase typing uppercases; empty focus empty state;
+    `NOK` exact first; no-match state; no storage keys; only `/symbols/search`
+    network calls for autocomplete.
+- Rollback notes:
+  - Revert only autocomplete/form polish and verification notes.
+  - Preserve backend symbol contracts and refresh functionality.
+- Status: `done` (2026-05-28, Codex B reviewed PASS)
+- Verification notes (2026-05-28, Claude A):
+  - Files changed:
+    - `frontend/src/components/trade-review/SymbolAutocomplete.tsx` — the
+      input `onChange` now emits `e.target.value.toUpperCase()`, so the
+      controlled value, the debounced search query, and (via the parent)
+      the submitted payload are all uppercase. Header comment updated to
+      describe the P23B-T3 uppercase behavior.
+  - Files reviewed, not changed:
+    - `frontend/src/components/trade-review/TradeReviewForm.tsx` — already
+      uppercased submitted symbol/underlying via `.trim().toUpperCase()`
+      (lines 135/141); kept as defense-in-depth. No payload shape change.
+    - `frontend/src/types/symbols.ts`, `frontend/src/api/symbols.ts` — no
+      backend contract change, left untouched.
+  - Behavior verified (Docker full-stack: postgres + backend:8000 +
+    frontend:5173, Vite proxy injecting `X-Local-Access-Token`):
+    - Typing lowercase `nvda` → input displays `NVDA`; search fires with
+      `q=NVDA`.
+    - Typing lowercase `nok` → input displays `NOK`; backend "Search
+      results" with exact `NOK` first (`[NOK, NOKBF, NOKPF, LNOK, NKRKF,
+      NKRKY]`).
+    - Superseded by P23B-T5: empty focus/input now receives an empty
+      non-search state from the backend. True recents are deferred to a
+      browser-local LRU follow-up.
+    - Unknown `zzzzz` → backend `Symbol Not Found` rendered verbatim, no
+      section header.
+    - Selecting a result fills the uppercase symbol (`NOK`) and closes the
+      dropdown.
+  - Ordering: backend order consumed verbatim; no frontend sort, rank,
+    filter, score, or fuzzy match added.
+  - Disabled-state protections from P23A-T2 preserved (debounce clear,
+    dropdown close, in-flight result drop, `selectItem`/mouse-handler
+    guards) — untouched by this change.
+  - Safety: no `symbolsApi.validate` wiring; 0 localStorage / 0
+    sessionStorage keys observed; autocomplete network calls hit only
+    `/api/symbols/search` (`q=NVDA`, `q=NOK`, `q=ZZZZZ`, `q=` empty) — no
+    `/symbols/validate`, no external/provider calls; no quotes, prices,
+    volume, tradability, recommendation, advice, or execution language; no
+    Trade Review payload shape change; no backend code modified.
+  - Commands run:
+    - `cd frontend && npx tsc --noEmit` — clean.
+    - `cd frontend && npx eslint --max-warnings 0` (4 files) — clean.
+    - `cd frontend && npx vite build` — clean (105 modules).
+
+### P23B-T4 - Automatic Broad Nasdaq-Traded Directory Refresh For Local Demo
+
+- Task id: `P23B-T4`
+- Title: Automatic Broad Nasdaq-Traded Directory Refresh For Local Demo
+- Owner: Codex B implementation/review
+- Objective: Make symbol autocomplete function against the broad public Nasdaq
+  Trader symbol directory in the Docker personal-demo flow without requiring a
+  manual terminal refresh command.
+- Dependencies:
+  - completed `P23B-T1`
+  - completed `P23B-T2`
+  - completed `P23B-T3`
+- Scope:
+  - Switch the default public directory source to `nasdaqtraded.txt` so the
+    normalized app-owned directory covers Nasdaq-traded cross-market symbols
+    such as `INTC`, `GLD`, and `SLV`.
+  - Add opt-in Docker startup refresh through
+    `SYMBOL_DIRECTORY_REFRESH_ON_STARTUP=true`, preserving no-network default
+    behavior for tests and non-Docker imports.
+  - Persist the normalized last-good snapshot under `backend/cache/`, which is
+    gitignored, so Docker volume mounts can reuse it after backend restart.
+- Safety boundaries:
+  - Public symbol-reference data only; no quotes, prices, volumes, options
+    chains, broker tradability claims, provider credentials, API keys, broker
+    data, LLM/agent/TradingAgents integration, localStorage/sessionStorage, or
+    order/execution/advice/recommendation behavior.
+  - If refresh fails, startup must not crash; the app restores the last-good
+    snapshot if available or falls back to the synthetic provider.
+- Verification notes (2026-05-28, Codex B):
+  - Files changed:
+    - `backend/app/services/symbol_directory.py` — added
+      `NASDAQ_TRADED_URL`, made `nasdaqtraded.txt` the default source, mapped
+      `Listing Exchange` values including `Q -> NASDAQ`, moved the default
+      normalized snapshot cache to `backend/cache/symbol_directory_snapshot.json`,
+      and added a safe opt-in startup refresh helper.
+    - `backend/app/main.py` — added startup hook that only runs when
+      `SYMBOL_DIRECTORY_REFRESH_ON_STARTUP` is true.
+    - `docker-compose.yml` — enables that startup refresh by default for the
+      local Docker personal-demo flow.
+    - `.gitignore` — ignores `backend/cache/`.
+    - `backend/tests/services/test_symbol_directory.py` — added coverage for
+      `nasdaqtraded.txt`, `INTC`/`GLD`/`SLV`, default source selection,
+      backend-local cache path, due-refresh behavior, and disabled-by-default
+      startup refresh hook.
+  - Verification: `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/services/test_symbol_directory.py tests/api/test_symbols.py -q`
+    passed with `44 passed in 0.19s`; compatibility run
+    `cd backend && ./.venv/bin/python -m pytest tests/api/test_trade_review_workspace.py tests/services/trade_review/test_frontend_read.py -q`
+    passed with `71 passed in 0.42s`; `git diff --check` passed.
+  - Status: `done`.
+
+### P23B-T5 - Symbol Recents Boundary And Default Suggestions Contract Cleanup
+
+- Task id: `P23B-T5`
+- Title: Symbol Recents Boundary And Default Suggestions Contract Cleanup
+- Owner: Codex C backend contract cleanup, Claude A frontend follow-up
+- Objective: Stop presenting any backend global fallback list as true
+  user-specific "Recently viewed" history, and define the safe boundary for a
+  future frontend/browser LRU recent-symbol list.
+- Dependencies:
+  - completed `P23B-T4`
+- Problem statement:
+  - The backend previously returned a fixed empty-query list
+    (`NVDA`, `AAPL`, `QQQ`, `SPY`, `AMD`) under `section_label="Recently viewed"`.
+  - This list was not built from the current user's searches or selections.
+    Product direction now says empty query should return no backend symbols;
+    true recents belong to current-user/browser-local state only.
+  - True recents should be current-user/browser-specific LRU state, updated
+    only on intentional selection or successful form submit.
+- Backend contract cleanup scope for Codex C:
+  1. Rename the empty-query backend response away from "recent" semantics and
+     do not return a fixed global symbol list.
+  2. Use a truthful empty state such as `result_mode="empty"` with no items;
+     true recent symbols are supplied by a later frontend/browser LRU layer.
+  3. Preserve the existing provider-neutral symbol directory search and
+     validation behavior for non-empty queries.
+  4. Do not add user history persistence, localStorage, browser storage,
+     frontend changes, broker/account inference, trade-history inference, or
+     backend per-user recents in this task.
+  5. Keep response safety unchanged: no prices, quotes, volume, tradability,
+     recommendations, advice, order/execution wording, raw source rows, raw
+     provider payloads, credentials, broker/account data, prompts, LLM traces,
+     or agent context.
+- Frontend follow-up scope for Claude A after Codex C review:
+  - Implement true per-browser LRU recents in the autocomplete using a UI-only
+    local key such as `poa-symbol-recents`.
+  - Update recents only when the user selects a backend suggestion or
+    successfully submits a valid uppercase symbol/underlying.
+  - Never update recents from mere typing, search results, broker holdings,
+    portfolio context, prompts, LLM context, or trade history.
+  - Show local LRU recents on empty focus; if none exist, show an empty state
+    and do not backfill symbols from the backend.
+  - Capacity should be 5 symbols, newest first, deduplicated by moving an
+    existing symbol to the top.
+- Acceptance criteria for Codex C:
+  - Empty query no longer labels or returns a backend global default list as
+    "Recently viewed".
+  - Backend tests assert the new empty `result_mode`, empty item list, and
+    non-search semantics.
+  - Non-empty search ordering, `Symbol Not Found`, validation, provider
+    fallback, and directory refresh behavior remain unchanged.
+  - No frontend, storage, user-history, broker, agent, provider-call, quote,
+    price, order/execution, advice, or recommendation behavior is added.
+- Tests:
+  - symbol lookup service tests
+  - symbol API tests
+  - route/schema contract tests for the empty-query result mode
+  - compatibility tests for non-empty search and validation
+  - `git diff --check`
+- Verification notes (2026-05-28, Codex C):
+  - Backend empty-query symbol search now returns `result_mode="empty"`,
+    `items=()`, and `no_match=false`; the fixed global fallback list
+    `[NVDA, AAPL, QQQ, SPY, AMD]` was removed from the empty-query path.
+  - Updated schema vocabulary, symbol service behavior, service tests, and API
+    tests; non-empty search ordering, no-match behavior, validation, provider
+    failure, and directory snapshot behavior are unchanged.
+  - Verification: `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/api/test_symbols.py -q`
+    passed with `24 passed in 0.20s`; `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_directory.py -q`
+    passed with `20 passed in 0.06s`; `git diff --check` passed.
+- Codex B review (2026-05-28): PASS. Empty query returns
+  `result_mode="empty"`, `items=[]`, `no_match=false`, and no backend
+  recents/default symbols. Non-empty search ordering, validation,
+  provider-reference/synthetic/unavailable behavior, provider failure
+  sanitization, and offline tests remain intact. Docs were corrected to remove
+  stale active-plan language that implied backend-generated recent/default
+  symbols. Frontend TypeScript/comment follow-up is still required so Claude A
+  can consume `result_mode="empty"` and implement browser-local LRU recents.
+- Rollback notes:
+  - Revert only empty-query naming/schema cleanup and tests.
+  - Preserve broad directory refresh and uppercase autocomplete behavior.
+- Status: `done` (2026-05-28, Codex B reviewed PASS).
+
+### P23B-T6 - Browser-Local Symbol Recents LRU For Trade Review Autocomplete
+
+- Task id: `P23B-T6`
+- Title: Browser-Local Symbol Recents LRU For Trade Review Autocomplete
+- Owner: Claude A (frontend)
+- Objective: Implement the frontend follow-up promised by `P23B-T5` — a true
+  per-browser LRU "Recently viewed" symbol list owned entirely by the frontend,
+  now that the backend empty-query path returns `result_mode="empty"` with no
+  backend recents/defaults.
+- Dependencies:
+  - completed `P23B-T5` (Codex B reviewed PASS)
+  - completed `P23B-T3` (uppercase autocomplete polish)
+- Scope implemented:
+  1. `frontend/src/types/symbols.ts`: `SymbolSearchResultMode` narrowed to
+     `"empty" | "search" | "no_match" | "unavailable"`; removed stale `"recent"`
+     literal; header comments updated to note recents are browser-local.
+  2. New `frontend/src/lib/symbolRecents.ts`: localStorage LRU under the single
+     UI-only key `poa-symbol-recents`, capacity 5, newest-first, deduped by
+     moving an existing symbol to the top. Persists ONLY the 7 public reference
+     fields (`symbol, name, asset_class, exchange, region, currency,
+     is_supported`) via a `sanitize()` whitelist. No prices, quotes, volume,
+     account/portfolio/broker context, prompts, LLM context, or trade history.
+     All storage access is try/catch-wrapped (degrades to `[]` on
+     unavailable/SSR storage).
+  3. `SymbolAutocomplete.tsx`: empty focus shows browser-local recents under a
+     "Recently viewed" section label; with no recents it shows a neutral empty
+     state (`No recent symbols yet. Start typing to search.`) — never backend
+     symbols and never "Symbol Not Found". Non-empty backend search renders the
+     backend `section_label`/`message` verbatim with backend-owned ordering.
+     Recents are recorded only on intentional selection (`addSymbolRecent`).
+  4. `TradeReviewForm.tsx`: on successful submit, `promoteSymbolRecent` moves an
+     already-known recent to the top (no fabrication, no payload-shape change).
+- Preserved: uppercase input/payload (`P23B-T3`); backend-owned ordering; no
+  frontend ranking/sorting/fuzzy/filtering of backend results; disabled-state
+  race guards; ARIA combobox/listbox; Trade Review payload shape.
+- Tests / verification (2026-05-28, Claude A):
+  - `cd frontend && npx tsc --noEmit` clean.
+  - `npx eslint --max-warnings 0` clean on types/symbols, api, lib/symbolRecents,
+    SymbolAutocomplete, TradeReviewForm.
+  - `npx vite build` clean (106 modules).
+  - Browser smoke (Claude Preview): empty focus with no recents → neutral empty
+    state (no fake `NVDA/AAPL/QQQ/SPY/AMD`); LRU ordering verified
+    (DELL → INTC → GLD → SLV → INTC re-promote); capacity capped at 5 (oldest
+    dropped); stored object keys are exactly the 7 whitelisted fields; only
+    `poa-symbol-recents` present (0 sessionStorage keys); empty focus with
+    recents → "Recently viewed" list; promote-on-submit moved an existing symbol
+    to the top with no duplicate. Network listing showed autocomplete hit only
+    `/api/symbols/search` (uppercase `q`), no `/symbols/validate`, no external
+    or provider calls.
+- Safety confirmation: no backend changes, no new endpoints, no external/
+  provider calls, no LLM/agent/TradingAgents integration, no quotes/prices/
+  volume/tradability/recommendation/advice/order/execution language, no
+  broker/account data. Exactly one storage key (`poa-symbol-recents`); no other
+  localStorage/sessionStorage key added.
+- Follow-up (deferred): creating a brand-new recent from a typed-but-never-
+  selected symbol at submit time is intentionally deferred — it would require
+  wiring `symbolsApi.validate` to obtain validated public display fields rather
+  than fabricating them. Current submit path only promotes already-known
+  recents.
+- Codex B review (2026-05-28): PASS. Frontend type mirrors backend
+  `result_mode="empty"`; local LRU recents are isolated to the single
+  UI-only `poa-symbol-recents` key; persisted fields are public symbol
+  reference fields only; empty focus no longer shows backend default symbols;
+  non-empty search remains backend-ordered; disabled-state guards, uppercase
+  behavior, ARIA combobox/listbox behavior, and Trade Review payload shape are
+  preserved. Submit-time creation of a never-selected typed symbol remains
+  deferred until a validation/display-field path is approved. Verification:
+  `cd frontend && npx tsc --noEmit` clean; focused eslint clean; `cd frontend
+  && npx vite build` clean; `git diff --check` clean.
+- Status: `done` (2026-05-28, Codex B reviewed PASS). Do not mark broader
+  Phase 23B complete unless asked.
+
+### P23B-T7 - Symbol Offline Fixture Cleanup
+
+- Task id: `P23B-T7`
+- Title: Symbol Offline Fixture Cleanup
+- Owner: Codex B cleanup
+- Objective: Make the backend fallback symbol records clearly test/dev-only so
+  they cannot be confused with the broad Nasdaq directory, backend recents, or
+  production reference data.
+- Scope implemented:
+  - Moved the small fallback symbol records out of `symbols.py` into
+    `backend/app/services/symbol_fixtures.py`.
+  - Renamed fallback labels to `Offline symbol fallback fixture` /
+    `Offline fixture · not live market data`.
+  - Trimmed the fallback set to only records needed for deterministic unit
+    tests; broad symbols such as `INTC`, `GLD`, and `SLV` must come from the
+    imported Nasdaq-traded directory snapshot, not from hardcoded examples.
+  - Added a regression test that the offline fallback is not treated as a
+    broad directory.
+- Verification:
+  - `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/services/test_symbol_directory.py tests/api/test_symbols.py -q`
+    passed with `45 passed in 0.21s`.
+  - `git diff --check`
+    passed.
+- Status: `done` (2026-05-28).
+
+## Phase 24A - Economic News Awareness Foundation
+
+Phase goal: add a backend-owned economic/news awareness contract for Dashboard
+display, beginning with synthetic/replay public event data and explicit
+`not a trading signal` labeling. This is separate from agent/news-analyst
+ingestion.
+
+Shared Phase 24A rules:
+
+- No external news/economic calendar provider call in the initial slice.
+- No Bloomberg, Forex Factory, Yahoo, Google, LLM, broker, market-data, or
+  TradingAgents calls.
+- No trading-signal, recommendation, advice, buy/sell, safe-to-trade, or
+  ready-to-trade language.
+- Do not personalize events from private holdings or portfolio context.
+- Do not send economic/news data to LLM agents without a later approved
+  sanitized evidence contract.
+
+### P24A-T1 - Economic Event Awareness Contract With Synthetic Fixtures
+
+- Task id: `P24A-T1`
+- Title: Economic Event Awareness Contract With Synthetic Fixtures
+- Owner: Codex C implementation, Codex B architecture/safety review
+- Objective: Implement a backend contract for source-labelled public economic
+  awareness events such as red-folder macro releases, FOMC meetings, CPI, jobs
+  data, and earnings-calendar awareness. Initial data must be synthetic/replay
+  only.
+- Dependencies:
+  - completed Phase 20D Dashboard content boundary
+  - architecture contract:
+    `docs/codex-b-architecture/PHASE_24A_ECONOMIC_NEWS_AWARENESS_CONTRACT.md`
+- Suggested endpoint shape:
+  - `GET /economic-events`
+- Conceptual response fields:
+  - wrapper: `data_mode`, `source_label`, `as_of_label`, `freshness_label`,
+    `items`, `demo_notice`, `is_trading_signal`, `limitations`
+  - item: `event_reference`, `event_date`, `event_time_label`,
+    `event_title`, `event_type`, `importance`, `currency_or_region`,
+    `source_label`, `freshness_label`, `relevance_label`,
+    `is_trading_signal`, `data_mode`, `details_url_label`
+- Implementation steps:
+  1. Define typed backend schemas for economic event list and event items.
+  2. Add deterministic synthetic/replay fixtures for red-folder/high-importance
+     examples and no-event/unavailable states.
+  3. Add a read-only route.
+  4. Enforce `is_trading_signal=false` in tests.
+  5. Add forbidden-field and forbidden-wording tests.
+  6. Document provider/licensing questions for later; do not add provider
+     integration or frontend wiring.
+- Acceptance criteria:
+  - Events are labelled as public economic awareness, not trading signals.
+  - Response includes source, freshness/as-of, data mode, and limitations.
+  - Red-folder/high-importance events are representable without creating
+    urgency or advice.
+  - Empty, stale, synthetic, and unavailable states are deterministic.
+  - No private portfolio/account/broker data, raw provider payloads, provider
+    credentials, prompts, or LLM traces are exposed.
+  - Default tests make no external calls.
+- Tests:
+  - schema and API contract tests
+  - service tests for event list, empty state, unavailable/stale state,
+    red-folder/high-importance event state
+  - invariant test that every item and wrapper has `is_trading_signal=false`
+  - forbidden-field and forbidden-wording sweep
+  - `git diff --check`
+- Rollback notes:
+  - Revert only economic event schemas, service, route, tests, and verification
+    notes.
+  - Preserve Dashboard and agent-team surfaces; no frontend or agent use is
+    authorized by this task.
+- Status: `not_started`
+
+### P24A-T2 - Dashboard Economic Awareness Panel
+
+- Task id: `P24A-T2`
+- Title: Dashboard Economic Awareness Panel
+- Owner: Claude A implementation, Codex B frontend contract review
+- Objective: Wire the reviewed economic event contract into the Dashboard as a
+  clearly labelled awareness panel.
+- Dependencies:
+  - completed and Codex B-reviewed `P24A-T1`
+- Status: `not_started` (blocked until `P24A-T1` passes review)
 
 ## Future Layer - Broker Activities, Transactions, and Strategy Memory
 

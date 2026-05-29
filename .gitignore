@@ -27,6 +27,7 @@ broker_credentials.yaml
 /transactions/
 /logs/
 /cache/
+/backend/cache/
 /checkpoints/
 *.db
 *.sqlite

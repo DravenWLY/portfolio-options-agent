@@ -96,6 +96,44 @@ Phase 22A - Provider-Neutral Market Data Evaluation Foundation.
   path (`P22A-T4`) and a parked commercial provider/RFI path that may reopen
   only for later scale or external-display planning.
 
+Phase 23A - Symbol Lookup / Instrument Reference Foundation.
+
+- Current backend/frontend utility priority after Dashboard visual checkpoint.
+- `P23A-T1` through `P23A-T4` proved provider-neutral symbol search,
+  validation, recent/default lists, exact-first contains search, and Trade
+  Review autocomplete consumption against synthetic fixtures.
+- `P23A-T5` is complete: backend parser/importer/cache/refresh foundations can
+  normalize Nasdaq-style symbol directory files into provider-neutral records
+  while preserving synthetic fallback and offline tests.
+- The product goal is Trade Review input autocomplete and a clear
+  `Symbol Not Found` state, not quotes, recommendations, watchlists,
+  screeners, or broker tradability.
+- Frontend contracts remain provider-neutral and unchanged by the refresh
+  foundation.
+
+Phase 23B - Complete Symbol Lookup Personal Demo.
+
+- Next scope is the end-to-end personal-demo completion phase for symbol
+  lookup.
+- Codex C should first add persistent last-good normalized symbol snapshots
+  (`P23B-T1`) and opt-in local refresh wiring (`P23B-T2`). Default startup and
+  default tests must still make no network calls.
+- Claude A may then finish frontend autocomplete polish (`P23B-T3`): uppercase
+  symbol/underlying input as the user types, preserve backend-owned ordering
+  and messages, and keep recent/default list behavior.
+- This phase still excludes quotes, prices, volumes, options chains,
+  watchlists, screeners, recommendations, broker tradability, direct frontend
+  provider calls, and commercial/public data-use claims.
+
+Phase 24A - Economic News Awareness Foundation.
+
+- Planned after symbol lookup foundation.
+- Initial scope is backend-only, synthetic/replay-first public economic event
+  awareness with source/freshness labels and `is_trading_signal=false`.
+- This covers Dashboard economic/red-folder awareness only after backend
+  review; it does not authorize external news APIs, Forex Factory/Bloomberg
+  integration, agent ingestion, or trading-signal language.
+
 ## Next Phases
 
 Phase 20B / 20C delivery sequence.
@@ -131,6 +169,16 @@ Phase 22A, evaluation checkpoint.
 - Stage 2 RFI materials for Intrinio, Databento, dxFeed, and Massive are
   retained as parked commercial-scale references; no outreach or selection is
   active.
+
+Phase 23A / 23B / 24A, next backend-first user-facing utility slices.
+
+- `P23A-T5` is complete and reviewed. `P23B-T1`/`P23B-T2` should finish
+  persistent last-good snapshots and opt-in local refresh wiring before Claude
+  A takes `P23B-T3` uppercase/recent-list frontend polish.
+- `P24A-T1` should define and implement economic event awareness contracts
+  with synthetic fixtures before Claude A adds a Dashboard panel.
+- Both phases must keep frontend, agents, and external providers out of the
+  initial backend tasks unless the specific reviewed task says otherwise.
 
 Phase 19D / live LLM smoke gate, future only.
 

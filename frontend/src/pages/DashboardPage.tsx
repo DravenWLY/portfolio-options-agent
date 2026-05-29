@@ -18,7 +18,7 @@ import type { PortfolioContextListRead, PortfolioContextRead } from "../types/po
 import { DEMO_QUICK_REVIEWS } from "../components/demo/modernDeskDemoData";
 
 /**
- * DashboardPage — compact review-readiness cockpit (P20D-T2).
+ * DashboardPage — compact review-readiness cockpit (P20D-T2 → T4).
  *
  * Backend-backed via reviewed P20B / P20D contracts:
  *   GET /api/users/{uid}/trade-reviews
@@ -27,9 +27,14 @@ import { DEMO_QUICK_REVIEWS } from "../components/demo/modernDeskDemoData";
  *   GET /api/users/{uid}/dashboard-account-summary  (P20D-T1 refined)
  *   GET /api/users/{uid}/portfolio-contexts
  *
- * First-viewport hierarchy: review action, readiness strip, account summary,
- * portfolio context freshness. Synthetic demo activity panels are collapsed
- * to avoid presenting fake history or fake urgency.
+ * P20D-T4 visual refinements from Claude Design feasibility review:
+ *   - Action context bar: recommended_user_action_label + overall_review_mode
+ *   - Readiness section label with overall-mode badge
+ *   - Account summary section headers for position breakdown / provenance
+ *   - Density and hierarchy improvements throughout
+ *
+ * First-viewport hierarchy: action context → readiness strip → account
+ * summary → portfolio context → demoted synthetic panels.
  *
  * Safety:
  *   - Read-only. No order ticket / execute / cancel / buy / sell.
@@ -137,6 +142,19 @@ export default function DashboardPage() {
         }
       />
 
+      {/* ── Action context bar (P20D-T4) ────────────────────────────── */}
+      {state.readiness.status === "success" && state.readiness.data && (
+        <div style={styles.actionBar}>
+          <div style={styles.actionBarLeft}>
+            <MpIcon name="review" size={15} style={{ color: "var(--mp-accent)", flexShrink: 0, marginTop: 1 }} />
+            <span style={styles.actionLabel}>{state.readiness.data.recommended_user_action_label}</span>
+          </div>
+          <Badge tone={reviewModeTone(state.readiness.data.overall_review_mode)} dot>
+            {state.readiness.data.overall_review_mode.replace(/_/g, " ")}
+          </Badge>
+        </div>
+      )}
+
       {/* ── Readiness strip ──────────────────────────────────────────── */}
       <ReadinessStrip slot={state.readiness} onRetry={loadAll} />
 
@@ -200,33 +218,39 @@ function ReadinessStrip({
   const isDemoMode = r.data_mode === "synthetic_demo";
 
   return (
-    <section style={styles.readinessGrid}>
-      {/* Broker snapshot */}
-      <ReadinessTile
-        title="Broker snapshot"
-        subtitle={r.broker_snapshot.display_label}
-        status={r.broker_snapshot.status}
-        tone={readinessTone(r.broker_snapshot.status, r.broker_snapshot.is_blocking)}
-        asOf={r.broker_snapshot.as_of_label ?? undefined}
-        isDemoMode={isDemoMode}
-      />
-      {/* Market quotes */}
-      <ReadinessTile
-        title="Market quotes"
-        subtitle={r.market_quotes.display_label}
-        status={r.market_quotes.status}
-        tone={readinessTone(r.market_quotes.status, r.market_quotes.is_blocking)}
-        asOf={r.market_quotes.as_of_label ?? undefined}
-        isDemoMode={isDemoMode}
-      />
-      {/* Agent provider */}
-      <ReadinessTile
-        title="Agent provider"
-        subtitle={r.agent_provider.display_label}
-        status={r.agent_provider.provider_mode}
-        tone={agentProviderTone(r.agent_provider.provider_status)}
-        isDemoMode={isDemoMode}
-      />
+    <section style={styles.readinessSection}>
+      {/* Section label row */}
+      <div style={styles.sectionLabelRow}>
+        <span style={styles.sectionLabel}>Review readiness</span>
+        {isDemoMode && <DemoChip tight />}
+      </div>
+
+      {/* Cards grid */}
+      <div style={styles.readinessGrid}>
+        {/* Broker snapshot */}
+        <ReadinessTile
+          title="Broker snapshot"
+          subtitle={r.broker_snapshot.display_label}
+          status={r.broker_snapshot.status}
+          tone={readinessTone(r.broker_snapshot.status, r.broker_snapshot.is_blocking)}
+          asOf={r.broker_snapshot.as_of_label ?? undefined}
+        />
+        {/* Market quotes */}
+        <ReadinessTile
+          title="Market quotes"
+          subtitle={r.market_quotes.display_label}
+          status={r.market_quotes.status}
+          tone={readinessTone(r.market_quotes.status, r.market_quotes.is_blocking)}
+          asOf={r.market_quotes.as_of_label ?? undefined}
+        />
+        {/* Agent provider */}
+        <ReadinessTile
+          title="Agent provider"
+          subtitle={r.agent_provider.display_label}
+          status={r.agent_provider.provider_mode}
+          tone={agentProviderTone(r.agent_provider.provider_status)}
+        />
+      </div>
     </section>
   );
 }
@@ -276,6 +300,7 @@ function AccountSummaryPanel({ slot, onRetry }: { slot: DashboardState["summary"
 
       {/* Position breakdown — backend display labels verbatim */}
       <div style={styles.kvSection}>
+        <div style={styles.kvSectionHeader}>Position breakdown</div>
         <KV rows={[
           ["Cash", s.cash_label ?? s.cash_state_label],
           ["Stock/ETF exposure", s.stock_etf_exposure_label ?? s.stock_exposure_label ?? "—"],
@@ -288,6 +313,7 @@ function AccountSummaryPanel({ slot, onRetry }: { slot: DashboardState["summary"
 
       {/* Data provenance — valuation basis, market data, privacy */}
       <div style={styles.kvSection}>
+        <div style={styles.kvSectionHeader}>Data provenance</div>
         <KV compact rows={[
           ["Valuation basis", s.valuation_basis.replace(/_/g, " ")],
           ["Market data", s.market_data_mode],
@@ -310,24 +336,22 @@ function AccountSummaryPanel({ slot, onRetry }: { slot: DashboardState["summary"
 }
 
 function ReadinessTile({
-  title, subtitle, status, tone, asOf, isDemoMode,
+  title, subtitle, status, tone, asOf,
 }: {
   title: string;
   subtitle: string;
   status: string;
   tone: MpTone;
   asOf?: string;
-  isDemoMode: boolean;
 }) {
   return (
     <div style={{ ...styles.readinessCard, borderLeftColor: `var(--mp-${tone === "mute" ? "mute" : tone})` }}>
-      <div style={styles.readEyebrow}>{title}</div>
-      <div style={styles.readSub}>{subtitle}</div>
-      <div style={styles.readRow}>
+      <div style={styles.readCardHeader}>
+        <span style={styles.readEyebrow}>{title}</span>
         <Badge tone={tone} dot>{status}</Badge>
-        {asOf && <FreshnessDial tone={tone} ago={status === "fresh" ? "ok" : "—"} label={asOf} />}
       </div>
-      {isDemoMode && <DemoChip tight />}
+      <div style={styles.readSub}>{subtitle}</div>
+      {asOf && <FreshnessDial tone={tone} ago={status === "fresh" ? "ok" : "—"} label={asOf} />}
     </div>
   );
 }
@@ -500,6 +524,16 @@ function agentProviderTone(status: string): MpTone {
   }
 }
 
+function reviewModeTone(mode: string): MpTone {
+  switch (mode) {
+    case "normal_review": return "live";
+    case "analysis_only": return "info";
+    case "manual_confirmation_required": return "stale";
+    case "blocked": return "block";
+    default: return "mute";
+  }
+}
+
 function quickReviewIcon(flow: string): import("../components/shared/mp").MpIconName {
   switch (flow) {
     case "stock_buy": return "spark";
@@ -580,11 +614,40 @@ function Td({ children, mono, align = "left" }: { children: React.ReactNode; mon
 /* ── Styles ───────────────────────────────────────────────────────────── */
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { display: "flex", flexDirection: "column", gap: "var(--space-6)", maxWidth: 1280, margin: "0 auto", color: "var(--mp-ink)" },
+  page: { display: "flex", flexDirection: "column", gap: "var(--space-5)", maxWidth: 1280, margin: "0 auto", color: "var(--mp-ink)" },
   primaryBtn: {
-    fontSize: "var(--font-size-sm)", fontWeight: 600, padding: "8px 14px",
+    fontSize: "var(--font-size-sm)", fontWeight: 600, padding: "8px 16px",
     backgroundColor: "var(--mp-accent)", color: "var(--mp-card)",
     border: "1px solid var(--mp-accent)", borderRadius: "var(--radius-sm)", cursor: "pointer",
+    letterSpacing: "0.01em",
+  },
+
+  /* ── Action context bar (P20D-T4) ────────────────────────────────────── */
+  actionBar: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    gap: "var(--space-3)", flexWrap: "wrap",
+    padding: "var(--space-3) var(--space-4)",
+    backgroundColor: "var(--mp-accent-soft)", border: "1px solid var(--mp-accent-line)",
+    borderRadius: "var(--radius-md)",
+  },
+  actionBarLeft: {
+    display: "flex", alignItems: "center", gap: "var(--space-2)", minWidth: 0,
+  },
+  actionLabel: {
+    fontSize: "var(--font-size-sm)", color: "var(--mp-ink)", lineHeight: 1.4,
+  },
+
+  /* ── Readiness section ───────────────────────────────────────────────── */
+  readinessSection: {
+    display: "flex", flexDirection: "column", gap: "var(--space-2)",
+  },
+  sectionLabelRow: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    gap: "var(--space-3)",
+  },
+  sectionLabel: {
+    fontSize: "var(--font-size-xs)", color: "var(--mp-mute)",
+    textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600,
   },
   readinessGrid: {
     display: "grid",
@@ -595,23 +658,37 @@ const styles: Record<string, React.CSSProperties> = {
   readinessCard: {
     backgroundColor: "var(--mp-card)", border: "1px solid var(--mp-rule)",
     borderLeft: "2px solid var(--mp-mute)", borderRadius: "var(--radius-md)",
-    padding: "var(--space-4)", display: "flex", flexDirection: "column", gap: "var(--space-2)",
+    padding: "var(--space-3) var(--space-4)", display: "flex", flexDirection: "column", gap: 6,
+  },
+  readCardHeader: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    gap: "var(--space-2)",
   },
   readEyebrow: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 },
   readSub: { fontSize: "var(--font-size-sm)", color: "var(--mp-ink-2)", lineHeight: 1.4 },
-  readRow: { display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" },
+
+  /* ── Body columns ────────────────────────────────────────────────────── */
   body: {
     display: "grid",
     gridTemplateColumns: "1.2fr 1fr",
-    gap: "var(--space-6)",
+    gap: "var(--space-5)",
     minWidth: 0,
   },
   colLeft: { display: "flex", flexDirection: "column", gap: "var(--space-4)", minWidth: 0 },
   colRight: { display: "flex", flexDirection: "column", gap: "var(--space-4)", minWidth: 0 },
+
+  /* ── Account summary ─────────────────────────────────────────────────── */
   acctNote: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", lineHeight: 1.5, margin: 0 },
-  kvSection: { paddingTop: "var(--space-2)", borderTop: "1px solid var(--mp-rule)" },
+  kvSection: { paddingTop: "var(--space-3)", borderTop: "1px solid var(--mp-rule)" },
+  kvSectionHeader: {
+    fontSize: "var(--font-size-xs)", color: "var(--mp-mute)",
+    textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600,
+    marginBottom: "var(--space-2)",
+  },
   privacyNotice: { marginBottom: "var(--space-2)" },
   caveatWrap: { display: "flex", gap: "var(--space-1)", flexWrap: "wrap", marginTop: "var(--space-2)" },
+
+  /* ── Tables and alerts ───────────────────────────────────────────────── */
   tbl: { width: "100%", borderCollapse: "collapse" },
   alertList: { listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "var(--space-2)" },
   alertRow: {
@@ -623,6 +700,8 @@ const styles: Record<string, React.CSSProperties> = {
   alertTitle: { fontSize: "var(--font-size-sm)", fontWeight: 600, color: "var(--mp-ink)", lineHeight: 1.3 },
   alertMsg: { fontSize: "var(--font-size-sm)", color: "var(--mp-ink-2)", lineHeight: 1.4 },
   alertCode: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", fontFamily: "var(--mp-font-mono)" },
+
+  /* ── Quick reviews ───────────────────────────────────────────────────── */
   quickGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-2)" },
   quickBtn: {
     display: "flex", flexDirection: "row", gap: "var(--space-3)", alignItems: "center",
@@ -630,9 +709,11 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-sm)", backgroundColor: "var(--mp-card)", color: "var(--mp-ink)",
     cursor: "pointer", fontSize: "var(--font-size-sm)", textAlign: "left",
   },
-  quickContent: { display: "flex", flexDirection: "column", gap: 1 },
+  quickContent: { display: "flex", flexDirection: "column", gap: 2 },
   quickLabel: { fontWeight: 600, lineHeight: 1.3 },
   quickSub: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", textTransform: "uppercase", letterSpacing: "0.06em" },
+
+  /* ── Collapsed demo panels ───────────────────────────────────────────── */
   collapsedRow: { display: "flex", gap: "var(--space-2)", alignItems: "flex-start" },
   collapsedNote: { fontSize: "var(--font-size-sm)", color: "var(--mp-mute)", lineHeight: 1.5, margin: 0 },
 };

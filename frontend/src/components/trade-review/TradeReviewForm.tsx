@@ -7,6 +7,8 @@ import type {
   TradeReviewSubmission,
   PortfolioContextSelectionMode,
 } from "../../types/tradeReview";
+import SymbolAutocomplete from "./SymbolAutocomplete";
+import { promoteSymbolRecent } from "../../lib/symbolRecents";
 
 /**
  * TradeReviewForm — collects manual inputs for the four Phase 18A flows.
@@ -72,12 +74,12 @@ export default function TradeReviewForm({
   const [assetClass, setAssetClass] = useState<"stock" | "etf">("stock");
 
   // Stock/ETF fields
-  const [symbol, setSymbol] = useState("XYZ");
-  const [quantity, setQuantity] = useState("100");
-  const [priceAssumption, setPriceAssumption] = useState("50.00");
+  const [symbol, setSymbol] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [priceAssumption, setPriceAssumption] = useState("");
 
   // Option fields (covered call / CSP)
-  const [underlying, setUnderlying] = useState("XYZ");
+  const [underlying, setUnderlying] = useState("");
   const [expiration, setExpiration] = useState("2026-06-19");
   const [strike, setStrike] = useState("45");
   const [optQuantity, setOptQuantity] = useState("1");
@@ -126,6 +128,13 @@ export default function TradeReviewForm({
     const sf = resolveFlow();
     const isStockEtf =
       sf === "stock_buy" || sf === "stock_sell_trim" || sf === "etf_buy" || sf === "etf_sell_trim";
+
+    // On successful submit, promote an already-known browser-local recent to
+    // the top (move-to-top only). We do not fabricate a new recent here:
+    // creating one for a typed-but-never-selected symbol would require
+    // validated display fields (name/exchange/etc.), which is deferred to a
+    // future validate() wiring. Recents are still recorded on selection.
+    promoteSymbolRecent((isStockEtf ? symbol : underlying).trim().toUpperCase());
 
     const intent: TradeReviewWorkspacePreviewRequest = isStockEtf
       ? {
@@ -287,7 +296,13 @@ export default function TradeReviewForm({
 
       {stockEtfActive ? (
         <div style={styles.row}>
-          <TextField label="Symbol" value={symbol} onChange={setSymbol} disabled={busy} mono />
+          <SymbolAutocomplete
+            label="Symbol"
+            value={symbol}
+            onChange={setSymbol}
+            disabled={busy}
+            placeholder="Search symbols, names"
+          />
           <TextField label="Quantity" value={quantity} onChange={setQuantity} disabled={busy} mono inputMode="decimal" />
           <TextField
             label={flowGroup === "stock_etf_buy" ? "Assumed buy price" : "Assumed sell price"}
@@ -301,7 +316,13 @@ export default function TradeReviewForm({
       ) : (
         <>
           <div style={styles.row}>
-            <TextField label="Underlying" value={underlying} onChange={setUnderlying} disabled={busy} mono />
+            <SymbolAutocomplete
+              label="Underlying"
+              value={underlying}
+              onChange={setUnderlying}
+              disabled={busy}
+              placeholder="Search symbols, names"
+            />
             <TextField label="Expiration (YYYY-MM-DD)" value={expiration} onChange={setExpiration} disabled={busy} mono type="date" />
             <TextField label="Strike" value={strike} onChange={setStrike} disabled={busy} mono inputMode="decimal" />
           </div>

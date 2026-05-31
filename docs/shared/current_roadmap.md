@@ -75,6 +75,20 @@ Phase 20D - Dashboard Information Architecture And Contract Readiness.
 - `P20D-T1`, `P20D-T2`, and `P20D-T3` are complete and reviewed: the backend account-summary contract is refined, the Dashboard cockpit is cleaned up from reviewed contracts, and the first visual/content polish pass is accepted.
 - The next Dashboard design step may use Claude Design only as a constrained visual exploration tool: it may propose hierarchy and future panels, but every panel must be classified as available now, future backend contract needed, or out of scope before Claude A implements it.
 - First-viewport principles are review readiness, broker/portfolio context freshness, market-data availability/data mode, and a clear start-new-review action.
+- 2026-05-29 Stock Rover persona pressure test: Portfolio Copilot should be
+  positioned as a complement to serious research/portfolio tools, not a
+  replacement. Dashboard priorities are real-source account summary plus
+  broker freshness, visible market-data limitations, a promoted plain-English
+  readiness verdict, high-level risk/red-folder context, and a clear start
+  review action. Do not copy research-terminal, screener, watchlist,
+  holdings-grid, fair-value, or market-terminal patterns.
+- Synthetic plausible headline values should not appear as if they are real;
+  hide synthetic amounts by default or use unmistakable placeholders. Agent
+  provider status belongs off the Dashboard first viewport.
+- `P20D-T5` is complete and reviewed: the Dashboard now promotes the
+  backend-owned readiness verdict, moves agent-provider status off the first
+  viewport, hides plausible synthetic headline account values, and removes
+  dead quick-review presets.
 - Do not turn this planning task into frontend changes, backend endpoints, a market terminal, a watchlist, a brokerage-account mirror, an AI recommendation feed, or an options screener.
 
 Paused design reference - Phase 21A Realtime Agent Console backend contract.
@@ -125,14 +139,21 @@ Phase 23B - Complete Symbol Lookup Personal Demo.
   watchlists, screeners, recommendations, broker tradability, direct frontend
   provider calls, and commercial/public data-use claims.
 
-Phase 24A - Economic News Awareness Foundation.
+Phase 24A - Economic Calendar Awareness Foundation.
 
 - Planned after symbol lookup foundation.
-- Initial scope is backend-only, synthetic/replay-first public economic event
-  awareness with source/freshness labels and `is_trading_signal=false`.
-- This covers Dashboard economic/red-folder awareness only after backend
-  review; it does not authorize external news APIs, Forex Factory/Bloomberg
-  integration, agent ingestion, or trading-signal language.
+- Scope is macro/economic calendar awareness, not ticker/company news.
+- FMP Economic Calendar is the approved personal-demo provider path after
+  synthetic contracts pass review.
+- WebSocket/streaming, Trading Economics evaluation, ticker/company news, and
+  agent/news-tool ingestion remain deferred.
+- Dashboard economic/red-folder awareness may start only after reviewed backend
+  contracts and must keep source/freshness plus `is_trading_signal=false`
+  visible.
+- Per-underlying earnings date is a separate narrow future review-context
+  candidate for options flows. It may be prioritized because it directly
+  affects covered-call/CSP review quality, but it should not open a generic
+  ticker news feed or research terminal.
 
 ## Next Phases
 
@@ -149,6 +170,11 @@ Phase 20D, docs-only planning.
 - `P20D-T0` is complete in `docs/codex-a-product/DASHBOARD_CONTENT_DECISION.md`; it authorizes no implementation.
 - `P20D-T1` through `P20D-T3` are complete and reviewed. The next Dashboard step is a constrained Claude Design concept pass or follow-up implementation task based only on reviewed contracts; unsupported content must be marked as future-contract-needed or out of scope before implementation.
 - Founder decisions are still needed before persisted review-history work, real market-data display, news/economic-calendar content, or profile-backed personalization. Claude A may later refine visual hierarchy only from approved contracts.
+- After the Stock Rover pressure test, the first data-readiness sequence is:
+  real-source account summary plus broker freshness before persisted review
+  history; display-rights-cleared REST quote snapshots before external beta
+  quote-current claims; per-underlying earnings date as a narrow options
+  review-context follow-up.
 
 Phase 21A, paused.
 
@@ -172,13 +198,15 @@ Phase 22A, evaluation checkpoint.
 
 Phase 23A / 23B / 24A, next backend-first user-facing utility slices.
 
-- `P23A-T5` is complete and reviewed. `P23B-T1`/`P23B-T2` should finish
-  persistent last-good snapshots and opt-in local refresh wiring before Claude
-  A takes `P23B-T3` uppercase/recent-list frontend polish.
-- `P24A-T1` should define and implement economic event awareness contracts
-  with synthetic fixtures before Claude A adds a Dashboard panel.
-- Both phases must keep frontend, agents, and external providers out of the
-  initial backend tasks unless the specific reviewed task says otherwise.
+- Phase 23A/23B symbol lookup is complete through browser-local recents and
+  offline fixture cleanup.
+- `P24A-T1` should define and implement economic calendar contracts with
+  synthetic fixtures; `P24A-T2` adds deterministic importance classification;
+  `P24A-T3` adds the opt-in FMP REST adapter; `P24A-T4` adds last-good refresh;
+  `P24A-T5` adds the Dashboard table.
+- Phase 24A must keep ticker/company news, agents, WebSockets, Forex Factory
+  scraping, Trading Economics, and commercial provider positioning out of
+  scope unless Codex A opens a separate task.
 
 Phase 19D / live LLM smoke gate, future only.
 

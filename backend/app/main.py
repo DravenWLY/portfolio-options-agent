@@ -3,7 +3,18 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 
-from app.api.routes import accounts, agent_team, broker_sync, imports, portfolio, reports, symbols, trade_reviews, users
+from app.api.routes import (
+    accounts,
+    agent_team,
+    broker_sync,
+    economic_calendar,
+    imports,
+    portfolio,
+    reports,
+    symbols,
+    trade_reviews,
+    users,
+)
 from app.core.access_guard import require_local_access
 from app.services.symbol_directory import run_symbol_directory_startup_refresh_if_enabled
 
@@ -32,6 +43,7 @@ app.include_router(reports.router, dependencies=protected)
 app.include_router(trade_reviews.router, dependencies=protected)
 app.include_router(agent_team.router, dependencies=protected)
 app.include_router(symbols.router, dependencies=protected)
+app.include_router(economic_calendar.router, dependencies=protected)
 
 
 @app.get("/health")

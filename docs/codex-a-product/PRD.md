@@ -2,13 +2,19 @@
 
 Status: PM draft approved for product alignment
 Owner: Codex A - Product / Founder Strategy / PM
-Last updated: 2026-05-20
+Last updated: 2026-05-29
 
 ## Product Summary
 
 Portfolio Copilot is a TradingAgents-inspired, portfolio-aware trade review agent team for manual investors. It is TradingAgents-inspired, not TradingAgents-centered: the product center remains broker-aware `TradeIntent` review, not one-shot ticker research or automated trading.
 
 Before a user places a stock, ETF, covered call, or cash-secured put trade in their broker, the app reviews a proposed `TradeIntent` against the user's portfolio snapshot, cash/collateral state, concentration exposure, assignment or call-away exposure, risk rules, and data freshness. Deterministic services calculate the facts; AI may explain only approved structured outputs and public evidence.
+
+Portfolio Copilot is also complement-not-replace relative to serious investor
+research and portfolio tools such as Stock Rover. Those tools help users
+research, screen, track, and monitor. Portfolio Copilot's narrower promise is
+the pre-trade portfolio-aware layer those tools usually lack: what a specific
+manual trade would do to the user's portfolio before they place it elsewhere.
 
 ## Target User
 
@@ -121,6 +127,8 @@ AI must not:
 - Broker disconnect/delete flows in MVP UX.
 - Broker scraping, Fidelity credential storage, or MFA bypass.
 - Option-chain browser or market-data terminal.
+- Research terminal, screener, watchlist, holdings-grid cockpit, fair-value
+  rating surface, or Stock Rover replacement.
 - Options-income screener, wheel lifecycle app, or CSP/covered-call screener as the product center.
 - AI stock picking.
 - Thin TradingAgents wrapper.
@@ -145,9 +153,18 @@ The MVP is useful when:
 - Next implementation gate: Portfolio Snapshot Actionability Policy before polished Phase 16 agent outputs.
 - Phase 16 should be split into Phase 16A deterministic agent components and Phase 16B portfolio-aware agent-team orchestration.
 - TradingAgents is optional public ticker/company research evidence, not the final portfolio-aware decision engine.
-- Tradier is the preferred first real market-data provider candidate for backend-only REST snapshots before external paid beta; WebSocket/streaming real-time data is deferred.
+- Market-data provider selection is under staged evaluation. Indicative/manual
+  pricing is acceptable for local/internal analysis-only demos, but external
+  beta should plan a display-rights-cleared backend REST snapshot path for the
+  underlying and specific option before implying quote-current review quality.
+  WebSocket/streaming market data is deferred.
 - MVP trade-review surface: equity buy/sell/trim, single-leg covered call, and single-leg cash-secured put.
 - Long calls and long puts may exist in backend capability but are not first MVP UX priorities.
+- Dashboard positioning: compact review-readiness cockpit, not broker
+  dashboard, research terminal, market terminal, screener, or AI
+  recommendation feed.
+- Per-underlying earnings date is approved as a narrow future review-context
+  input for options flows, but generic company-news feeds remain deferred.
 
 ## Handoff
 

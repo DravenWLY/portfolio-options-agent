@@ -16,6 +16,13 @@ support the review-readiness job, but they must not turn the first viewport
 into a broker dashboard, quote terminal, options screener, market-data viewer,
 or recommendation feed.
 
+Codex A's 2026-05-29 Stock Rover/Product B pressure-test decision reinforces
+this boundary: Portfolio Copilot complements serious research and portfolio
+tools instead of replacing them. Real-source account summary plus broker
+freshness should land before persisted review history, and plausible synthetic
+headline dollar values should be hidden or replaced with unmistakable
+non-real placeholders in the normal cockpit.
+
 ## Contract Posture
 
 Revise the existing `DashboardAccountSummaryRead` / 

@@ -27,6 +27,7 @@ export type MpIconName =
   | "chevron-r"
   | "chevron-d"
   | "arrow-r"
+  | "refresh"
   | "alert"
   | "spark"
   | "sun"
@@ -181,6 +182,15 @@ export default function MpIcon({
       return (
         <svg {...svg}>
           <path d="M5 12h14M13 6l6 6-6 6" />
+        </svg>
+      );
+    case "refresh":
+      return (
+        <svg {...svg}>
+          <path d="M20 11a8 8 0 00-14.2-4.8L4 8" />
+          <path d="M4 4v4h4" />
+          <path d="M4 13a8 8 0 0014.2 4.8L20 16" />
+          <path d="M20 20v-4h-4" />
         </svg>
       );
     case "alert":

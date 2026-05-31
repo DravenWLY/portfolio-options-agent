@@ -2,11 +2,17 @@
 
 Status: PM prioritization guide
 Owner: Codex A - Product / Founder Strategy / PM
-Last updated: 2026-05-20
+Last updated: 2026-05-29
 
 ## Prioritization Principle
 
 Prioritize features that make one proposed manual trade easier to review against the user's actual portfolio snapshot. Deprioritize features that mainly make the app look like a broker dashboard, option screener, market-data viewer, AI stock picker, or automated trading system.
+
+Product B benchmark rule: serious portfolio/research tools such as Stock Rover
+are useful comparison points, but Portfolio Copilot should complement them
+rather than replace them. Adopt trust, provenance, and workflow clarity; do
+not copy their research-terminal, screener, watchlist, fair-value, or holdings
+grid center of gravity.
 
 ## Priority Rubric
 
@@ -56,6 +62,9 @@ A feature moves down when it:
 | Optional AI report explanation | Improves comprehension of deterministic results. | Must stay behind projection and actionability gates. |
 | Manual confirmation workflow | Lets users proceed with analysis when data is stale/manual. | Needs careful copy and audit trail. |
 | Basic provider status and missing-data states | Reduces confusion when quotes or broker sync are unavailable. | Should stay operational, not dashboard-heavy. |
+| Real-source Dashboard account summary plus broker freshness | Trust foundation for the cockpit; users can tolerate empty history, but not fake aggregates. | Backend-formatted labels only; no raw values or agent prompt use by default. |
+| Display-rights-cleared REST quote snapshots for reviewed trade only | Raises the ceiling for external beta options review without building a market terminal. | Underlying and specific option first; no chain browser, watchlist, or streaming. |
+| Per-underlying earnings date for options review context | Directly affects covered call/CSP review quality and IV-crush awareness. | Narrow event datum only; not a generic company-news feed. |
 | Market Data Agent / public evidence status role | Helps users understand quote/chain/Greeks availability once real snapshots exist. | Backend evidence/status role first; no market terminal. |
 | News / Research Evidence Agent | Adds public ticker/company context. | P1 after deterministic workflow and evidence contracts are stable. |
 | Bull Case and Bear Case Agents | Adds TradingAgents-inspired debate over public/sanitized evidence. | P1; not required for local MVP demo. |
@@ -80,6 +89,10 @@ A feature moves down when it:
 - Broker order management.
 - AI-generated buy/sell recommendations.
 - Portfolio optimizer.
+- Research terminal or Stock Rover replacement.
+- Watchlist-first Dashboard.
+- Holdings-grid Dashboard.
+- Fair-value/rating surface.
 - Production billing.
 - Mobile app.
 - PDF export.

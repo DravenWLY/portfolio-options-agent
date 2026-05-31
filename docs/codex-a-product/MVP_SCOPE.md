@@ -2,13 +2,17 @@
 
 Status: PM scope decision
 Owner: Codex A - Product / Founder Strategy / PM
-Last updated: 2026-05-20
+Last updated: 2026-05-29
 
 ## MVP Definition
 
 The MVP is a read-only pre-trade review workflow for self-directed investors who manually place trades outside the app. It proves that Portfolio Copilot can turn a portfolio snapshot plus a proposed stock/ETF/options trade into a deterministic, freshness-aware, educational review that helps the user understand portfolio impact before acting elsewhere.
 
 The broader product framing is a TradingAgents-inspired, portfolio-aware trade review agent team. For MVP, this means safe deterministic agent components and an app-owned agent-team orchestration contract, not autonomous trading, not one-shot stock research, and not a thin TradingAgents wrapper.
+
+The MVP is not a migration target for research terminals or portfolio
+analytics products. It should complement tools such as Stock Rover by covering
+the short, high-stakes moment before a user manually places a trade.
 
 ## In Scope
 
@@ -34,6 +38,8 @@ The broader product framing is a TradingAgents-inspired, portfolio-aware trade r
 - Broker scraping, Fidelity credential storage, or MFA bypass.
 - Direct Fidelity login/API assumptions.
 - Market-data terminal, option-chain browser, or real-time streaming surface.
+- Research terminal, screener, watchlist, holdings-grid Dashboard, fair-value
+  rating surface, or Stock Rover replacement.
 - Options-income screener, wheel app, CSP screener, covered-call screener, or AI stock picker.
 - Advanced option strategies: spreads, collars, rolls, diagonals, iron condors, multi-leg optimization.
 - TradingAgents in the fast review path.
@@ -105,15 +111,26 @@ The frontend must show:
 
 Phase 18 may use deterministic review plus Phase 16A/16B outputs for the first workspace. Rich public research/debate UI should wait for Phase 17 evidence contracts.
 
-### Gate 5 - Real Market Data For Paid Beta
+### Gate 5 - Real Market Data For External Beta
 
 Real market-data provider integration is not required before a local MVP demo. It is required before external paid beta or any polished UI/report that implies quote-current options review.
 
-The preferred first real provider candidate is Tradier for backend-only REST snapshots: quotes, option expirations, option chains, and Greeks/IV where available. WebSocket/streaming real-time data is deferred to Phase 19+ or paid beta only if users prove the need.
+The external beta ceiling-lifter is a display-rights-cleared backend REST
+snapshot path for the underlying and the specific option being reviewed,
+including source/freshness/provenance. Indicative/manual pricing can support
+local/internal analysis-only demos, but it should not be presented as current
+official market data. WebSocket/streaming real-time data remains deferred
+unless users later prove the need and licensing is approved.
 
 ## First Beta Scope
 
-The first local beta/demo can be useful with manual/CSV snapshots and synthetic/manual market data if the product labels outputs as analysis-only where appropriate. A paid beta should aim for read-only broker sync plus a clear refresh/confirm path and real REST snapshot market data for quote-current options review. Broad provider coverage and streaming are not required before validating the core pre-trade review job.
+The first local beta/demo can be useful with manual/CSV snapshots and
+synthetic/manual market data if the product labels outputs as analysis-only
+where appropriate. A paid or external beta should aim for read-only broker
+sync plus a clear refresh/confirm path and a display-rights-cleared REST
+snapshot market-data source for quote-current options review. Broad provider
+coverage and streaming are not required before validating the core pre-trade
+review job.
 
 ## Scope Admission Rule
 
@@ -130,6 +147,9 @@ These do not block the current MVP direction:
 - How much AI explanation is acceptable before security/compliance review.
 - Exact pricing and packaging.
 - Whether advisors become a later segment.
+- Whether the first external beta must include per-underlying earnings date
+  for covered call/CSP review, or whether that remains a fast-follow review
+  context.
 
 ## Current PM Decision
 

@@ -23,8 +23,8 @@ The app is layered around portfolio-aware trade review:
 17. Phase 21A Realtime Agent Console contract draft: retained as a paused design reference after PM postponed further agentic/realtime expansion; no backend implementation or composer activation is authorized.
 18. Phase 22A Market Data Evaluation Foundation: approved offline, provider-neutral, synthetic/replay-first market-data contract and scenario-test work; provider selection is reopened and commercial integration is not yet authorized.
 19. Phase 20D Dashboard Information Architecture: docs-only planning gate completed; private account-detail display is approved in principle behind a backend display-label contract, privacy mode, and explicit freshness/provenance.
-20. Phase 23A Symbol Lookup / Instrument Reference Foundation: planned backend-only, provider-neutral, synthetic/replay-first search and validation contract for Trade Review autocomplete.
-21. Phase 24A Economic News Awareness Foundation: planned backend-only, synthetic/replay-first public economic event awareness contract; Dashboard display and agent ingestion remain separate later gates.
+20. Phase 23A/23B Symbol Lookup / Instrument Reference Foundation: completed provider-neutral search/validation, broad Nasdaq-traded local refresh, uppercase autocomplete, browser-local recents, and offline fixture cleanup.
+21. Phase 24A Economic Calendar Awareness Foundation: planned macro calendar path with synthetic contracts first, deterministic importance classification, opt-in FMP REST evaluation, last-good refresh, and Dashboard table; ticker/company news and agent ingestion remain separate later gates.
 
 ## Backend / Frontend Boundaries
 
@@ -66,8 +66,8 @@ Frontend must not:
 - Real LLM provider support is a backend-only explicit gate with Google/Gemini as the first candidate and mock provider as default. See `docs/codex-b-architecture/adr/0005-real-llm-provider-gate-google-first.md`.
 - Live LLM/API smoke testing remains a separate future gate after Phase 19C. It must be backend-owned, explicit opt-in, synthetic-first, budget/rate-limit aware, and reviewed before any user-facing reliance.
 - Realtime Agent Console HTTP/SSE is a paused proposed option only, pending future PM reactivation after founder agentic-AI study. See proposed, paused `docs/codex-b-architecture/adr/0007-agent-console-http-commands-sse-streaming.md`.
-- Symbol lookup should be implemented before economic/news awareness. See `docs/codex-b-architecture/PHASE_23A_SYMBOL_LOOKUP_CONTRACT.md`.
-- Economic/news awareness is public context only and must not be treated as a trading signal. See `docs/codex-b-architecture/PHASE_24A_ECONOMIC_NEWS_AWARENESS_CONTRACT.md`.
+- Symbol lookup is implemented through the local personal-demo path. See `docs/codex-b-architecture/PHASE_23A_SYMBOL_LOOKUP_CONTRACT.md`.
+- Economic calendar awareness is public macro context only and must not be treated as a trading signal. See `docs/codex-b-architecture/PHASE_24A_ECONOMIC_NEWS_AWARENESS_CONTRACT.md`.
 
 ## Missing ADRs
 
@@ -93,9 +93,9 @@ Phases 16A, 16B, 17A, 18A, 18B, 18C, 19A, 19B, and 19C are complete and archived
 The active delivery focus is:
 
 - **Phase 20B / 20C**: Phase 20C is the completed reviewed Modern Portfolio Desk frontend checkpoint; P20B-T5/T6 remain blocked on persistence/auth decisions.
-- **Phase 20D**: `P20D-T0` through `P20D-T3` are complete: Dashboard content decision, private account-summary contract, cockpit cleanup, and reviewed visual/content polish. The next Dashboard design step may use Claude Design only with a content inventory that classifies each panel as available now, future backend contract needed, or out of scope before implementation.
+- **Phase 20D**: `P20D-T0` through `P20D-T5` are complete: Dashboard content decision, private account-summary contract, cockpit cleanup, reviewed visual/content polish, Claude Design-derived refinements from existing contracts, and Stock Rover/Product B pressure-test cleanup. Portfolio Copilot complements serious research tools rather than replacing them, and the Dashboard remains a compact review-readiness cockpit. `P20D-T5` added no backend fields, endpoints, provider work, or new product surfaces.
 - **Phase 22A**: `P22A-T1` synthetic/replay contracts, `P22A-T3` early-provider assessment, and `P22A-T4` backend-only Alpaca Basic injected/mock-client evaluation adapter are complete; no actual provider call, frontend display, agent ingestion, or production-provider decision is authorized.
-- **Phase 23A / 24A**: the next backend-first product utility path is symbol lookup first (`P23A-T1`), then economic/news awareness (`P24A-T1`), both synthetic/replay-first and with no external provider calls in initial tasks.
+- **Phase 23A / 23B / 24A**: symbol lookup is complete through local recents and offline fixture cleanup. Phase 24A remains macro-calendar-only and must preserve `is_trading_signal=false`; it must not become ticker/company news, a research feed, or an agent evidence path. Per-underlying earnings date is a separate narrow future review-context candidate for options flows, not part of generic Dashboard news.
 
 **Phase 21A is paused**: Codex B's mock-first realtime Agent Console draft is
 preserved for future discussion, but Codex C must not implement it and Claude A
@@ -219,13 +219,15 @@ Recommended first backend slice:
 ## Recommended First Tasks for Codex B
 
 1. Preserve the completed `P22A-T4` evaluation boundary in `PHASE_22A_ALPACA_BASIC_EVALUATION_ADAPTER_CONTRACT.md`; do not authorize external smoke testing, frontend display, or agent consumption without a new PM decision.
-2. Start `P23A-T1` before news: provider-neutral symbol search/validation contracts with synthetic fixtures, no provider calls, no frontend autocomplete until review.
-3. Then start `P24A-T1`: public economic event awareness contracts with synthetic fixtures and `is_trading_signal=false`, no provider calls or agent ingestion.
-4. Use the completed `P20D-T0` memo, `PHASE_20D_DASHBOARD_ACCOUNT_DETAIL_CONTRACT.md`, and accepted Dashboard polish as the boundary for future Dashboard slices. Claude Design may explore visual hierarchy only if unsupported panels are explicitly labelled as future-contract-needed or out of scope.
-5. Keep Phase 20B/P20C frontend wiring behind Codex B-reviewed contracts and visible demo labels for synthetic responses.
-6. Review P20B-T5 reports list/detail and P20B-T6 safe profile/display only after their persistence/auth decisions exist.
-7. Keep Phase 21A realtime agent expansion and Phase 19D live LLM smoke testing paused or separately gated.
-8. Retain vendor RFI comparison as parked reference material; do not expose a live/current UI claim or reopen commercial selection until Codex A approves it.
+2. Treat Phase 23A/23B symbol lookup as complete unless a new bug/follow-up is opened.
+3. Treat the next Dashboard data-readiness priority as real-source account summary plus broker freshness mapping, if Codex A opens a backend task. This should precede persisted review history because fake-looking account aggregates undermine cockpit trust more than an empty history panel.
+4. Treat `P20D-T5` as complete. Any further Dashboard visual work needs a new approved task and must keep unsupported panels classified as future-contract-needed or out of scope.
+5. Plan display-rights-cleared REST quote snapshots for only the reviewed underlying and specific option before external-beta quote-current claims. Do not expose Alpaca `P22A-T4` evaluation output on the Dashboard.
+6. Represent per-underlying earnings date as a future narrow review-context contract for options flows. Keep it separate from Phase 24A macro economic calendar work and do not broaden it into generic ticker/company news or research.
+7. Keep Phase 20B/P20C frontend wiring behind Codex B-reviewed contracts and visible demo labels for synthetic responses.
+8. Review P20B-T5 reports list/detail and P20B-T6 safe profile/display only after their persistence/auth decisions exist; they are lower priority than real-source account summary and broker freshness.
+9. Keep Phase 21A realtime agent expansion and Phase 19D live LLM smoke testing paused or separately gated.
+10. Retain vendor RFI comparison as parked reference material; do not expose a live/current UI claim or reopen commercial selection until Codex A approves it.
 
 ## Engineering Framework Sections To Apply First
 

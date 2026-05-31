@@ -15,10 +15,10 @@ import type {
   DashboardAccountSummaryRead,
 } from "../types/dashboard";
 import type { PortfolioContextListRead, PortfolioContextRead } from "../types/portfolioContext";
-import { DEMO_QUICK_REVIEWS } from "../components/demo/modernDeskDemoData";
+import EconomicCalendarPanel from "../components/economic-calendar/EconomicCalendarPanel";
 
 /**
- * DashboardPage — compact review-readiness cockpit (P20D-T2 → T4).
+ * DashboardPage — compact review-readiness cockpit (P20D-T2 → T5).
  *
  * Backend-backed via reviewed P20B / P20D contracts:
  *   GET /api/users/{uid}/trade-reviews
@@ -27,14 +27,23 @@ import { DEMO_QUICK_REVIEWS } from "../components/demo/modernDeskDemoData";
  *   GET /api/users/{uid}/dashboard-account-summary  (P20D-T1 refined)
  *   GET /api/users/{uid}/portfolio-contexts
  *
- * P20D-T4 visual refinements from Claude Design feasibility review:
- *   - Action context bar: recommended_user_action_label + overall_review_mode
- *   - Readiness section label with overall-mode badge
- *   - Account summary section headers for position breakdown / provenance
- *   - Density and hierarchy improvements throughout
+ * P20D-T5 Product B pressure-test cleanup (Stock Rover persona, Codex A
+ * 2026-05-29 decisions — complement, don't replace a research terminal):
+ *   - Promote the backend-owned plain-English readiness verdict
+ *     (recommended_user_action_label) to the first meaningful answer.
+ *   - Move agent-provider readiness off the first viewport into a thin
+ *     lower-priority operational status row, so it no longer competes with
+ *     broker snapshot and market quote freshness.
+ *   - Never render plausible synthetic dollar amounts: in synthetic_demo,
+ *     the account headline shows an unmistakable placeholder and monetary
+ *     breakdown rows are suppressed (counts/shape/cash-state remain).
+ *   - Remove the dead flow-specific quick-review presets that only navigated
+ *     to a blank Trade Review form; the header action remains the single,
+ *     honest start-review entry point.
  *
- * First-viewport hierarchy: action context → readiness strip → account
- * summary → portfolio context → demoted synthetic panels.
+ * First-viewport hierarchy: readiness verdict → data-freshness tiles →
+ * account summary → portfolio context → economic awareness; agent-provider
+ * status and synthetic recent/risk panels are demoted below.
  *
  * Safety:
  *   - Read-only. No order ticket / execute / cancel / buy / sell.
@@ -142,21 +151,12 @@ export default function DashboardPage() {
         }
       />
 
-      {/* ── Action context bar (P20D-T4) ────────────────────────────── */}
-      {state.readiness.status === "success" && state.readiness.data && (
-        <div style={styles.actionBar}>
-          <div style={styles.actionBarLeft}>
-            <MpIcon name="review" size={15} style={{ color: "var(--mp-accent)", flexShrink: 0, marginTop: 1 }} />
-            <span style={styles.actionLabel}>{state.readiness.data.recommended_user_action_label}</span>
-          </div>
-          <Badge tone={reviewModeTone(state.readiness.data.overall_review_mode)} dot>
-            {state.readiness.data.overall_review_mode.replace(/_/g, " ")}
-          </Badge>
-        </div>
-      )}
+      {/* ── 1. Readiness verdict — first meaningful answer (P20D-T5) ──── */}
+      <ReadinessVerdict slot={state.readiness} onRetry={loadAll} />
 
-      {/* ── Readiness strip ──────────────────────────────────────────── */}
-      <ReadinessStrip slot={state.readiness} onRetry={loadAll} />
+      {/* ── 2. Supporting data freshness — broker + market only; agent
+              provider moved off the first viewport (P20D-T5) ─────────── */}
+      <ReadinessStrip slot={state.readiness} />
 
       {/* ── Main body ────────────────────────────────────────────────── */}
       <section style={styles.body}>
@@ -166,24 +166,12 @@ export default function DashboardPage() {
 
           {/* Portfolio context summary */}
           <PortfolioContextSummaryPanel slot={state.contexts} onRetry={loadAll} />
+
+          {/* Economic awareness — self-fetching, failures stay local (P24A-T5) */}
+          <EconomicCalendarPanel />
         </div>
 
         <div style={styles.colRight}>
-          {/* Quick reviews — static presets, not backend-driven */}
-          <Panel title="Quick reviews" tag="presets" right={<DemoChip />}>
-            <div style={styles.quickGrid}>
-              {DEMO_QUICK_REVIEWS.map((q) => (
-                <button key={q.flow} type="button" onClick={() => nav("/trade-review")} style={styles.quickBtn}>
-                  <MpIcon name={quickReviewIcon(q.flow)} size={15} style={{ color: "var(--mp-accent)", marginTop: 1 }} />
-                  <span style={styles.quickContent}>
-                    <span style={styles.quickLabel}>{q.label}</span>
-                    <span style={styles.quickSub}>{q.sub}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </Panel>
-
           {/* Recent trade reviews — collapsed when synthetic demo */}
           <RecentReviewsPanel slot={state.reviews} onRetry={loadAll} />
 
@@ -192,14 +180,18 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      {/* Thin operational status row — agent provider, deliberately off the
+          first viewport so it does not compete with broker/market freshness. */}
+      <AgentProviderStatusRow slot={state.readiness} />
+
       <DashboardSafetyStrip />
     </div>
   );
 }
 
-/* ── Readiness strip ────────────────────────────────────────────────────── */
+/* ── Readiness verdict (hero answer) ───────────────────────────────────── */
 
-function ReadinessStrip({
+function ReadinessVerdict({
   slot,
   onRetry,
 }: {
@@ -207,7 +199,7 @@ function ReadinessStrip({
   onRetry: () => void;
 }) {
   if (slot.status === "loading") {
-    return <LoadingSkeleton rows={2} label="Loading readiness…" />;
+    return <LoadingSkeleton rows={2} label="Loading review readiness…" />;
   }
   if (slot.status === "error") {
     return <ErrorState message={slot.error ?? "Failed to load readiness."} onRetry={onRetry} />;
@@ -218,16 +210,56 @@ function ReadinessStrip({
   const isDemoMode = r.data_mode === "synthetic_demo";
 
   return (
+    <section style={styles.verdict}>
+      <div style={styles.verdictTop}>
+        <span style={styles.verdictEyebrow}>Review readiness</span>
+        <div style={styles.verdictBadges}>
+          {isDemoMode && <DemoChip tight />}
+          <Badge tone={reviewModeTone(r.overall_review_mode)} dot>
+            {r.overall_review_mode.replace(/_/g, " ")}
+          </Badge>
+        </div>
+      </div>
+      <div style={styles.verdictAnswerRow}>
+        <MpIcon name="review" size={18} style={{ color: "var(--mp-accent)", flexShrink: 0, marginTop: 2 }} />
+        {/* Backend-owned plain-English verdict, rendered verbatim. */}
+        <span style={styles.verdictAnswer}>{r.recommended_user_action_label}</span>
+      </div>
+    </section>
+  );
+}
+
+/* ── Agent provider operational status (off first viewport) ────────────── */
+
+function AgentProviderStatusRow({ slot }: { slot: DashboardState["readiness"] }) {
+  if (slot.status !== "success" || !slot.data) return null;
+  const ap = slot.data.agent_provider;
+  return (
+    <div style={styles.opStatusRow}>
+      <span style={styles.opStatusLabel}>Agent provider</span>
+      <span style={styles.opStatusValue}>{ap.display_label}</span>
+      <Badge tone={agentProviderTone(ap.provider_status)} dot>{ap.provider_mode}</Badge>
+    </div>
+  );
+}
+
+/* ── Readiness strip ────────────────────────────────────────────────────── */
+
+function ReadinessStrip({ slot }: { slot: DashboardState["readiness"] }) {
+  // Loading/error are owned by the verdict above; the strip only adds the
+  // supporting freshness tiles on success.
+  if (slot.status !== "success" || !slot.data) return null;
+
+  const r = slot.data;
+
+  return (
     <section style={styles.readinessSection}>
-      {/* Section label row */}
       <div style={styles.sectionLabelRow}>
-        <span style={styles.sectionLabel}>Review readiness</span>
-        {isDemoMode && <DemoChip tight />}
+        <span style={styles.sectionLabel}>Data freshness</span>
       </div>
 
-      {/* Cards grid */}
+      {/* Broker snapshot and market quote freshness are kept distinct. */}
       <div style={styles.readinessGrid}>
-        {/* Broker snapshot */}
         <ReadinessTile
           title="Broker snapshot"
           subtitle={r.broker_snapshot.display_label}
@@ -235,20 +267,12 @@ function ReadinessStrip({
           tone={readinessTone(r.broker_snapshot.status, r.broker_snapshot.is_blocking)}
           asOf={r.broker_snapshot.as_of_label ?? undefined}
         />
-        {/* Market quotes */}
         <ReadinessTile
           title="Market quotes"
           subtitle={r.market_quotes.display_label}
           status={r.market_quotes.status}
           tone={readinessTone(r.market_quotes.status, r.market_quotes.is_blocking)}
           asOf={r.market_quotes.as_of_label ?? undefined}
-        />
-        {/* Agent provider */}
-        <ReadinessTile
-          title="Agent provider"
-          subtitle={r.agent_provider.display_label}
-          status={r.agent_provider.provider_mode}
-          tone={agentProviderTone(r.agent_provider.provider_status)}
         />
       </div>
     </section>
@@ -277,6 +301,10 @@ function AccountSummaryPanel({ slot, onRetry }: { slot: DashboardState["summary"
   const s = slot.data;
   const isDemoMode = s.data_mode === "synthetic_demo";
   const isAmountsHidden = s.privacy_display_mode === "amounts_hidden";
+  // Never present plausible synthetic dollars as if they might be real (D2).
+  // Suppress monetary labels for synthetic demo or privacy-hidden modes; keep
+  // only qualitative shape / counts / cash-state, which are safe context.
+  const hideAmounts = isDemoMode || isAmountsHidden;
 
   return (
     <Panel
@@ -284,24 +312,35 @@ function AccountSummaryPanel({ slot, onRetry }: { slot: DashboardState["summary"
       tag={s.display_scope.replace(/_/g, " ")}
       right={isDemoMode ? <DemoChip /> : undefined}
     >
-      {isAmountsHidden && (
+      {isAmountsHidden && !isDemoMode && (
         <div style={styles.privacyNotice}>
           <Badge tone="mute" dot>amounts hidden</Badge>
         </div>
       )}
 
-      {/* Headline value — backend-owned label rendered verbatim */}
-      {!isAmountsHidden && s.total_value_label && (
+      {/* Headline — backend label verbatim for real source; an unmistakable
+          placeholder for synthetic demo so fake dollars never look real. */}
+      {!hideAmounts && s.total_value_label ? (
         <Stat label="Total value" value={s.total_value_label} sub={s.source_label} />
-      )}
-      {(isAmountsHidden || !s.total_value_label) && (
+      ) : isDemoMode ? (
+        <div style={styles.placeholderBlock}>
+          <span style={styles.placeholderValue}>Connect a portfolio to see your value.</span>
+          <span style={styles.placeholderSub}>{s.source_label}</span>
+        </div>
+      ) : (
         <KV compact rows={[["Source", s.source_label]]} />
       )}
 
-      {/* Position breakdown — backend display labels verbatim */}
+      {/* Position context — backend display labels verbatim. Monetary rows are
+          suppressed when amounts are hidden/synthetic; safe counts, portfolio
+          shape, and qualitative cash state remain. */}
       <div style={styles.kvSection}>
         <div style={styles.kvSectionHeader}>Position breakdown</div>
-        <KV rows={[
+        <KV rows={hideAmounts ? [
+          ["Cash", s.cash_state_label],
+          ["Portfolio shape", s.portfolio_shape_label],
+          ["Positions", s.position_count_label],
+        ] : [
           ["Cash", s.cash_label ?? s.cash_state_label],
           ["Stock/ETF exposure", s.stock_etf_exposure_label ?? s.stock_exposure_label ?? "—"],
           ["Options exposure", s.options_exposure_label ?? s.option_exposure_label ?? "—"],
@@ -534,16 +573,6 @@ function reviewModeTone(mode: string): MpTone {
   }
 }
 
-function quickReviewIcon(flow: string): import("../components/shared/mp").MpIconName {
-  switch (flow) {
-    case "stock_buy": return "spark";
-    case "stock_sell_trim": return "alert";
-    case "covered_call": return "shield";
-    case "cash_secured_put": return "lock";
-    default: return "review";
-  }
-}
-
 function actionabilityTone(status: string): MpTone {
   if (status.startsWith("blocked")) return "block";
   switch (status) {
@@ -622,20 +651,46 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: "0.01em",
   },
 
-  /* ── Action context bar (P20D-T4) ────────────────────────────────────── */
-  actionBar: {
-    display: "flex", alignItems: "center", justifyContent: "space-between",
-    gap: "var(--space-3)", flexWrap: "wrap",
-    padding: "var(--space-3) var(--space-4)",
+  /* ── Readiness verdict (hero answer, P20D-T5) ─────────────────────────── */
+  verdict: {
+    display: "flex", flexDirection: "column", gap: "var(--space-2)",
+    padding: "var(--space-4) var(--space-5)",
     backgroundColor: "var(--mp-accent-soft)", border: "1px solid var(--mp-accent-line)",
     borderRadius: "var(--radius-md)",
   },
-  actionBarLeft: {
-    display: "flex", alignItems: "center", gap: "var(--space-2)", minWidth: 0,
+  verdictTop: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    gap: "var(--space-3)", flexWrap: "wrap",
   },
-  actionLabel: {
-    fontSize: "var(--font-size-sm)", color: "var(--mp-ink)", lineHeight: 1.4,
+  verdictEyebrow: {
+    fontSize: "var(--font-size-xs)", color: "var(--mp-mute)",
+    textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600,
   },
+  verdictBadges: { display: "flex", alignItems: "center", gap: "var(--space-2)" },
+  verdictAnswerRow: { display: "flex", alignItems: "flex-start", gap: "var(--space-2)", minWidth: 0 },
+  verdictAnswer: {
+    fontSize: "var(--font-size-lg)", fontWeight: 600, color: "var(--mp-ink)", lineHeight: 1.35,
+  },
+
+  /* ── Thin operational status row (agent provider, off first viewport) ─── */
+  opStatusRow: {
+    display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap",
+    padding: "var(--space-2) var(--space-3)",
+    border: "1px solid var(--mp-rule)", borderRadius: "var(--radius-sm)",
+    backgroundColor: "var(--mp-card)",
+  },
+  opStatusLabel: {
+    fontSize: "var(--font-size-xs)", color: "var(--mp-mute)",
+    textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600,
+  },
+  opStatusValue: {
+    fontSize: "var(--font-size-xs)", color: "var(--mp-ink-2)", marginRight: "auto",
+  },
+
+  /* ── Synthetic placeholder (no plausible fake dollars) ────────────────── */
+  placeholderBlock: { display: "flex", flexDirection: "column", gap: 2 },
+  placeholderValue: { fontSize: "var(--font-size-md)", fontWeight: 600, color: "var(--mp-ink-2)", lineHeight: 1.3 },
+  placeholderSub: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)" },
 
   /* ── Readiness section ───────────────────────────────────────────────── */
   readinessSection: {
@@ -651,7 +706,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   readinessGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
+    gridTemplateColumns: "repeat(2, 1fr)",
     gap: "var(--space-3)",
     minWidth: 0,
   },
@@ -700,18 +755,6 @@ const styles: Record<string, React.CSSProperties> = {
   alertTitle: { fontSize: "var(--font-size-sm)", fontWeight: 600, color: "var(--mp-ink)", lineHeight: 1.3 },
   alertMsg: { fontSize: "var(--font-size-sm)", color: "var(--mp-ink-2)", lineHeight: 1.4 },
   alertCode: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", fontFamily: "var(--mp-font-mono)" },
-
-  /* ── Quick reviews ───────────────────────────────────────────────────── */
-  quickGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "var(--space-2)" },
-  quickBtn: {
-    display: "flex", flexDirection: "row", gap: "var(--space-3)", alignItems: "center",
-    padding: "var(--space-3) var(--space-4)", border: "1px solid var(--mp-rule)",
-    borderRadius: "var(--radius-sm)", backgroundColor: "var(--mp-card)", color: "var(--mp-ink)",
-    cursor: "pointer", fontSize: "var(--font-size-sm)", textAlign: "left",
-  },
-  quickContent: { display: "flex", flexDirection: "column", gap: 2 },
-  quickLabel: { fontWeight: 600, lineHeight: 1.3 },
-  quickSub: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", textTransform: "uppercase", letterSpacing: "0.06em" },
 
   /* ── Collapsed demo panels ───────────────────────────────────────────── */
   collapsedRow: { display: "flex", gap: "var(--space-2)", alignItems: "flex-start" },

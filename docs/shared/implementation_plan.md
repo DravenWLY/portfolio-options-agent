@@ -1237,6 +1237,163 @@ Shared Phase 20D rules:
   - File: `frontend/src/pages/DashboardPage.tsx` — 724 lines total.
 - Status: `done`.
 
+### P20D-T5 - Dashboard Product B Pressure-Test Cleanup
+
+- Task id: `P20D-T5`
+- Title: Dashboard Product B Pressure-Test Cleanup
+- Owner: Claude A implementation, Codex B contract/safety review
+- Trigger: Requires explicit Codex A activation. This entry records accepted
+  PM direction from the 2026-05-29 Stock Rover persona pressure test; it does
+  not authorize immediate code work by itself.
+- Objective: Apply remaining accepted Dashboard visual/copy cleanup from the
+  Stock Rover heavy-user pressure test using only existing reviewed frontend
+  contracts. The goal is to strengthen first-glance trust without adding new
+  backend fields, endpoints, providers, or product surfaces.
+- Dependencies:
+  - completed `P20D-T4`
+  - Codex A 2026-05-29 Dashboard pressure-test decisions in
+    `docs/codex-a-product/DASHBOARD_CONTENT_DECISION.md`
+- Files expected to inspect or change if activated:
+  - `frontend/src/pages/DashboardPage.tsx`
+  - `frontend/src/types/dashboard.ts`, only if stale imports/types need cleanup
+  - `docs/shared/implementation_plan.md`, verification notes only
+- Accepted cleanup direction:
+  1. Keep complement-not-replace positioning: the Dashboard is a
+     review-readiness cockpit, not a Stock Rover replacement, research
+     terminal, screener, watchlist, holdings grid, fair-value surface, or
+     market terminal.
+  2. Promote the backend-owned plain-English readiness verdict above
+     supporting readiness tiles if it is not already the first meaningful
+     Dashboard answer.
+  3. Move agent-provider readiness off the first viewport. It may remain in
+     Settings, Agent Console, or a thin operational status row.
+  4. Ensure `synthetic_demo` account summaries do not render plausible
+     headline account values as if they might be real. Use hidden amounts or
+     unmistakable non-real placeholder copy.
+  5. Ensure quick-review presets either prefill the corresponding reviewed
+     flow or are removed/reduced so they do not look actionable while doing
+     nothing.
+- Explicitly out of scope:
+  - backend changes, schemas, routes, API clients, new storage keys, provider
+    calls, market-data display, report/profile contracts, Agent Console,
+    Phase 21A, `../TradingAgents`, Claude Design prototype import, generic
+    company news, watchlists, holdings tables, screeners, or execution UI
+- Acceptance criteria:
+  - No rendered Dashboard field traces to an invented frontend value.
+  - All account-detail values remain backend-formatted display labels rendered
+    verbatim; no frontend financial computation.
+  - Synthetic/demo account values are hidden or unmistakably non-real in the
+    normal cockpit.
+  - Agent-provider status no longer competes with broker snapshot and market
+    quote readiness in the first viewport.
+  - Quick-review controls either route with a reviewed prefill state or are
+    removed/reduced.
+  - No raw holdings, raw positions, quantities, raw cash balances, buying
+    power, raw account values, account/broker/provider ids, raw payloads,
+    thresholds, prompts, LLM traces, advice, execution, `safe to trade`,
+    `ready to trade`, or guaranteed-return wording.
+- Verification if activated:
+  - `cd frontend && npm run typecheck`
+  - `cd frontend && npm run lint -- --max-warnings 0`
+  - `cd frontend && npm run build`
+  - `git diff --check`
+  - Browser smoke for the Dashboard at 1024, 1280, and 1440 px in light/dark.
+- Rollback notes:
+  - Revert only the Dashboard page/type cleanup and this task's verification
+    notes. Preserve `P20D-T1` through `P20D-T4` unless Codex A replaces the
+    broader Dashboard decision.
+- Verification notes (2026-05-30, Claude A — proposed, pending Claude B review):
+  - Files changed: `frontend/src/pages/DashboardPage.tsx` only. No backend,
+    schema, route, API-client, storage-key, or type changes (the existing
+    `ReviewReadinessRead.recommended_user_action_label` and
+    `DashboardAccountSummaryRead` fields were sufficient, so
+    `frontend/src/types/dashboard.ts` was left untouched).
+  - Acceptance item 1 (promote readiness verdict): the backend-owned
+    plain-English `recommended_user_action_label` is now rendered verbatim in a
+    prominent `ReadinessVerdict` hero block (eyebrow "Review readiness" +
+    `overall_review_mode` badge + demo chip) placed immediately under the header
+    as the first meaningful answer, above the supporting freshness tiles. The
+    verdict also owns the readiness loading/error states.
+  - Acceptance item 2 (agent provider off first viewport): the agent-provider
+    tile was removed from the first-viewport readiness band (now relabeled
+    "Data freshness" with only the distinct broker-snapshot and market-quote
+    tiles). Agent-provider readiness now renders in a thin, muted, single-line
+    operational `AgentProviderStatusRow` near the page bottom, just above the
+    safety strip — it no longer competes with broker/market freshness.
+  - Acceptance item 3 (synthetic amounts): in `synthetic_demo` the account
+    headline shows the unmistakable placeholder "Connect a portfolio to see your
+    value." instead of a plausible dollar figure, and the monetary breakdown
+    rows (cash amount, stock/ETF exposure, options exposure, collateral usage)
+    are suppressed; only safe qualitative context remains (cash state, portfolio
+    shape, position counts). Real-source `amounts_hidden` privacy behavior is
+    unchanged. All shown values remain backend display labels rendered verbatim.
+  - Acceptance item 4 (quick-review presets): the dead flow-specific
+    "Quick reviews" preset panel (4 buttons that only navigated to a blank Trade
+    Review form) was removed, along with its now-unused `DEMO_QUICK_REVIEWS`
+    import, `quickReviewIcon` helper, and styles. The header "New trade review →"
+    action remains the single honest start-review entry point. (True per-flow
+    prefill was not wired because it would require modifying the reviewed Trade
+    Review form, which is outside this task's expected files — see deferred.)
+  - Acceptance item 5 (cockpit identity preserved): no market terminal,
+    watchlist, holdings grid, option-chain, screener, fair-value/rating, generic
+    news, or recommendation UI added; no order/execution controls; no frontend
+    financial computation; broker vs market freshness kept distinct; demo
+    labeling preserved on all displayed synthetic surfaces; the P24A economic-
+    awareness panel was left intact.
+  - Verification: `cd frontend && npm run typecheck` clean; `npm run lint --
+    --max-warnings 0` clean; `npm run build` clean; `git diff --check` clean.
+    Browser smoke (Claude Preview, synthetic_demo) at 1024/1280/1440 in light and
+    dark with no horizontal page overflow: confirmed the verdict hero, the
+    "Data freshness" two-tile band, the "Connect a portfolio…" placeholder with
+    no fake amounts, the removed quick-review panel, and the thin bottom
+    agent-provider row.
+  - Deferred polish: wiring true per-flow prefill into the Trade Review form
+    (map preset flow → form `flowGroup` via router state) is a possible future
+    enhancement; it requires a small change to the reviewed Trade Review form and
+    so was kept out of this DashboardPage-only cleanup.
+- Claude B contract/safety review (2026-05-30): PASS. Reviewed the full
+  `frontend/src/pages/DashboardPage.tsx` (762 lines) against all acceptance
+  criteria. Confirmed:
+  - Acceptance 1: `recommended_user_action_label` rendered verbatim
+    (`DashboardPage.tsx:226`) in the first-rendered `ReadinessVerdict` hero
+    (`:155`, before strip/body/agent row); hero owns readiness loading/error
+    (`:201-206`).
+  - Acceptance 2: agent provider removed from the first-viewport "Data
+    freshness" band (broker + market tiles only, `:262-277`) and demoted to a
+    thin muted single-line `AgentProviderStatusRow` near the page bottom
+    (`:185`, `:234-244`).
+  - Acceptance 3: in `synthetic_demo`, headline shows the unmistakable
+    placeholder "Connect a portfolio to see your value." (`:327`) with monetary
+    breakdown rows suppressed; only qualitative cash-state/shape/counts remain
+    (`:339-343`). Real-source `amounts_hidden` path preserved (`:315-319,
+    :330-332`). No plausible synthetic dollars rendered.
+  - Acceptance 4: dead quick-review preset panel removed; header
+    "New trade review →" is the single start entry (`:148-151`). No unused
+    imports/helpers/styles remain. True per-flow prefill correctly deferred
+    (out of expected files).
+  - Acceptance 5: cockpit identity preserved — no terminal/watchlist/holdings/
+    screener/fair-value/news/recommendation/execution UI; broker vs market
+    freshness distinct; demo labels on all synthetic surfaces; P24A economic
+    panel intact (`:171`).
+  - Safety: no invented frontend values — all account-detail values are backend
+    display labels rendered verbatim; the only computation is relative-time
+    formatting for review timestamps (`formatTimestamp`, `:606-620`) and
+    `String()` of backend counts — no financial computation. No localStorage/
+    sessionStorage. No private account detail routed to agents/LLMs (page only
+    renders readiness/summary/context labels). Forbidden-wording scan clean —
+    the sole "recommend*" occurrence is the backend-owned field name
+    `recommended_user_action_label` rendered verbatim, whose text safety is the
+    backend contract's responsibility (correct boundary). `types/dashboard.ts`
+    confirmed unchanged.
+  - Re-confirmed Claude A's checks are appropriate (typecheck / lint
+    `--max-warnings 0` / build / `git diff --check` / browser smoke at
+    1024/1280/1440 light+dark, no horizontal overflow).
+  - Non-blocking follow-up (do not gate this task): confirm any unrelated
+    multi-task worktree changes are grouped intentionally during commit/push
+    cleanup. The `MpIcon.tsx` refresh glyph delta belongs to the economic
+    calendar refresh UI, not to P20D-T5.
+- Status: `done` (2026-05-30, Claude B contract/safety review PASS).
+
 ## Phase 21A - Realtime Agent Console backend contract
 
 Phase goal, if reactivated later: define and implement the backend foundation required for the prototype Agent Console's persisted transcript, ordered progress stream, follow-up input, direct-to-agent routing, broadcast-to-team routing, and quick-question suggestions.
@@ -2893,88 +3050,920 @@ Shared Phase 23B rules:
     passed.
 - Status: `done` (2026-05-28).
 
-## Phase 24A - Economic News Awareness Foundation
+### P23B-T8 - Agent Console Symbol Autocomplete Parity
 
-Phase goal: add a backend-owned economic/news awareness contract for Dashboard
-display, beginning with synthetic/replay public event data and explicit
-`not a trading signal` labeling. This is separate from agent/news-analyst
-ingestion.
+- Task id: `P23B-T8`
+- Title: Agent Console Symbol Autocomplete Parity
+- Owner: Claude A implementation, Claude B frontend safety/design review
+- Objective: Bring the Trade Review symbol-entry experience (debounced
+  `SymbolAutocomplete` against the existing `/symbols` lookup, keyboard
+  selection, empty/loading/error states) to the Agent Console symbol input(s).
+- Dependencies:
+  - completed `P23B-T6` (Trade Review autocomplete + browser-local recents)
+  - existing Phase 19A Agent Console (`POST /agent-team/trade-review-analysis/preview`)
+- Scope:
+  - Frontend only. No new backend endpoints, schemas, routes, or API-client
+    surfaces. No storage writes, provider/LLM calls, or financial computation.
+  - Do not modify the shared Trade Review form behavior or regress it.
+- Finding (2026-05-30, Claude A — no code change required):
+  - The Agent Console (`frontend/src/pages/AgentTeamAnalysisPage.tsx`) does not
+    own a plain symbol input. In both its pre-run and re-run layouts it reuses
+    the shared `TradeReviewForm`, which already wires `SymbolAutocomplete` into
+    the stock/ETF "Symbol" field (`TradeReviewForm.tsx` ~L299) and the option
+    "Underlying" field (~L319) — identical component, props, debounce, keyboard
+    navigation, and loading/empty/error behavior to Trade Review.
+  - Symbol / quantity / price defaults are already empty (`useState("")`), so
+    there are no prefilled `XYZ`/`100`/`50.00` demo values; the empty state is a
+    valid, non-submitting state.
+  - The only inline `<input>` in the agent-team components is the intentionally
+    disabled follow-up composer (`AgentTeamComposerPlaceholder.tsx`), which is
+    not a symbol field and must remain inert (Phase 21A paused).
+  - The console continues to consume only the existing
+    `POST /agent-team/trade-review-analysis/preview` contract; no request fields
+    added.
+  - Implementing the task literally would require either modifying the shared
+    `TradeReviewForm` (forbidden by the task / would affect Trade Review) or
+    duplicating a console-only symbol input (contradicts component reuse), so no
+    change was made. PM (user) decision 2026-05-30: close as already-satisfied;
+    do not relax the "don't modify the form" constraint or clear the option-flow
+    numeric demo defaults (expiration/strike/contracts/premium/multiplier).
+  - Verification of current (unchanged) state: `cd frontend && npm run typecheck`
+    clean; `npm run build` clean. No diff produced by this task.
+- Claude B frontend safety/design review (2026-05-30): PASS — confirmed the
+  "no code change required" conclusion by source inspection (not a diff):
+  - Parity present via the shared form: `AgentTeamAnalysisPage.tsx` imports
+    `TradeReviewForm` (L4) and renders it in both the re-run rail (L97) and the
+    pre-run layout (L116), each with `hideSyntheticMode`. `TradeReviewForm` wires
+    `SymbolAutocomplete` for the stock/ETF "Symbol" field (L299) and the option
+    "Underlying" field (L319) — same component/props/states; no console-only
+    plain symbol input exists.
+  - Defaults empty: `symbol`/`quantity`/`priceAssumption`/`underlying` are all
+    `useState("")` (L77–79, L82) — no `XYZ`/`100`/`50.00`.
+  - No hidden symbol input: the remaining `TradeReviewForm` `<input>`s are review-
+    mode/context radios (L184/197/218/229) and the numeric/date `TextField`
+    helper (L383); the only agent-team inline `<input>` is the disabled follow-up
+    composer (`AgentTeamComposerPlaceholder.tsx:63`: `disabled`, `tabIndex={-1}`,
+    aria "not yet active"), which stays inert (Phase 21A paused).
+  - Request path unchanged: `handleSubmit` → `agentTeamApi.previewTradeReviewAnalysis`
+    → `POST /agent-team/trade-review-analysis/preview` (page header comment L26);
+    no new fields. `git` shows no diff for this task.
+  - No safety regression (no change): analysis-only framing, mock/provider
+    labeling (`AgentTeamRunSummary`), disabled composer, and broker-vs-market
+    freshness separation all intact.
+  - Accepted as-is per PM 2026-05-30: shared form not modified; option-flow
+    numeric demo defaults (expiration 2026-06-19 / strike 45 / contracts 1 /
+    premium 1.85 / multiplier 100) intentionally retained. Minor non-blocking
+    inconsistency noted (stock fields empty, option numerics prefilled); deferred.
+  - Browser smoke not required for a zero-diff task; optional one-time check
+    suggested for the `SymbolAutocomplete` dropdown inside the narrow re-run
+    `mp-ac-rail` layout (L94–98) to confirm the popover doesn't clip — not a gate.
+  - Plan hygiene follow-up (2026-05-30, Codex B): renumbered this no-diff parity
+    task from the duplicate `P23B-T7` id to `P23B-T8`; `P23B-T7` remains the
+    completed Symbol Offline Fixture Cleanup task.
+- Status: `done` (2026-05-30, Claude B review PASS; no code change — parity
+  already satisfied via the shared `TradeReviewForm`).
+
+## Phase 24A - Economic Calendar Awareness Foundation
+
+Phase goal: add a backend-owned economic calendar feature for Dashboard display
+that resembles a Forex Factory-style macro calendar while using FMP Economic
+Calendar as the personal-demo provider path. Ticker/company news is explicitly
+out of scope for this phase and belongs to a later agent/tool design.
 
 Shared Phase 24A rules:
 
-- No external news/economic calendar provider call in the initial slice.
-- No Bloomberg, Forex Factory, Yahoo, Google, LLM, broker, market-data, or
-  TradingAgents calls.
-- No trading-signal, recommendation, advice, buy/sell, safe-to-trade, or
-  ready-to-trade language.
-- Do not personalize events from private holdings or portfolio context.
-- Do not send economic/news data to LLM agents without a later approved
+- FMP Economic Calendar is approved for local/personal-demo evaluation only,
+  behind backend abstractions and opt-in network paths.
+- Synthetic/replay fixtures remain the first backend contract and default test
+  path.
+- No Forex Factory scraping, ticker/company news provider, Bloomberg, Yahoo,
+  Google, LLM, broker, market-data quote, TradingAgents, WebSocket, or streaming
+  implementation in Phase 24A.
+- No trading-signal, recommendation, advice, buy/sell, safe-to-trade,
+  ready-to-trade, guaranteed-return, or urgency language.
+- Do not personalize events from private holdings, broker accounts, portfolio
+  context, prompts, LLM context, or trade history.
+- Do not send economic calendar data to LLM agents without a later approved
   sanitized evidence contract.
+- Dashboard display must always include source/freshness and "not a trading
+  signal" semantics.
 
-### P24A-T1 - Economic Event Awareness Contract With Synthetic Fixtures
+### P24A-T1 - Economic Calendar Contracts And Synthetic Fixtures
 
 - Task id: `P24A-T1`
-- Title: Economic Event Awareness Contract With Synthetic Fixtures
+- Title: Economic Calendar Contracts And Synthetic Fixtures
 - Owner: Codex C implementation, Codex B architecture/safety review
-- Objective: Implement a backend contract for source-labelled public economic
-  awareness events such as red-folder macro releases, FOMC meetings, CPI, jobs
-  data, and earnings-calendar awareness. Initial data must be synthetic/replay
-  only.
+- Objective: Define the provider-neutral backend contracts for a macro
+  economic calendar table, with deterministic synthetic/replay fixtures that
+  exercise high/medium/low/unknown importance, actual/forecast/previous labels,
+  empty states, and unavailable states.
 - Dependencies:
   - completed Phase 20D Dashboard content boundary
   - architecture contract:
     `docs/codex-b-architecture/PHASE_24A_ECONOMIC_NEWS_AWARENESS_CONTRACT.md`
-- Suggested endpoint shape:
-  - `GET /economic-events`
+- Endpoint shape:
+  - `GET /economic-calendar/events`
 - Conceptual response fields:
-  - wrapper: `data_mode`, `source_label`, `as_of_label`, `freshness_label`,
-    `items`, `demo_notice`, `is_trading_signal`, `limitations`
-  - item: `event_reference`, `event_date`, `event_time_label`,
-    `event_title`, `event_type`, `importance`, `currency_or_region`,
-    `source_label`, `freshness_label`, `relevance_label`,
-    `is_trading_signal`, `data_mode`, `details_url_label`
+  - wrapper:
+    - `data_mode`
+    - `source_label`
+    - `as_of_label`
+    - `freshness_label`
+    - `window_start`
+    - `window_end`
+    - `timezone`
+    - `importance_source`
+    - `items`
+    - `demo_notice`
+    - `is_trading_signal`
+    - `limitations`
+  - item:
+    - `event_reference`
+    - `event_date_label`
+    - `event_time_label`
+    - `event_title`
+    - `event_type`
+    - `importance`
+    - `importance_source`
+    - `country`
+    - `currency`
+    - `actual_label`
+    - `forecast_label`
+    - `previous_label`
+    - `unit_label`
+    - `source_label`
+    - `freshness_label`
+    - `is_trading_signal`
+    - `data_mode`
+- Enum direction:
+  - `data_mode`: `synthetic`, `replay`, `provider_reference`, `unavailable`
+  - `importance`: `high`, `medium`, `low`, `unknown`
+  - `importance_source`: `provider`, `app_classified`, `unavailable`
+  - `event_type`: `economic_release`, `central_bank`, `holiday`, `speech`,
+    `other`
 - Implementation steps:
-  1. Define typed backend schemas for economic event list and event items.
-  2. Add deterministic synthetic/replay fixtures for red-folder/high-importance
-     examples and no-event/unavailable states.
-  3. Add a read-only route.
-  4. Enforce `is_trading_signal=false` in tests.
-  5. Add forbidden-field and forbidden-wording tests.
-  6. Document provider/licensing questions for later; do not add provider
-     integration or frontend wiring.
+  1. Define typed backend schemas for the economic calendar list and items.
+  2. Add a provider protocol and deterministic synthetic provider.
+  3. Add synthetic fixtures shaped like a macro calendar day: CPI/PCE/FOMC/jobs
+     style high-impact events, medium-impact releases, speeches, and unknown
+     impact examples.
+  4. Add app-owned references that do not expose raw provider IDs.
+  5. Add a read-only protected route.
+  6. Enforce `is_trading_signal=false` in schemas/tests.
+  7. Add forbidden-field and forbidden-wording tests.
+  8. Do not add FMP integration, frontend wiring, agent ingestion, WebSocket,
+     scheduler, or persistence in this slice.
 - Acceptance criteria:
-  - Events are labelled as public economic awareness, not trading signals.
-  - Response includes source, freshness/as-of, data mode, and limitations.
-  - Red-folder/high-importance events are representable without creating
-    urgency or advice.
-  - Empty, stale, synthetic, and unavailable states are deterministic.
-  - No private portfolio/account/broker data, raw provider payloads, provider
-    credentials, prompts, or LLM traces are exposed.
+  - Synthetic calendar responses look ready for a Forex Factory-like table but
+    are clearly synthetic/demo-labelled.
+  - Actual/forecast/previous are display labels only; no frontend or schema
+    expects numeric calculation.
+  - Importance is typed and source-labelled.
+  - Empty and unavailable states are deterministic and safe.
+  - No private portfolio/account/broker data, raw provider payloads,
+    credentials, prompts, LLM traces, quotes, prices, or order/execution/advice
+    wording appears.
   - Default tests make no external calls.
 - Tests:
   - schema and API contract tests
-  - service tests for event list, empty state, unavailable/stale state,
-    red-folder/high-importance event state
-  - invariant test that every item and wrapper has `is_trading_signal=false`
+  - service tests for populated calendar, empty state, unavailable state,
+    high/medium/low/unknown importance
+  - invariant tests that wrapper and every item have `is_trading_signal=false`
   - forbidden-field and forbidden-wording sweep
+  - local access guard
   - `git diff --check`
 - Rollback notes:
-  - Revert only economic event schemas, service, route, tests, and verification
-    notes.
-  - Preserve Dashboard and agent-team surfaces; no frontend or agent use is
-    authorized by this task.
-- Status: `not_started`
+  - Revert only economic calendar schemas, service, route, tests, and
+    verification notes.
+  - Preserve Dashboard, symbol lookup, market data, and agent-team surfaces.
+- Verification notes (2026-05-29, Codex C):
+  - Added provider-neutral economic calendar read schemas:
+    `EconomicCalendarEventListRead`, `EconomicCalendarEventRead`, and
+    `EconomicCalendarRefreshStatusRead` with typed `data_mode`,
+    `importance`, `importance_source`, and `event_type` vocabularies.
+  - Added `SyntheticEconomicCalendarProvider` and `EconomicCalendarService`
+    with deterministic synthetic macro fixtures covering high/medium/low/
+    unknown importance, economic releases, central-bank events, speeches,
+    holidays, empty state, unavailable state, source/freshness labels, and
+    `is_trading_signal=false` invariants.
+  - Added protected routes `GET /economic-calendar/events` and
+    `POST /economic-calendar/refresh`; default refresh route is disabled/
+    sanitized until explicitly injected/configured.
+  - Files changed: `backend/app/schemas/economic_calendar.py`,
+    `backend/app/services/economic_calendar.py`,
+    `backend/app/api/routes/economic_calendar.py`, `backend/app/main.py`,
+    `backend/tests/services/test_economic_calendar.py`, and
+    `backend/tests/api/test_economic_calendar.py`.
+  - Verification: `cd backend && ./.venv/bin/python -m pytest tests/services/test_economic_calendar.py tests/api/test_economic_calendar.py -q`
+    passed with `25 passed in 0.19s`; symbol compatibility run
+    `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/services/test_symbol_directory.py tests/api/test_symbols.py -q`
+    passed with `45 passed in 0.21s`; `git diff --check` passed.
+- Codex B review (2026-05-29): PASS. Contract shape, synthetic/default
+  behavior, safety invariants, protected route registration, empty/unavailable
+  states, and no-external-call boundary verified.
+- Status: `done` (2026-05-29, Codex B reviewed PASS).
 
-### P24A-T2 - Dashboard Economic Awareness Panel
+### P24A-T2 - Deterministic Economic Event Importance Classifier
 
 - Task id: `P24A-T2`
-- Title: Dashboard Economic Awareness Panel
-- Owner: Claude A implementation, Codex B frontend contract review
-- Objective: Wire the reviewed economic event contract into the Dashboard as a
-  clearly labelled awareness panel.
+- Title: Deterministic Economic Event Importance Classifier
+- Owner: Codex C implementation, Codex B architecture/safety review
+- Objective: Add a backend-owned deterministic classifier for provider events
+  whose source lacks a usable Forex Factory-style impact label. This lets FMP
+  data support a red/yellow/orange style UI without pretending the importance
+  label is provider truth.
 - Dependencies:
   - completed and Codex B-reviewed `P24A-T1`
-- Status: `not_started` (blocked until `P24A-T1` passes review)
+- Scope:
+  - App-owned rule/table classifier only.
+  - Output must set `importance_source="app_classified"`.
+  - Unknown or unmapped events degrade to `importance="unknown"`.
+  - No LLM classification, sentiment, market reaction prediction, or urgency
+    language.
+- Suggested high-importance families:
+  - FOMC/Fed rate decision
+  - CPI / Core CPI
+  - PCE / Core PCE
+  - Nonfarm Payrolls / Unemployment Rate
+  - GDP headline releases
+  - ISM/PMI headline releases
+  - Retail Sales headline releases
+- Suggested medium-importance families:
+  - Durable Goods
+  - Jobless Claims
+  - Housing/New Home Sales
+  - Industrial Production
+  - Consumer Confidence
+  - central-bank speeches
+- Acceptance criteria:
+  - Classifier is deterministic and unit-tested.
+  - Classifier does not use portfolio context, ticker symbols, user holdings,
+    LLMs, or provider private metadata.
+  - Classifier output is explicitly labelled as app-classified.
+  - Existing synthetic contract behavior remains compatible.
+- Tests:
+  - high/medium/low/unknown classification tests
+  - case/whitespace/punctuation normalization tests
+  - no-advice/no-urgency wording tests
+  - `git diff --check`
+- Verification notes (2026-05-29, Codex C):
+  - Added deterministic `classify_economic_event(...)` and
+    `infer_economic_event_type(...)` helpers. The classifier is table/rule
+    based only, uses no portfolio/ticker/broker/LLM context, and labels
+    classifier output as `importance_source="app_classified"`.
+  - Coverage includes FOMC/Fed rate decision, CPI/PCE, Nonfarm Payrolls,
+    unemployment/GDP/ISM/PMI/Retail Sales, Durable Goods, Jobless Claims,
+    Housing/New Home Sales, Industrial Production, Consumer Confidence,
+    central-bank speeches, holidays, and unknown fallback.
+  - Verification is included in the focused Phase 24A test run:
+    `25 passed in 0.19s`; `git diff --check` passed.
+- Codex B review (2026-05-29): PASS. Classifier is deterministic/table-based,
+  labelled `importance_source="app_classified"`, and does not use LLMs,
+  portfolio, ticker, broker, holdings, or provider-private metadata.
+- Status: `done` (2026-05-29, Codex B reviewed PASS).
+
+### P24A-T3 - FMP Economic Calendar Evaluation Adapter
+
+- Task id: `P24A-T3`
+- Title: FMP Economic Calendar Evaluation Adapter
+- Owner: Codex C implementation, Codex B architecture/safety review
+- Objective: Add a backend-only FMP Economic Calendar adapter that maps FMP
+  calendar responses into the provider-neutral `P24A-T1` contracts for
+  personal-demo evaluation.
+- Dependencies:
+  - completed and Codex B-reviewed `P24A-T1`
+  - completed and Codex B-reviewed `P24A-T2`
+- Scope:
+  - Backend-only.
+  - Injected/mock client tests first.
+  - No network call in default tests or module import.
+  - No frontend code.
+  - No WebSocket/streaming.
+  - No ticker/company news.
+  - No agent ingestion.
+  - No raw FMP payload exposure.
+- Provider mapping rules:
+  - Map event date/time, country, currency, event name, actual, forecast, and
+    previous fields into backend-owned display labels.
+  - Use provider importance only if FMP supplies a documented compatible field;
+    otherwise apply `P24A-T2` classifier and label `importance_source`.
+  - Emit `data_mode="provider_reference"` only for explicit opt-in evaluation
+    paths.
+  - Missing actual/forecast/previous values render as `null` or safe display
+    dashes through the read model; never fabricate values.
+  - Malformed provider rows are skipped or degraded safely without raw payload
+    leakage.
+- Credential/config rules:
+  - No key in frontend code, docs, tests, fixtures, logs, or committed files.
+  - Any future local key must be read only by backend runtime configuration.
+  - Missing key returns unavailable/synthetic fallback, not crash.
+- Acceptance criteria:
+  - Adapter maps representative FMP-shaped synthetic payloads into the stable
+    internal contract.
+  - Failure, malformed rows, missing values, and rate-limit-like errors degrade
+    to sanitized unavailable state.
+  - No raw provider response, exception body, URL containing credentials, or
+    provider-private identifier is exposed.
+  - No external calls in default tests.
+- Tests:
+  - injected-client mapping tests
+  - malformed/missing value tests
+  - provider failure sanitization tests
+  - importance classifier integration tests
+  - contract compatibility tests against `P24A-T1`
+  - `git diff --check`
+- Verification notes (2026-05-29, Codex C):
+  - Added `FmpEconomicCalendarProvider` behind an injected
+    `FmpEconomicCalendarClient` protocol. No FMP SDK, credential loader,
+    frontend code, startup fetch, or default network path was added.
+  - Adapter maps FMP-shaped synthetic rows for date/time, title, country,
+    currency, actual, forecast, previous, optional unit, and optional
+    provider-compatible importance. Missing actual/forecast/previous values
+    remain `null`; malformed rows are skipped; provider failures raise a
+    sanitized `EconomicCalendarRefreshError`.
+  - Provider output uses `data_mode="provider_reference"` and source/freshness
+    labels such as `FMP Economic Calendar evaluation` and
+    `Provider reference · not a trading signal`; app classification is used
+    when provider importance is unavailable.
+  - Verification is included in the focused Phase 24A test run:
+    `25 passed in 0.19s`; `git diff --check` passed.
+- Codex B review (2026-05-29): PASS. FMP adapter is backend-only behind an
+  injected client boundary, has no SDK/credential/startup/network default path,
+  maps provider-shaped rows into normalized records, and sanitizes malformed
+  rows/failures without raw payload leakage.
+- Status: `done` (2026-05-29, Codex B reviewed PASS).
+
+### P24A-T4 - Opt-In Economic Calendar Refresh And Last-Good Snapshot
+
+- Task id: `P24A-T4`
+- Title: Opt-In Economic Calendar Refresh And Last-Good Snapshot
+- Owner: Codex C implementation, Codex B architecture/safety review
+- Objective: Make FMP-backed economic calendar data usable in the personal
+  Docker demo through an opt-in refresh path and normalized last-good cache.
+- Dependencies:
+  - completed and Codex B-reviewed `P24A-T3`
+- Scope:
+  - Backend-only.
+  - Store normalized app-owned event records only.
+  - Do not persist raw FMP payloads.
+  - Disabled by default outside explicit local/demo configuration.
+  - No startup crash if refresh fails.
+  - No frontend changes.
+- Suggested behavior:
+  - Refresh today plus a short forward window, such as today through the next
+    7 calendar days.
+  - Optional backward window for same-day events, if needed for actual values.
+  - Cache under `backend/cache/`, which is gitignored.
+  - Preserve previous last-good snapshot on failure.
+  - Surface `freshness_label`, `as_of_label`, and `data_mode`.
+- Suggested optional route:
+  - `POST /economic-calendar/refresh`
+  - protected by existing local access guard
+  - returns sanitized status only
+- Acceptance criteria:
+  - Successful refresh parses, validates, persists normalized records, then
+    activates the snapshot.
+  - Failed refresh preserves active and persisted last-good snapshot.
+  - No raw provider payload, raw exception, credential, or private metadata is
+    persisted or returned.
+  - Default tests/import path make no network call.
+- Tests:
+  - refresh success with injected fixture client
+  - refresh failure preserves last-good snapshot
+  - restore after restart from normalized cache
+  - missing/malformed cache fallback
+  - protected refresh route success/failure/local-access tests
+  - `git diff --check`
+- Verification notes (2026-05-29, Codex C):
+  - Added normalized last-good snapshot persistence under
+    `backend/cache/economic_calendar_snapshot.json`. The cache stores only
+    app-owned event records and safe metadata (`source_label`, `as_of_label`,
+    `freshness_label`, window, timezone, importance source, data mode,
+    imported timestamp, limitations); no raw FMP payloads are persisted.
+  - Added in-memory active snapshot store, restore/load/save helpers, and
+    `refresh_and_persist_economic_calendar_snapshot(...)` that parses and
+    persists before activation. Refresh failure preserves active and persisted
+    last-good state and returns sanitized status through the route.
+  - Added protected opt-in `POST /economic-calendar/refresh`; the default
+    runner is intentionally unconfigured and returns a sanitized failure unless
+    tests or future local/demo wiring inject a provider-backed runner.
+  - No WebSocket/streaming, frontend, ticker/company news, agent ingestion,
+    LLM/TradingAgents, market quote, broker, credential, or live provider
+    behavior was added.
+  - Verification: focused Phase 24A tests passed with `25 passed in 0.19s`;
+    symbol compatibility tests passed with `45 passed in 0.21s`;
+    `git diff --check` passed.
+- Codex B review (2026-05-29): PASS. Opt-in refresh route returns sanitized
+  status only; default runner is intentionally unconfigured; normalized
+  last-good cache stores app-owned records and safe metadata under
+  `backend/cache/`; refresh failures preserve active/persisted last-good state.
+- Status: `done` (2026-05-29, Codex B reviewed PASS).
+
+### P24A-T5 - Dashboard Economic Calendar Panel
+
+- Task id: `P24A-T5`
+- Title: Dashboard Economic Calendar Panel
+- Owner: Claude A implementation, Codex B frontend contract review
+- Objective: Add a Dashboard panel that renders the reviewed economic calendar
+  contract in a compact table inspired by Forex Factory, without scraping or
+  copying provider UI.
+- Dependencies:
+  - completed and Codex B-reviewed `P24A-T1`
+  - completed and Codex B-reviewed `P24A-T4` if live personal-demo provider
+    display is desired; otherwise may consume synthetic contract only
+- Display direction:
+  - Table columns: time, currency/region, impact, event, actual, forecast,
+    previous, source/freshness.
+  - Use our MP design tokens and typed icons; no emoji.
+  - Red/orange/yellow-style impact visual may be used, but must have text
+    labels and must not imply trading urgency.
+  - Always show "Economic awareness" / "not a trading signal" copy.
+  - Show demo/provider/reference/freshness labels visibly.
+- Safety boundaries:
+  - No ticker/company news.
+  - No market quotes, prices, volume, charts, watchlist, or screener.
+  - No personalized filtering by holdings or account.
+  - No LLM/agent use.
+  - No execution/advice wording.
+  - No frontend provider calls; frontend consumes backend only.
+- Acceptance criteria:
+  - Loading, error, empty, unavailable, synthetic, and provider-reference states
+    are handled.
+  - Actual/forecast/previous labels render verbatim from backend.
+  - Importance labels render with `importance_source` visible or accessible.
+  - No frontend calculation or classification.
+  - No new storage keys.
+  - No new endpoints beyond reviewed backend calendar endpoints.
+- Tests:
+  - frontend typecheck
+  - frontend lint on changed files with `--max-warnings 0`
+  - frontend build
+  - browser smoke at 1024/1280/1440 light/dark
+  - `git diff --check`
+- Verification notes (2026-05-29, Claude A):
+  - Files changed: new `frontend/src/types/economicCalendar.ts` (mirrors
+    `EconomicCalendarEventListRead`/`EconomicCalendarEventRead` and the four
+    enums); new `frontend/src/api/economicCalendar.ts` (wraps only
+    `GET /economic-calendar/events`; the POST refresh endpoint is intentionally
+    not wrapped); new
+    `frontend/src/components/economic-calendar/EconomicCalendarPanel.tsx`
+    (self-fetching panel); `frontend/src/pages/DashboardPage.tsx` (import +
+    render in the left body column).
+  - Endpoint consumed: `GET /api/economic-calendar/events` only. Browser network
+    listing confirmed no `/economic-calendar/refresh` and no external/provider
+    calls; every request was GET under `/api`.
+  - States: loading → `LoadingSkeleton`; error → `ErrorState` with Retry
+    (failure stays local to the panel and does not break the Dashboard); empty
+    (`items.length === 0`) and `data_mode === "unavailable"` → `EmptyState`;
+    synthetic/`demo_notice` → `DemoChip` + "Synthetic fixture" badge;
+    `provider_reference`/`replay` → mode badge plus source/freshness/as-of line.
+  - actual/forecast/previous render backend labels verbatim (null → "—"); no
+    parsing, numeric comparison, or value-based color-coding. Importance uses a
+    text-labelled tone badge (high/medium/low/unknown — never color-only) with
+    `importance_source` shown via an "app classified" row label, a table
+    caption, and a per-badge title attribute. "Economic awareness only · Not a
+    trading signal" plus backend `limitations` are always visible.
+  - No frontend calculation/classification, no ticker/company news, quotes,
+    prices, volume, charts, watchlist, screener, holdings/account
+    personalization, LLM/agent use, storage writes, or new endpoints/storage
+    keys. No forbidden execution/advice/urgency wording.
+  - Tests: `cd frontend && npm run typecheck` clean; `npx eslint
+    --max-warnings 0` clean on the 4 changed files; `npm run build` clean
+    (108 modules); `git diff --check` clean.
+  - Browser smoke (Claude Preview, synthetic fixture, 8 events): panel renders
+    at 1024/1280/1440 in light and dark mode with no horizontal page overflow
+    (the wide table scrolls inside its own container); loading/empty/unavailable
+    states and source/freshness/not-a-trading-signal labels are readable; other
+    Dashboard panels do not regress.
+- Deferred polish: live `provider_reference` rendering is exercised only against
+  the synthetic fixture in this slice (the backend currently returns
+  `data_mode="synthetic"`); the provider-reference branch is implemented but not
+  yet visually verified against a live personal-demo provider.
+- Status: `done` (2026-05-29, Codex B frontend contract review PASS). Do not
+  mark broader Phase 24A complete.
+
+### P24A-T6 - FMP Runtime Refresh Wiring For Personal Demo
+
+- Task id: `P24A-T6`
+- Title: FMP Runtime Refresh Wiring For Personal Demo
+- Owner: Codex C implementation, Codex B architecture/safety review
+- Objective: Make the reviewed economic calendar path actually usable in the
+  local Docker demo by wiring `POST /economic-calendar/refresh` to FMP when
+  `FMP_API_KEY` is present in the backend environment.
+- Dependencies:
+  - completed and Codex B-reviewed `P24A-T1` through `P24A-T5`
+  - `.env.example` includes backend-only `FMP_API_KEY` placeholder
+- Scope:
+  - Backend-only.
+  - No frontend changes.
+  - No startup network call.
+  - No scheduler, WebSocket, polling, or streaming.
+  - No ticker/company news endpoints.
+  - No LLM/agent/TradingAgents ingestion.
+  - No market quotes, prices, volume, watchlists, screeners, or options data.
+- Required behavior:
+  - Read `FMP_API_KEY` from backend environment only.
+  - If `FMP_API_KEY` is missing, `POST /economic-calendar/refresh` returns the
+    existing sanitized failure response and preserves any last-good snapshot.
+  - If `FMP_API_KEY` is present, `POST /economic-calendar/refresh` fetches FMP
+    economic calendar rows for the configured window, normalizes them through
+    the existing `FmpEconomicCalendarProvider`, persists the normalized
+    last-good snapshot, activates it, and returns sanitized refresh status.
+  - `GET /economic-calendar/events` continues to read active/restored
+    normalized snapshots, falling back to synthetic/unavailable behavior as
+    already reviewed.
+  - Fetch window defaults to today through the next 7 calendar days, with an
+    optional same-day/backward allowance only if needed for actual values.
+  - Provider output remains `data_mode="provider_reference"` and
+    `is_trading_signal=false`.
+  - Actual/forecast/previous values remain backend display labels.
+  - FMP errors, malformed responses, rate-limit responses, and network failures
+    are sanitized; no raw exception body, raw URL with API key, or raw provider
+    payload is returned or persisted.
+- Implementation notes:
+  - Prefer a tiny app-owned HTTP client using the standard library or an
+    already-present backend dependency; do not add a dependency unless truly
+    necessary.
+  - Keep the existing injected client boundary testable. Unit tests must use
+    fake/injected clients and must not call FMP.
+  - Do not log the API key or include it in errors.
+  - Do not add `.env` reads to frontend/Vite.
+- Acceptance criteria:
+  - With no `FMP_API_KEY`, refresh is a safe sanitized failure and no network
+    call is attempted.
+  - With a test-injected FMP client/transport, refresh succeeds, persists only
+    normalized app-owned records plus safe metadata, and `GET
+    /economic-calendar/events` returns provider-reference records.
+  - Provider failure preserves active and persisted last-good snapshot.
+  - Malformed provider rows are skipped/degraded through existing normalization.
+  - Route remains protected by the existing local access guard.
+  - No raw FMP payload, API key, URL-with-key, raw exception body, credential,
+    provider private identifier, advice, recommendation, urgency, or execution
+    wording leaks.
+- Tests:
+  - focused economic calendar service/API tests
+  - route test for missing key safe failure
+  - route/service test for successful injected provider refresh
+  - route/service test for provider failure preserving last-good snapshot
+  - regression test that imports/app startup do not fetch
+  - `git diff --check`
+- Verification notes (2026-05-29, Codex C):
+  - Added backend-only FMP runtime refresh wiring. `POST
+    /economic-calendar/refresh` now builds a refresh runner from backend
+    environment: missing `FMP_API_KEY` returns the existing sanitized failure;
+    present `FMP_API_KEY` creates a tiny standard-library
+    `FmpEconomicCalendarHttpClient`, maps rows through the reviewed
+    `FmpEconomicCalendarProvider`, persists only normalized app-owned records,
+    activates the last-good snapshot, and returns sanitized status.
+  - `GET /economic-calendar/events` remains unchanged: it reads active/restored
+    normalized snapshots and otherwise falls back to the reviewed synthetic
+    provider path. No startup network call, scheduler, frontend, LLM/agent,
+    TradingAgents, broker, market-data, news-tool, WebSocket, or streaming work
+    was added.
+  - Runtime client behavior: FMP URL/API-key usage stays backend-only; tests use
+    fake/injected transports only; raw URLs with keys, raw provider payloads,
+    raw exception bodies, credentials, and provider-private metadata are not
+    returned or persisted.
+  - Files changed: `backend/app/services/economic_calendar.py`,
+    `backend/app/api/routes/economic_calendar.py`,
+    `backend/tests/services/test_economic_calendar.py`,
+    `backend/tests/api/test_economic_calendar.py`, and this plan.
+  - Verification: `cd backend && ./.venv/bin/python -m pytest tests/services/test_economic_calendar.py tests/api/test_economic_calendar.py -q`
+    passed with `29 passed in 0.20s`; symbol compatibility run
+    `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/services/test_symbol_directory.py tests/api/test_symbols.py -q`
+    passed with `45 passed in 0.42s`; `git diff --check` passed.
+- Codex B review (2026-05-29): PASS. Runtime refresh is backend-only,
+  explicit-refresh only, safe on missing key, and preserves normalized
+  last-good behavior. Deferred polish: verify the exact FMP endpoint URL with
+  the user's key and add an env override if needed.
+- Status: `done` (2026-05-29, Codex B reviewed PASS).
+
+### P24A-T7 - Dashboard Economic Calendar Refresh Controls
+
+- Task id: `P24A-T7`
+- Title: Dashboard Economic Calendar Refresh Controls
+- Owner: Codex B implementation
+- Objective: Make the Dashboard economic calendar panel trigger the reviewed
+  backend refresh path automatically on page load and expose a manual circular
+  refresh control in the panel header.
+- Dependencies:
+  - completed and Codex B-reviewed `P24A-T6`
+- Scope:
+  - Frontend only.
+  - No frontend API key access.
+  - No direct FMP/provider calls.
+  - No scheduler, polling loop, WebSocket, or background interval.
+  - No ticker/company news, quotes, prices, watchlists, screeners, agents, or
+    LLM ingestion.
+- Behavior:
+  - On first panel mount, call `POST /economic-calendar/refresh`, then call
+    `GET /economic-calendar/events`.
+  - Manual circular-arrow refresh button calls the same refresh-then-load path.
+  - If refresh fails or is unconfigured, show the sanitized backend message and
+    still load the last available/synthetic/unavailable event view.
+  - Existing event display remains contract-driven: actual/forecast/previous
+    labels render verbatim and importance remains backend/provider labelled.
+- Verification notes (2026-05-29, Codex B):
+  - Added `EconomicCalendarRefreshStatusRead` frontend type.
+  - Added `economicCalendarApi.refresh()` wrapping only
+    `POST /economic-calendar/refresh`.
+  - Added typed `MpIcon` `refresh` glyph.
+  - Updated `EconomicCalendarPanel` to auto-refresh once on mount and provide a
+    disabled-while-refreshing manual refresh button.
+  - Refresh failures remain local to the panel and use sanitized backend/API
+    messages; the Dashboard still loads events afterward.
+  - Tests: `cd frontend && npm run typecheck` clean; targeted `npx eslint
+    --max-warnings 0` clean on changed frontend files; `npm run build` clean;
+    `git diff --check` clean.
+- Status: `done` (2026-05-29).
+
+### P24A-T8 - Economic Calendar US Window And Timing Contract
+
+- Task id: `P24A-T8`
+- Title: Economic Calendar US Window And Timing Contract
+- Owner: Codex C implementation, Codex B architecture/safety review
+- Objective: Refine the economic calendar backend contract so the Dashboard can
+  show a clean US-only macro calendar for a user-selected date window.
+- Dependencies:
+  - completed and Codex B-reviewed `P24A-T6`
+- Scope:
+  - Backend only.
+  - No frontend changes.
+  - No ticker/company news.
+  - No quotes, prices, volume, watchlists, screeners, options data, broker data,
+    LLM/agent use, TradingAgents, WebSocket, streaming, or scheduling.
+- Required behavior:
+  - `GET /economic-calendar/events` accepts optional `start_date` and
+    `end_date` query params as ISO dates.
+  - Default query window is the current app date only.
+  - Maximum query window is 7 calendar days inclusive; invalid or too-large
+    ranges return a safe 400 response.
+  - Backend filters economic events to US-only macro events by normalized
+    country/currency semantics (`US`/`USD`) before returning records.
+  - Backend preserves the existing refresh/cache path. If the active snapshot
+    contains more than the requested window, the read endpoint filters it.
+  - Add safe machine-readable timing fields to each event:
+    - `event_datetime_utc: str | None`
+    - `event_has_occurred: bool | None`
+  - Keep existing display labels for compatibility:
+    `event_date_label` and `event_time_label`.
+  - `event_has_occurred` is backend-owned and computed from
+    `event_datetime_utc` against current UTC time when the timestamp is known.
+  - Actual/forecast/previous remain backend-owned display labels. Do not add
+    numeric parsing or comparison behavior.
+- Contract boundaries:
+  - Do not add source/freshness/currency display changes in backend for UI
+    convenience; frontend will remove those columns in `P24A-T9`.
+  - Do not expose raw FMP payloads, raw provider URLs, API keys, provider IDs,
+    raw exception bodies, advice/recommendation/urgency/execution wording, or
+    trading signals.
+  - Keep `is_trading_signal=false` on wrapper/items.
+  - Keep `data_mode`, `source_label`, `as_of_label`, and `freshness_label` in
+    the response for provenance, even if the frontend chooses a compact display.
+- Tests:
+  - default today-only window
+  - explicit valid 1-day and 7-day windows
+  - invalid date format, reversed range, and range greater than 7 days
+  - US/USD filtering excludes non-US/non-USD rows
+  - event timestamp and occurred flag for past/future/unknown-timed events
+  - refresh/cache compatibility with filtered reads
+  - no raw provider payload/secret/advice wording leakage
+  - `git diff --check`
+- Verification notes (2026-05-29, Codex C):
+  - Added optional `start_date` / `end_date` query params to
+    `GET /economic-calendar/events`. The default route window is the current
+    app date only; valid explicit windows may cover up to 7 calendar days
+    inclusive. Invalid date format, reversed ranges, and longer ranges return
+    safe 400 responses.
+  - Added backend US macro filtering for returned reads using normalized
+    `country == "US"` or `currency == "USD"` semantics. Raw provider fields
+    remain hidden.
+  - Added machine-readable event timing fields to
+    `EconomicCalendarEventRead`: `event_datetime_utc` and
+    `event_has_occurred`. Display labels `event_date_label` and
+    `event_time_label` remain unchanged. Occurrence state is backend-owned and
+    becomes `null` when the timestamp is unknown.
+  - Preserved refresh/cache behavior: `POST /economic-calendar/refresh` still
+    refreshes/persists normalized records, while GET filters active/restored
+    snapshots to the requested window. Synthetic fallback remains available.
+  - Files changed: `backend/app/schemas/economic_calendar.py`,
+    `backend/app/services/economic_calendar.py`,
+    `backend/app/api/routes/economic_calendar.py`,
+    `backend/tests/services/test_economic_calendar.py`,
+    `backend/tests/api/test_economic_calendar.py`, and this plan.
+  - Verification: `cd backend && ./.venv/bin/python -m pytest tests/services/test_economic_calendar.py tests/api/test_economic_calendar.py -q`
+    passed with `37 passed in 0.84s`; symbol compatibility run
+    `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/services/test_symbol_directory.py tests/api/test_symbols.py -q`
+    passed with `45 passed in 0.51s`; `git diff --check` passed.
+  - Blocker fix (2026-05-29, Codex C): `event_datetime_utc` now interprets
+    `event_date_label` + `event_time_label` in the calendar timezone
+    (`America/New_York`) using standard-library `zoneinfo`, then converts to
+    true UTC. Regression coverage asserts `2026-05-29 08:30` ET serializes as
+    `2026-05-29T12:30:00Z`, `16:00` ET serializes as
+    `2026-05-29T20:00:00Z`, occurrence comparison uses true UTC, and unknown
+    times remain `null`/`null`. Verification after fix:
+    `cd backend && ./.venv/bin/python -m pytest tests/services/test_economic_calendar.py tests/api/test_economic_calendar.py -q`
+    passed with `37 passed in 0.52s`; symbol compatibility run
+    `cd backend && ./.venv/bin/python -m pytest tests/services/test_symbol_lookup.py tests/services/test_symbol_directory.py tests/api/test_symbols.py -q`
+    passed with `45 passed in 0.45s`; `git diff --check` passed.
+- Claude B safety review (2026-05-29): PASS. Verified timezone conversion
+  (`08:30` ET → `12:30:00Z`, `16:00` ET → `20:00:00Z` via `zoneinfo`),
+  occurrence comparison against true UTC, unknown-time → `null`/`null`,
+  US/USD filtering excludes non-US/non-USD rows, window resolution
+  (today-only default, ≤7 days inclusive, reversed/invalid/too-wide → safe
+  400), `is_trading_signal=false` invariant across record/schema/read layers,
+  injected-transport-only tests (no live FMP), FMP key backend-only, and
+  refresh fail-closed to last-good. Re-ran `37 passed` / `45 passed`;
+  `git diff --check` clean.
+- Claude B fixes applied (2026-05-29, granted by user):
+  - I1 (hardening): `FmpEconomicCalendarHttpClient.fetch_events` now raises the
+    sanitized `EconomicCalendarRefreshError` with `from None` so the
+    API-key-bearing request URL can never enter `__cause__`/`__context__` and
+    reach a traceback/log. Added regression asserting `__cause__ is None` and
+    `__suppress_context__ is True`.
+  - D1 (defense-in-depth): aligned `PROHIBITED_ECONOMIC_CALENDAR_PHRASES` with
+    the contract's broader substrings — added `trade signal`, broadened
+    `market will move` → `market will` and `guaranteed return` → `guaranteed`
+    (verified no false-positive against `is_trading_signal` field name or
+    backend labels; full suite still `37 passed`).
+  - Files changed by fix: `backend/app/services/economic_calendar.py`,
+    `backend/app/schemas/economic_calendar.py`,
+    `backend/tests/services/test_economic_calendar.py`.
+  - Deferred to P24A-T9 (frontend): add `event_datetime_utc` /
+    `event_has_occurred` to `frontend/src/types/economicCalendar.ts` when the
+    table consumes them; review the auto-`POST /refresh`-on-mount behavior
+    (`EconomicCalendarPanel.tsx`) so a configured FMP key is not hit on every
+    Dashboard mount. DST gap/ambiguous wall-time handling relies on `zoneinfo`
+    default fold — acceptable for macro release times; note only.
+- Status: `done` (2026-05-29, Claude B safety review PASS; I1/D1 fixes applied
+  and verified). Codex B architecture/integration signoff may proceed.
+- Contract amendment (2026-05-29, during P24A-T9, user-authorized): the
+  **7-calendar-day maximum query window was removed**. `GET /economic-calendar/events`
+  now accepts any valid ordered window; only invalid date format and reversed
+  ranges (`end < start`) still return 400. `resolve_economic_calendar_window` no
+  longer raises on long ranges and `MAX_ECONOMIC_CALENDAR_WINDOW_DAYS` was
+  deleted. The GET path still only *filters the cached snapshot* to the window
+  (it does not fetch from the provider), so a wider window does not amplify FMP
+  load; `POST /refresh` still uses its own default fetch window. Backend tests
+  updated accordingly (former >7-day 400 cases replaced with wide-window 200 /
+  successful-resolution assertions). Flagged here for Codex B architecture
+  awareness since this changes the T8 windowing contract. Follow-up: to surface
+  events beyond the cached snapshot for very wide windows, the refresh fetch
+  window would need widening (separate task).
+
+### P24A-T9 - Dashboard Economic Calendar Table Polish
+
+- Task id: `P24A-T9`
+- Title: Dashboard Economic Calendar Table Polish
+- Owner: Claude A implementation, Claude B frontend safety/UX review
+  (Claude B owns the T9 review gate; Codex B optional architecture signoff
+  only if a backend-contract concern surfaces during review)
+- Objective: Make the Dashboard economic calendar panel behave like a compact
+  US macro calendar: today by default, user-selectable date window, local-time
+  display, cleaner table, and muted past rows.
+- Dependencies:
+  - completed and Codex B-reviewed `P24A-T8`
+- Scope:
+  - Frontend only.
+  - No backend schema invention.
+  - No direct FMP/provider calls and no frontend API key access.
+  - No localStorage/sessionStorage writes.
+  - No ticker/company news, quotes, prices, watchlists, screeners, LLM/agent
+    use, TradingAgents, WebSocket, streaming, or polling loop.
+- Required behavior:
+  - Default panel query is current day.
+  - Add a date/date-range picker that allows at most 7 calendar days.
+  - Call `GET /economic-calendar/events?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD`
+    for the selected window.
+  - Keep the existing manual circular-arrow refresh control; after refresh,
+    reload the selected date window.
+  - Display event time in the user's browser timezone using
+    `event_datetime_utc`; include AM/PM in the Time column.
+  - If `event_datetime_utc` is unavailable, fall back to backend
+    `event_time_label` and do not fabricate timezone conversion.
+  - Remove the Currency / region column.
+  - Remove the Source / freshness column.
+  - Keep columns focused on: time, impact, event, actual, forecast, previous.
+  - Filtered backend results are US-only; frontend should not add its own
+    country/currency filtering except defensive display fallback.
+  - If `event_has_occurred` is true, render the whole row with a muted grey
+    background.
+  - Remove noisy demo/source/freshness/limitations clutter from the visible
+    panel body. Keep only a compact, non-dominant status/provenance indicator
+    when data is synthetic, unavailable, or refresh failed.
+  - Keep "not a trading signal" visible but compact.
+- Safety/contract requirements:
+  - Render actual/forecast/previous labels verbatim.
+  - Do not compute surprises, compare actual vs forecast, color values by
+    outcome, rank events, or imply trading urgency.
+  - Importance badge must include text label, not color-only.
+  - No advice/recommendation/order/execution/safe-to-trade/ready-to-trade
+    wording.
+- Tests:
+  - frontend typecheck
+  - targeted lint with `--max-warnings 0`
+  - frontend build
+  - browser smoke at 1024/1280/1440 in light and dark modes
+  - verify today default, 7-day max, AM/PM local time display, no currency/source
+    columns, and grey past rows
+  - `git diff --check`
+- Verification notes (2026-05-29, Claude A — proposed, pending Claude B gate):
+  - Files changed (frontend only): `frontend/src/types/economicCalendar.ts`
+    (added `event_datetime_utc: string | null` and
+    `event_has_occurred: boolean | null` to `EconomicCalendarEventRead`,
+    mirroring the T8 backend fields exactly); `frontend/src/api/economicCalendar.ts`
+    (`events()` now accepts an optional `{ startDate, endDate }` window and
+    appends `start_date`/`end_date` query params; `refresh()` unchanged);
+    new `frontend/src/components/economic-calendar/EconomicCalendarRangePicker.tsx`
+    (single dual-month range calendar); rewritten
+    `frontend/src/components/economic-calendar/EconomicCalendarPanel.tsx`.
+    `DashboardPage.tsx` unchanged (panel is self-contained, no props).
+  - Date window: a single flight-ticket-style two-month range calendar replaces
+    the From/To inputs. Click a start date, then an end date; the inclusive span
+    highlights (with hover preview), and days beyond `start + 6` are disabled so
+    the window can never exceed 7 days. The backend remains authoritative (a
+    >7-day request still returns 400, surfaced via `ErrorState`). The trigger
+    shows the applied window label; a "Today" action and prev/next month nav are
+    included; outside-click/Escape close the popover (`width: max-content` keeps
+    the two months side by side, `maxWidth` allows wrap on small screens).
+  - Refresh semantics (per user revision): every refresh shows the current day.
+    On mount (incl. browser page refresh) the panel loads today via the read
+    endpoint only (no `POST /refresh`). The manual circular-arrow Refresh button
+    snaps the window back to today, calls `POST /economic-calendar/refresh`, then
+    reloads today; a `failed` refresh shows a compact dashed notice and keeps the
+    last-good snapshot. No polling, no auto-refresh-on-mount.
+  - Table: a Date column is the first column (browser-local weekday + date),
+    shown once per date group. Rows are ordered chronologically by date then
+    time using the backend `event_datetime_utc` instant (neutral ordering, not
+    importance/outcome ranking). Rows are zebra-grouped by calendar date: all
+    rows of one date share one background; consecutive dates alternate between
+    two neutral surfaces (`transparent` / `--mp-paper-2`). The Time column formats
+    `event_datetime_utc` into browser-local AM/PM time (e.g. `12:30Z → 7:30 AM`,
+    `18:00Z → 1:00 PM`), falling back to `event_time_label` when null with no
+    fabricated conversion. `event_has_occurred === true` rows keep a text "past"
+    marker so occurrence is never color-only. Columns: Date · Time · Impact ·
+    Event · Actual · Forecast · Previous (Currency/region and Source/freshness
+    removed). Demo/source/freshness sit in a compact provenance row shown only
+    for synthetic/unavailable data; "Economic awareness only · Not a trading
+    signal" stays compact.
+  - Safety: actual/forecast/previous rendered verbatim (null → "—"); no surprise
+    computation, actual-vs-forecast comparison, value-based coloring, or urgency.
+    Row background encodes calendar date only — never value/outcome. Importance
+    badge keeps a text label (not color-only). No frontend country/currency
+    filtering (US-only is backend-owned). No advice/recommendation/order/
+    execution/safe-to-trade/ready-to-trade wording. No provider calls or API
+    keys in React; no localStorage/sessionStorage; no LLM/agent/streaming.
+  - Tests: `cd frontend && npm run typecheck` clean; `npx eslint
+    --max-warnings 0` clean on the 4 changed files; `npm run build` clean
+    (109 modules); `git diff --check` clean.
+  - Browser smoke (Claude Preview, synthetic fixture): verified at 1024/1280/1440
+    in light and dark modes with no horizontal page overflow (the dual-month
+    popover sits side by side and stays within the viewport). Confirmed
+    today-default mount load (`GET …/events?start_date=…&end_date=…` only, no
+    `POST /refresh`); range picker applying `May 12–18` and `May 29–Jun 4`
+    windows; the 7-day cap disabling days past `start + 6` with inclusive
+    range/hover highlighting; chronological date-then-time ordering; zebra
+    grouping (`May 29` transparent, `May 30` `rgb(238,240,245)`, `Jun 2`
+    transparent, `Jun 3` grey, `Jun 4` transparent with its two rows sharing one
+    color and the date shown once); local AM/PM times; the "past" marker on the
+    occurred row; and the Refresh button snapping back to today. The
+    refresh-failed inline notice was also observed live (backend `POST /refresh`
+    returned `failed`; the panel showed "…last good snapshot was preserved." and
+    kept today's data). DST gap/ambiguous wall-time handling is backend-owned
+    (`zoneinfo`), per T8.
+- Follow-up revision (2026-05-29, Claude A — user-requested):
+  - Labeling: the header chip previously rendered the shared `DemoChip`
+    ("demo · not yet connected"), which was misleading — the panel IS wired to
+    the backend; the data is merely synthetic because the live FMP provider is
+    not configured in this environment. Replaced it with an accurate "Synthetic
+    data" `Badge` (tooltip explains the provider is not connected here). The
+    compact provenance footer still shows `Synthetic fixture · …not live calendar
+    data · As of …`. When an FMP key is configured backend-side the same endpoint
+    returns `data_mode="provider_reference"` and the labels switch automatically.
+  - 7-day cap removed (backend + frontend): see the T8 "Contract amendment" note
+    above for the backend change. Frontend: `EconomicCalendarRangePicker`
+    `maxDays` is now optional; the panel passes no cap, so no calendar days are
+    disabled and the "up to N days" hint is hidden. The picker still requires an
+    ordered range (clicking before the start restarts the selection).
+  - Verification: `cd backend && ./.venv/bin/python -m pytest -q` → `766 passed,
+    92 skipped` (DB-destructive skips only); economic-calendar suite
+    `36 passed`. Frontend `npm run typecheck` / `eslint --max-warnings 0`
+    (picker + panel) / `npm run build` (109 modules) clean; `git diff --check`
+    clean. Browser smoke (synthetic fixture): the 8-day window `May 29–Jun 5`
+    now loads all 8 events (previously 400-capped), a ~48-day window returns 200,
+    the picker shows 0 disabled days after a start pick, and the header reads
+    "Synthetic data". Local-time grouping stays internally consistent (a midnight-
+    ET Jun 5 holiday correctly displays as 11:00 PM local on Jun 4 and groups
+    there, since the Date column, sort, and zebra all key off the same local
+    instant).
+- Proposed status: implementation complete and self-verified by Claude A
+  (including the user's range-calendar / refresh-to-today / date-column +
+  zebra-grouping revision, the synthetic-data labeling fix, and the
+  user-authorized 7-day-cap removal). **Handed off to Claude B for the T9
+  frontend safety/UX review gate; the backend windowing-contract amendment is
+  flagged for Codex B architecture awareness.** Do not mark `done` until Claude
+  B returns PASS. Status remains `not_started` → propose `in_review` pending that
+  gate. Do not mark broader Phase 24A complete.
 
 ## Future Layer - Broker Activities, Transactions, and Strategy Memory
 

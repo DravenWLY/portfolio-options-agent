@@ -11,6 +11,14 @@ display labels only, explicit freshness/provenance, and a privacy display
 mode. Codex B captured the architecture boundary in
 `docs/codex-b-architecture/PHASE_20D_DASHBOARD_ACCOUNT_DETAIL_CONTRACT.md`.
 
+Update (2026-05-29): Codex A reviewed Claude C's Stock Rover heavy-user
+pressure test and ratified the Dashboard positioning below. Stock Rover is a
+useful Product B reference, but Portfolio Copilot should position as a
+complementary pre-trade portfolio-aware review layer, not a Stock Rover
+replacement. The Dashboard should borrow trust/freshness discipline from
+serious portfolio tools while avoiding research-terminal, screener, holdings
+grid, watchlist, fair-value, and market-terminal drift.
+
 ## Decision
 
 The Dashboard should become a compact review-readiness cockpit, not a catalog
@@ -18,8 +26,10 @@ of demo cards. Its first viewport should answer:
 
 1. Can I responsibly run a portfolio-aware manual trade review now?
 2. What portfolio context and market-data limitations will affect that review?
-3. Where do I begin a new review?
-4. Is there real prior review activity worth returning to?
+3. What high-level portfolio risk or red-folder event needs attention before
+   I review a trade?
+4. Where do I begin a new review?
+5. Is there real prior review activity worth returning to?
 
 Phase 20C may remain as the current visual checkpoint, but additional
 Dashboard wiring or visual expansion is not authorized by this memo.
@@ -43,6 +53,8 @@ because a synthetic/demo read contract exists.
 The eventual private-alpha Dashboard first viewport should contain:
 
 - A concise page header and prominent `New trade review` action.
+- A plain-English readiness verdict above the supporting status tiles so the
+  cockpit answers "can I review now?" in one glance.
 - A single readiness band with distinct broker snapshot and market-data
   availability/freshness states, plus an overall analysis-only or blocked
   label.
@@ -52,10 +64,37 @@ The eventual private-alpha Dashboard first viewport should contain:
   history.
 - A limited warning area, only for deterministic warnings tied to an actual
   context or saved review.
+- A secondary red-folder event surface only after a reviewed contract exists.
+  Macro/economic events may live on the Dashboard as context; per-underlying
+  earnings date belongs first in the trade-review/options context because it
+  directly affects covered-call and cash-secured-put review quality.
 
-Agent-provider status is operationally useful, but it should not dominate the
-first viewport. It may appear as a smaller status row or in Settings/Agent
-Console once real product surfaces are available.
+Agent-provider status is operationally useful, but it should move off the
+Dashboard first viewport. It may appear in Settings, Agent Console, or a thin
+operator/status row once real product surfaces are available.
+
+## Stock Rover Pressure-Test Decisions
+
+Claude C's Stock Rover persona pressure test is advisory input. Codex A
+ratifies the following product decisions:
+
+| Decision | PM ruling | Rationale |
+| --- | --- | --- |
+| D1 - Product B positioning | Accept complement-not-replace. | Portfolio Copilot is the pre-trade portfolio-aware layer a research terminal lacks; it should not promise to replace a research/screener/analytics terminal. |
+| D2 - Synthetic total-value policy | Accept. | Plausible fake headline dollars in `synthetic_demo` are a trust killer. Synthetic account summaries should default to hidden amounts or unmistakable placeholders such as "Connect a portfolio to see your value." |
+| D3 - Real-source sequencing | Accept. | Real-source account summary plus broker freshness should precede persisted review history. Users can tolerate empty history; they cannot validate a decision cockpit on fake aggregates. |
+| D4 - Market-data ceiling | Accept with beta distinction. | Indicative/manual pricing is acceptable for local/internal analysis-only demos, but external beta should plan a display-rights-cleared REST quote path for the underlying and specific option before implying quote-current review quality. |
+| D5 - Earnings-date scope | Accept narrowly. | Per-underlying earnings date may enter review context without opening a generic company-news feed because it directly affects options review quality, especially covered calls and CSPs. |
+| D6 - Agent-provider visibility | Accept. | `mock_default` or provider readiness reads as dev machinery to an investor. Keep it available operationally, but off the primary Dashboard viewport. |
+
+Founder-gated follow-up decisions:
+
+1. Whether complement-not-replace should become explicit external marketing
+   copy or remain internal positioning.
+2. Whether external beta requires a display-rights-cleared market quote path,
+   or whether a narrower analysis-only beta is acceptable.
+3. Which provider/source should supply per-underlying earnings date, and what
+   licensing/display terms are acceptable before user-facing display.
 
 ## Current Panel And Contract Map
 
@@ -64,16 +103,17 @@ Console once real product surfaces are available.
 | New trade review action | Existing navigation/workspace behavior. | Keep now. |
 | Broker snapshot readiness | Reviewed P20B readiness contract, currently `synthetic_demo`. | Keep for development preview; require real-source mapping before removing demo labelling. |
 | Market quote readiness | Reviewed P20B readiness contract, currently `synthetic_demo` or unavailable. | Keep only as visibly demo/unavailable today. Do not surface Alpaca evaluation output from P22A-T4. |
-| Agent provider readiness | Reviewed P20B readiness contract. | Reduce visual prominence on Dashboard; keep separate from broker and market readiness. |
+| Agent provider readiness | Reviewed P20B readiness contract. | Move off first viewport; keep in Settings, Agent Console, or a thin operator/status row if needed. |
 | Account summary: total value, cash, stock/ETF exposure, options exposure, collateral/cash usage, shape | Reviewed `DashboardAccountSummaryRead`, currently `synthetic_demo` display labels only. | Approved in principle for private authenticated display. Requires `P20D-T1` to refine the contract before real-source mapping or UI expansion. |
 | Portfolio context summary | Reviewed P20B portfolio-context read contract, currently demo-labelled. | Useful supporting panel; real-source mapping needed before normal-product claims. |
 | Recent trade reviews | Reviewed narrow read contract, currently synthetic/demo because preview runs are stateless. | Hide or clearly reduce in normal UX until persisted review source exists. |
 | Risk alerts | Reviewed narrow read contract, currently synthetic/demo. | Hide or reduce until generated from real reviewed context or persisted reviews. |
-| Quick review presets | Static navigation helpers. | Optional; keep only if clearly a workflow shortcut, not simulated activity. |
+| Quick review presets | Static navigation helpers. | Keep only if they prefill the corresponding reviewed flow or are clearly simple shortcuts. Remove dead-looking presets that navigate without context. |
 | What's running | Derived readiness presentation, not a real live run feed. | Remove or defer from Dashboard; it duplicates readiness and implies activity. |
 | Reports shortcut/list | No approved real user-facing report list/detail contract. | Defer. |
 | Market overview/watchlist/options chain | No approved display contract and outside MVP cockpit. | Defer/out of scope. |
-| News/economic calendar | No approved contract and not necessary for core review. | Defer; do not add as Dashboard filler. |
+| Macro economic calendar / red-folder events | Reviewed contract required before normal display. | Allow only as secondary context with source/freshness and `is_trading_signal=false`; do not let it crowd review readiness. |
+| Per-underlying earnings date | New narrow contract required. | Allow as a future review-context input for options flows; do not expand into generic ticker news or research feed. |
 | Personalized greeting/avatar | Profile/auth contract blocked. | Use neutral copy until approved app-owned profile display exists. |
 
 ## What To Reduce Or Remove Before Further Expansion
@@ -84,9 +124,16 @@ When a later implementation task is authorized, the preferred cleanup is:
   activity.
 - Do not show synthetic risk-alert urgency as though it came from the user's
   portfolio.
+- Do not show plausible synthetic headline account values as though they might
+  be real. In normal product view, hide synthetic amounts or replace them with
+  unmistakable non-real placeholders.
 - Remove `What's running` unless a real, safe run-status contract exists.
 - Avoid personalized greetings until an approved profile/display contract
   exists.
+- Move agent-provider readiness off the first viewport.
+- Promote the backend-owned readiness verdict above the supporting readiness
+  tiles.
+- Ensure quick-review presets either prefill a reviewed flow or are removed.
 - Consolidate repeated `demo - not yet connected` surfaces into a clear demo
   environment state where practical, while preserving labels on any displayed
   synthetic values.
@@ -138,8 +185,10 @@ authorization.
 | 2 | Real-source readiness mapping for broker freshness and market-data availability/mode. | The Dashboard's primary promise is trustworthy review readiness, not demo status. | Market display must stay unavailable/demo until a display-authorized data source exists; no P22A-T4 frontend use. |
 | 3 | Persistence-backed recent trade-review read source. | Makes recent-review return flow real instead of simulated. | Requires safe persistence mapping and opaque references; no raw review inputs. |
 | 4 | Deterministic risk-alert source tied to an actual selected context or persisted review. | Alerts are valuable only when they are true and attributable. | Must avoid raw thresholds/private rule exposure and synthetic urgency. |
-| 5 | Safe report list/detail reads. | Supports returning to completed review output. | Existing blocked P20B report decision remains required. |
-| 6 | Minimal app-owned profile/display contract. | Supports greeting/avatar polish only. | Low product value; keep neutral copy until auth/profile boundary is approved. |
+| 5 | Display-rights-cleared underlying and option quote snapshot path. | This lifts the external-beta ceiling for quote-current options review without building a market terminal. | Requires market-data provider/display-rights approval; REST snapshots only, no streaming/terminal. |
+| 6 | Per-underlying earnings-date review context. | Earnings timing is a high-impact options review datum, especially for covered calls and CSPs. | Keep source/freshness visible; do not open generic ticker news feed. |
+| 7 | Safe report list/detail reads. | Supports returning to completed review output. | Existing blocked P20B report decision remains required. |
+| 8 | Minimal app-owned profile/display contract. | Supports greeting/avatar polish only. | Low product value; keep neutral copy until auth/profile boundary is approved. |
 
 ## What Claude A May Refine Visually Now
 

@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "portfolio-options-agent-backend"
+version = "0.1.0"
+description = "FastAPI backend for portfolio-options-agent (Portfolio Copilot)."
+requires-python = ">=3.11"
+# Core runtime dependencies. Kept lean and provider-SDK-free: the agentic stack
+# is mock-default and the adapters import provider SDKs lazily, so live LLM
+# providers live in the optional `live-llm` extra below (not the base install).
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy",
+    "psycopg[binary]",
+    "alembic",
+    "email-validator",
+    "snaptrade-python-sdk",
+    "cryptography",
+]
+
+[project.optional-dependencies]
+# Test / developer tooling: `pip install -e ".[dev]"`.
+dev = [
+    "pytest",
+    "httpx",
+]
+# Optional, backend-only live LLM provider SDKs: `pip install ".[live-llm]"`.
+# google-generativeai -> google_provider.py (`import google.generativeai`).
+# openai -> openai_provider.py (plain SDK `import openai`, NOT the OpenAI Agents SDK).
+# The default app and default (offline/mock) test suite need none of these.
+live-llm = [
+    "google-generativeai",
+    "openai",
+]
+
+[tool.setuptools.packages.find]
+# The importable backend package is `app`; tests and alembic are not installed.
+include = ["app*"]
+
+# NOTE: pytest configuration intentionally stays in `pytest.ini` (the marker
+# exclusion that keeps `external`/`slow` live-provider tests out of the default
+# suite is safety-critical and is not duplicated here).

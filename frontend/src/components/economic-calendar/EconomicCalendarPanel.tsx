@@ -13,11 +13,21 @@ import type {
 
 /**
  * EconomicCalendarPanel — Dashboard US macro economic-awareness panel
- * (Phase 24A, P24A-T9 table polish + range-calendar revision).
+ * (Phase 24A panel; P24A-T9 table polish; P24B-T2 FRED consumption).
  *
- * Backend-backed via the reviewed Phase 24A contract:
+ * Backend-backed via the reviewed economic-awareness contract:
  *   GET  /api/economic-calendar/events?start_date=…&end_date=…
  *   POST /api/economic-calendar/refresh   (manual control only)
+ *
+ * P24B-T2: the same GET contract now also returns FRED-backed
+ * `data_mode="provider_reference"` snapshots (official U.S. macro data). The
+ * frontend renders three visually distinct provenance states — synthetic
+ * fixture, official provider-reference (e.g. FRED), and unavailable — and
+ * surfaces backend `limitations` verbatim, including the required FRED notice
+ * ("This product uses the FRED® API but is not endorsed or certified by the
+ * Federal Reserve Bank of St. Louis.") and the safe partial-success notice.
+ * The frontend never calls FRED/FMP/providers directly and adds no new
+ * endpoints; FRED is backend-only.
  *
  * Compact US macro calendar: a single dual-month range picker (≤7 days),
  * browser-local event times (AM/PM), a leading Date column, chronological
@@ -181,6 +191,10 @@ export default function EconomicCalendarPanel() {
   const isUnavailable = status === "success" && data?.data_mode === "unavailable";
   const isDemo =
     status === "success" && !!data && (data.data_mode === "synthetic" || !!data.demo_notice);
+  // Official backend-connected snapshot (e.g. FRED macro data). Never labelled
+  // as demo/not-connected; never implies a forecast calendar or trading signal.
+  const isProviderReference =
+    status === "success" && !!data && data.data_mode === "provider_reference";
 
   // Chronological ordering + date-group index for zebra coloring.
   const sortedItems = useMemo(
@@ -209,6 +223,15 @@ export default function EconomicCalendarPanel() {
               title="Synthetic fixture data from the backend — the live economic-calendar provider is not connected in this environment"
             >
               Synthetic data
+            </Badge>
+          )}
+          {isProviderReference && data && (
+            <Badge
+              tone="info"
+              dot
+              title={`Official backend source: ${data.source_label}`}
+            >
+              {providerBadgeLabel(data)}
             </Badge>
           )}
           <button
@@ -305,8 +328,10 @@ export default function EconomicCalendarPanel() {
             </div>
           )}
 
-          {/* Compact, non-dominant provenance — only for synthetic/unavailable data */}
-          {(isDemo || isUnavailable) && (
+          {/* Compact, non-dominant provenance — synthetic, official
+              provider-reference (FRED), and unavailable states are visually
+              distinct via the data-mode badge + source/freshness/as-of. */}
+          {(isDemo || isUnavailable || isProviderReference) && (
             <div style={styles.provenance}>
               <Badge tone={dataModeTone(data.data_mode)} dot title={`Data mode: ${data.data_mode}`}>
                 {dataModeLabel(data.data_mode)}
@@ -315,6 +340,17 @@ export default function EconomicCalendarPanel() {
                 {data.source_label} · {data.freshness_label} · As of {data.as_of_label}
               </span>
             </div>
+          )}
+
+          {/* Backend limitations rendered verbatim, compact and muted (not
+              alarming). Surfaces the required FRED attribution and the safe
+              partial-success notice when present. */}
+          {data.limitations.length > 0 && (
+            <ul style={styles.limitations} aria-label="Data notes and attribution">
+              {data.limitations.map((lim, i) => (
+                <li key={i} style={styles.limitationItem}>{lim}</li>
+              ))}
+            </ul>
           )}
         </>
       )}
@@ -396,6 +432,16 @@ function dataModeLabel(mode: EconomicCalendarEventListRead["data_mode"]): string
     case "unavailable": return "Unavailable";
     default: return mode;
   }
+}
+
+/** True when the official backend source is FRED (by its source label). */
+function isFredSource(data: EconomicCalendarEventListRead): boolean {
+  return /fred/i.test(data.source_label);
+}
+
+/** Compact official-source header badge label for provider-reference data. */
+function providerBadgeLabel(data: EconomicCalendarEventListRead): string {
+  return isFredSource(data) ? "FRED · official macro" : "Official source";
 }
 
 function importanceSourceLabel(source: EconomicEventImportanceSource): string {
@@ -488,4 +534,10 @@ const styles: Record<string, React.CSSProperties> = {
     paddingTop: "var(--space-2)", borderTop: "1px solid var(--mp-rule)",
   },
   provText: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", lineHeight: 1.45 },
+
+  limitations: {
+    listStyle: "none", margin: 0, padding: 0,
+    display: "flex", flexDirection: "column", gap: 2,
+  },
+  limitationItem: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", lineHeight: 1.5 },
 };

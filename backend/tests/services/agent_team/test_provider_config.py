@@ -2,6 +2,7 @@ import pytest
 
 from app.services.agent_team.provider_config import (
     DEFAULT_MOCK_MODEL,
+    DEFAULT_OPENAI_MODEL,
     LLMProviderConfig,
     LLMProviderConfigurationError,
     load_llm_provider_config,
@@ -86,3 +87,37 @@ def test_config_direct_construction_uses_safe_public_fields_only() -> None:
     config = LLMProviderConfig()
 
     assert config.public_snapshot()["provider"] == "mock"
+
+
+def test_live_openai_requires_backend_key_presence_without_exposing_value() -> None:
+    with pytest.raises(LLMProviderConfigurationError, match="requires backend OpenAI API key"):
+        load_llm_provider_config({"POA_LLM_MODE": "live", "POA_LLM_PROVIDER": "openai"})
+
+    config = load_llm_provider_config(
+        {
+            "POA_LLM_MODE": "live",
+            "POA_LLM_PROVIDER": "openai",
+            "OPENAI_API_KEY": "synthetic-openai-key-not-returned",
+        }
+    )
+    snapshot = config.public_snapshot()
+
+    assert config.mode == "live"
+    assert config.provider == "openai"
+    assert config.model == DEFAULT_OPENAI_MODEL
+    assert config.openai_credential_available is True
+    assert snapshot["openai_credential_configured"] is True
+    assert "synthetic-openai-key-not-returned" not in repr(config)
+    assert "synthetic-openai-key-not-returned" not in repr(snapshot)
+
+
+def test_mock_mode_rejects_openai_provider() -> None:
+    with pytest.raises(LLMProviderConfigurationError):
+        load_llm_provider_config({"POA_LLM_MODE": "mock", "POA_LLM_PROVIDER": "openai"})
+
+
+def test_openai_credential_not_required_in_default_mock_mode() -> None:
+    config = load_llm_provider_config({})
+
+    assert config.openai_credential_available is False
+    assert config.public_snapshot()["openai_credential_configured"] is False

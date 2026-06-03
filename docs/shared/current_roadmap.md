@@ -96,7 +96,25 @@ Paused design reference - Phase 21A Realtime Agent Console backend contract.
 - Codex B drafted a mock-first realtime console option and proposed ADR 0007; both are preserved as reference material.
 - PM paused further agentic/realtime architecture and implementation on 2026-05-25 while the founder studies agentic AI concepts and decides which patterns belong in the product.
 - Do not begin Phase 21A backend work, live-agent work, debate/routing/memory work, SSE follow-up work, or agent-thread persistence work unless Codex A explicitly reactivates a scoped slice.
+- Ownership update (2026-06-01): if an agentic AI workflow slice is reactivated, Claude E owns design/coding and Codex B reviews the result. Codex C should not implement the agentic AI system workflow unless Codex A later changes ownership explicitly.
 - The existing Agent Console composer remains disabled and must not imply an active interactive-agent roadmap commitment.
+
+Phase 25A - Agentic Workflow Foundation.
+
+- Claude E owns approved agentic workflow design/coding slices; Codex B reviews.
+- ADR 0008 is accepted: app-owned safety spine, custom runner first, LangGraph /
+  SSE / MCP / parallelism deferred and gated, OpenAI Agents SDK rejected, memory
+  disabled, role rename separate.
+- P25A backend foundation slices have begun behind review gates: run state /
+  mock runner, eval harness, tool-governance schema, live-provider smoke paths,
+  OpenAI provider adapter, and backend-owned Agent Console display labels.
+- ADR 0009 is accepted for machine role key vs user-facing display-label
+  separation. User-facing labels are Fundamentals Analyst, News Analyst,
+  Technical Analyst, Risk Manager, and Portfolio Manager. Backend role keys stay
+  unchanged.
+- Agent Console composer remains disabled; no unapproved route change,
+  persistence, raw private-data prompting, TradingAgents execution, advice, or
+  execution behavior is authorized.
 
 Phase 22A - Provider-Neutral Market Data Evaluation Foundation.
 
@@ -139,21 +157,28 @@ Phase 23B - Complete Symbol Lookup Personal Demo.
   watchlists, screeners, recommendations, broker tradability, direct frontend
   provider calls, and commercial/public data-use claims.
 
-Phase 24A - Economic Calendar Awareness Foundation.
+Phase 24B - FRED Economic Awareness.
 
-- Planned after symbol lookup foundation.
-- Scope is macro/economic calendar awareness, not ticker/company news.
-- FMP Economic Calendar is the approved personal-demo provider path after
-  synthetic contracts pass review.
-- WebSocket/streaming, Trading Economics evaluation, ticker/company news, and
-  agent/news-tool ingestion remain deferred.
-- Dashboard economic/red-folder awareness may start only after reviewed backend
-  contracts and must keep source/freshness plus `is_trading_signal=false`
-  visible.
-- Per-underlying earnings date is a separate narrow future review-context
-  candidate for options flows. It may be prioritized because it directly
-  affects covered-call/CSP review quality, but it should not open a generic
-  ticker news feed or research terminal.
+- FMP was not usable as the free personal-demo economic-calendar source.
+- FRED is the current backend-owned official macro foundation; `is_trading_signal=false`
+  and source/freshness/attribution stay visible.
+- Dashboard economic awareness remains macro context only, not ticker/company
+  news, not a market terminal, not a trading signal, and not an agent/news-tool
+  input by default.
+- Per-underlying earnings date remains a separate narrow future review-context
+  candidate for options flows.
+
+Phase 26A - Market Context: Market Mood.
+
+- P26A-T1 backend contract is reviewed PASS. Contract reference:
+  `docs/codex-b-architecture/PHASE_26A_MARKET_MOOD_CONTRACT.md`.
+- Claude A may start P26A-T2 Dashboard compact card using
+  `GET /market-context/market-mood`.
+- Dashboard card shows only overall Fear & Greed score/rating as secondary
+  Market Context. Full 7-component detail belongs on the later Market Mood page.
+- Source is CNN-derived/internal-demo only pending source-rights review. No CNN
+  branding, no `live`/`real_time` claims, no actionability/risk-rule/LLM-agent
+  use, and no advice/recommendation/market-timing wording.
 
 ## Next Phases
 
@@ -178,8 +203,8 @@ Phase 20D, docs-only planning.
 
 Phase 21A, paused.
 
-- No current Codex C or Claude A implementation assignment exists for Phase 21A.
-- If PM later reactivates a slice, the retained contract/ADR must first be reviewed against founder learning and any updated product direction.
+- No current Claude E or Claude A implementation assignment exists for Phase 21A.
+- If PM later reactivates a slice, the retained contract/ADR must first be reviewed against founder learning and any updated product direction. Claude E, not Codex C, is the implementation owner for approved agentic workflow slices.
 
 Phase 22A, evaluation checkpoint.
 

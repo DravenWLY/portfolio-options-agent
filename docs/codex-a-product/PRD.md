@@ -2,7 +2,7 @@
 
 Status: PM draft approved for product alignment
 Owner: Codex A - Product / Founder Strategy / PM
-Last updated: 2026-05-29
+Last updated: 2026-06-02
 
 ## Product Summary
 
@@ -15,6 +15,13 @@ research and portfolio tools such as Stock Rover. Those tools help users
 research, screen, track, and monitor. Portfolio Copilot's narrower promise is
 the pre-trade portfolio-aware layer those tools usually lack: what a specific
 manual trade would do to the user's portfolio before they place it elsewhere.
+
+The user-facing agent experience is framed as a specialist review team for
+self-directed investors. The team helps the user review proposed trades,
+understand portfolio risk, and manage their own portfolio decisions with clearer
+evidence, freshness context, and analysis-only explanations. It does not manage
+the portfolio for the user, recommend trades, allocate assets, place orders, or
+decide what the user should buy or sell.
 
 ## Target User
 
@@ -120,6 +127,31 @@ AI must not:
 - Recompute metrics from raw broker data.
 - Receive raw holdings, account values, cash balances, broker account ids, trade journal entries, account-specific thresholds, or provider raw payloads by default.
 - Produce order instructions or financial advice.
+
+## Specialist Review Team
+
+Approved MVP/private-alpha user-facing persona labels:
+
+| UI label | Role in the product | Evidence boundary |
+| --- | --- | --- |
+| Fundamentals Analyst | Reviews approved public company/fundamental evidence. | Public only. |
+| News Analyst | Reviews approved public news, macro, and event context. | Public only. |
+| Technical Analyst | Reviews approved public market/technical context and must state when data is unavailable. | Public only. |
+| Risk Manager | Explains portfolio risk, concentration, collateral, assignment/exercise, and freshness issues from sanitized deterministic evidence. | Agent-safe deterministic projection only. |
+| Portfolio Manager | Synthesizes the team's analysis for the user's review. | Agent-safe synthesis only. |
+
+The UI should not append "Agent" to these labels. Backend role keys may remain
+unchanged unless a separate back-compat task approves a machine-key rename.
+
+Required Portfolio Manager guardrail copy:
+
+"Synthesizes the team's analysis for your review — does not manage your
+portfolio or recommend trades."
+
+If user testing or compliance review shows fiduciary confusion, approved
+fallback labels are `Portfolio Lead`, then `Portfolio Synthesis` /
+`Review Synthesizer`. Avoid `Portfolio Strategist` because it implies strategy
+recommendation.
 
 ## MVP Non-Goals
 

@@ -98,9 +98,11 @@ The active delivery focus is:
 - **Phase 23A / 23B / 24A**: symbol lookup is complete through local recents and offline fixture cleanup. Phase 24A remains macro-calendar-only and must preserve `is_trading_signal=false`; it must not become ticker/company news, a research feed, or an agent evidence path. Per-underlying earnings date is a separate narrow future review-context candidate for options flows, not part of generic Dashboard news.
 
 **Phase 21A is paused**: Codex B's mock-first realtime Agent Console draft is
-preserved for future discussion, but Codex C must not implement it and Claude A
-must not enable the disabled composer unless Codex A explicitly reactivates a
-scoped slice.
+preserved for future discussion. If Codex A explicitly reactivates a scoped
+agentic workflow slice, Claude E owns design/coding and Codex B reviews the
+result. Codex C must not implement the agentic AI system workflow unless Codex A
+later changes ownership explicitly, and Claude A must not enable the disabled
+composer until a reviewed backend/frontend activation slice exists.
 
 Phase 20A prototype-fidelity frontend work is complete. Phase 20B should now provide the missing sanitized backend reads behind its `demo · not yet connected` placeholder surfaces, one reviewed contract at a time.
 

@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.routes.economic_calendar import get_economic_calendar_current_date, get_economic_calendar_refresh_runner
-from app.services.economic_calendar import EconomicCalendarRefreshError, FmpEconomicCalendarHttpClient, SyntheticEconomicCalendarProvider
+from app.services.economic_calendar import EconomicCalendarRefreshError, FredEconomicCalendarHttpClient, SyntheticEconomicCalendarProvider
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 
 
@@ -14,6 +14,7 @@ pytestmark = [pytest.mark.api, pytest.mark.unit]
 @pytest.fixture(autouse=True)
 def _clear_fmp_api_key(monkeypatch):
     monkeypatch.delenv("FMP_API_KEY", raising=False)
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
 
 
 def test_economic_calendar_events_route_returns_provider_neutral_shape(client: TestClient) -> None:
@@ -169,18 +170,24 @@ def test_economic_calendar_refresh_route_returns_sanitized_failure(app, client: 
     assert "provider_account_id" not in rendered
 
 
-def test_economic_calendar_refresh_route_uses_fmp_when_key_present(app, client: TestClient, monkeypatch, tmp_path) -> None:
+def test_economic_calendar_refresh_route_uses_fred_when_key_present(app, client: TestClient, monkeypatch, tmp_path) -> None:
     from app.services import economic_calendar
 
-    monkeypatch.setenv("FMP_API_KEY", "test_fmp_key")
+    monkeypatch.setenv("FRED_API_KEY", "test_fred_key")
     monkeypatch.setattr(economic_calendar, "DEFAULT_ECONOMIC_CALENDAR_SNAPSHOT_PATH", tmp_path / "calendar.json")
+    monkeypatch.setattr(economic_calendar.time, "sleep", lambda seconds: None)
     captured_urls = []
 
     def fake_fetch(self, url: str) -> str:
         captured_urls.append(url)
-        return '[{"date":"2026-05-29 08:30:00","event":"Core CPI","country":"US","currency":"USD","actual":"0.2%"}]'
+        return (
+            '{"release_dates":['
+            '{"release_id":10,"release_name":"Consumer Price Index","date":"2026-06-01"},'
+            '{"release_id":53,"release_name":"Gross Domestic Product","date":"2026-06-04"}'
+            "]}"
+        )
 
-    monkeypatch.setattr(FmpEconomicCalendarHttpClient, "_fetch_public_text_url", fake_fetch)
+    monkeypatch.setattr(FredEconomicCalendarHttpClient, "_fetch_public_text_url", fake_fetch)
 
     response = client.post("/economic-calendar/refresh")
 
@@ -189,11 +196,36 @@ def test_economic_calendar_refresh_route_uses_fmp_when_key_present(app, client: 
     rendered = repr(payload).lower()
     assert payload["status"] == "refreshed"
     assert payload["data_mode"] == "provider_reference"
-    assert payload["source_label"] == "FMP Economic Calendar evaluation"
-    assert payload["record_count"] == 1
+    assert payload["source_label"] == "FRED macro snapshot"
+    assert payload["record_count"] == 2
     assert captured_urls
-    assert "test_fmp_key" not in rendered
-    assert "apikey" not in rendered
+    assert "test_fred_key" not in rendered
+    assert "api_key" not in rendered
+
+
+def test_economic_calendar_refresh_route_sanitizes_fred_transport_failure(app, client: TestClient, monkeypatch, tmp_path) -> None:
+    from app.services import economic_calendar
+
+    monkeypatch.setenv("FRED_API_KEY", "test_fred_key")
+    monkeypatch.setattr(economic_calendar, "DEFAULT_ECONOMIC_CALENDAR_SNAPSHOT_PATH", tmp_path / "calendar.json")
+    monkeypatch.setattr(economic_calendar.time, "sleep", lambda seconds: None)
+
+    def fake_fetch(self, url: str) -> str:
+        raise RuntimeError(f"{url} raw_payload api_key=fred_test_key")
+
+    monkeypatch.setattr(FredEconomicCalendarHttpClient, "_fetch_public_text_url", fake_fetch)
+
+    response = client.post("/economic-calendar/refresh")
+
+    assert response.status_code == 200
+    payload = response.json()
+    rendered = repr(payload).lower()
+    assert payload["status"] == "failed"
+    assert payload["message"] == "Economic calendar refresh failed; last good snapshot was preserved."
+    assert "fred_test_key" not in rendered
+    assert "api_key" not in rendered
+    assert "raw_payload" not in rendered
+    assert "https://api.stlouisfed.org" not in rendered
 
 
 def test_economic_calendar_refresh_requires_local_access(app) -> None:

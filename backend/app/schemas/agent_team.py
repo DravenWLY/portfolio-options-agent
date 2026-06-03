@@ -31,6 +31,7 @@ class AgentTeamRoleOutputRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
     role_name: AgentTeamRole
+    display_name: str
     status: Literal["completed", "unavailable", "skipped"]
     provider_status: LLMProviderStatus
     content_markdown: str | None
@@ -44,6 +45,7 @@ class AgentTeamStageRead(BaseModel):
     stage: str
     status: str
     role_name: AgentTeamRole | None = None
+    display_name: str | None = None
     provider_status: LLMProviderStatus | None = None
     unavailable_reason: str | None = None
 

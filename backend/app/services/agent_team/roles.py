@@ -45,13 +45,13 @@ _ROLE_DEFINITIONS = {
     ),
     "risk_management_agent": AgentTeamRoleDefinition(
         role_name="risk_management_agent",
-        display_name="Risk Management Agent",
+        display_name="Risk Manager",
         data_boundary="sanitized_deterministic_review_evidence",
         may_receive_portfolio_evidence=True,
     ),
     "portfolio_manager_agent": AgentTeamRoleDefinition(
         role_name="portfolio_manager_agent",
-        display_name="Portfolio Manager Agent",
+        display_name="Portfolio Manager",
         data_boundary="prior_role_summaries_and_sanitized_deterministic_evidence",
         may_receive_portfolio_evidence=True,
     ),

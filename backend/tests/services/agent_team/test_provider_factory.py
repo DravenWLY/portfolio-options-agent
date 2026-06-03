@@ -3,6 +3,7 @@ import sys
 import pytest
 
 from app.services.agent_team.mock_provider import MockLLMProvider
+from app.services.agent_team.openai_provider import OpenAILLMProvider
 from app.services.agent_team.provider_config import LLMProviderConfig, load_llm_provider_config
 from app.services.agent_team.provider_factory import UnavailableLLMProvider, resolve_llm_provider, resolve_llm_provider_from_env
 
@@ -75,3 +76,59 @@ def test_resolve_provider_from_env_invalid_live_config_fails_closed() -> None:
     assert resolution.available is False
     assert isinstance(resolution.provider, UnavailableLLMProvider)
     assert resolution.status == "provider_auth_error"
+
+
+def test_live_openai_mode_returns_openai_provider_when_backend_key_is_passed() -> None:
+    config = load_llm_provider_config(
+        {
+            "POA_LLM_MODE": "live",
+            "POA_LLM_PROVIDER": "openai",
+            "POA_LLM_MODEL": "gpt-synthetic",
+            "OPENAI_API_KEY": "synthetic-openai-key-not-returned",
+        }
+    )
+    resolution = resolve_llm_provider(config, openai_api_key="synthetic-openai-key-not-returned")
+
+    assert resolution.available is True
+    assert resolution.status == "ok"
+    assert resolution.provider_name == "openai"
+    assert isinstance(resolution.provider, OpenAILLMProvider)
+    assert "synthetic-openai-key-not-returned" not in repr(resolution)
+
+
+def test_live_openai_mode_without_key_resolves_to_safe_unavailable_provider() -> None:
+    config = LLMProviderConfig(
+        mode="live",
+        provider="openai",
+        model="gpt-synthetic",
+        openai_credential_available=True,
+    )
+    resolution = resolve_llm_provider(config)
+
+    assert resolution.available is False
+    assert isinstance(resolution.provider, UnavailableLLMProvider)
+    assert resolution.status == "provider_auth_error"
+    assert resolution.provider_name == "openai"
+
+
+def test_resolve_from_env_returns_openai_when_explicitly_configured() -> None:
+    resolution = resolve_llm_provider_from_env(
+        {
+            "POA_LLM_MODE": "live",
+            "POA_LLM_PROVIDER": "openai",
+            "OPENAI_API_KEY": "synthetic-openai-key-not-returned",
+        }
+    )
+
+    assert resolution.available is True
+    assert resolution.provider_name == "openai"
+    assert isinstance(resolution.provider, OpenAILLMProvider)
+
+
+def test_mock_mode_does_not_import_openai_sdk() -> None:
+    before = set(sys.modules)
+    resolution = resolve_llm_provider(LLMProviderConfig())
+    after = set(sys.modules)
+
+    assert resolution.available is True
+    assert "openai" not in after - before

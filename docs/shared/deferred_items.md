@@ -2,6 +2,22 @@
 
 This file tracks known non-blocking work so active plans can stay small. Do not treat these as authorized implementation tasks until they are pulled into `docs/shared/implementation_plan.md`.
 
+## Paused / Incomplete Phase Backlog
+
+This section preserves the important paused or incomplete threads from the archived implementation plan without re-expanding the active plan. Details remain in `docs/shared/implementation_plan_archive_2026-06-03.md`.
+
+- Phase 18B: `P18B-T3` research-evidence display remains deferred until reviewed Phase 17 backend evidence contracts exist.
+- Phase 20B: `P20B-T5` reports remains blocked until report persistence and report-read contracts are approved.
+- Phase 20B: `P20B-T6` profile/private-alpha display remains blocked until auth/session/profile display decisions are approved.
+- Phase 21A: realtime Agent Console backend contract remains paused. Do not implement follow-up composer activation, SSE follow-up, agent-thread persistence, live debate/routing/reflection/memory, or realtime multi-agent expansion unless PM reactivates a scoped slice.
+- Phase 22A: commercial market-data provider selection and RFI outreach are parked. Internal provider-neutral evaluation is complete; no production provider is selected.
+- Phase 23B: symbol lookup is functional for the personal demo. Deferred cleanup includes reducing demo fixture prominence once the refreshed directory path is reliable and only adding typed-but-never-selected recents after a reviewed validation/display-field path exists.
+- Phase 24A/24B: economic awareness backend foundations exist, but frontend/economic-news expansion can remain paused while Market Mood or agentic workflow is higher priority. FMP is not usable as the free calendar source; FRED is the current official-source backend direction.
+- Phase 25A: agentic workflow remains mock-first and gated. Deferred items include real parallel fan-out, persistence/checkpointing, MCP/tool runtime, memory, LangGraph adoption, role rename, and frontend composer activation.
+- Phase 25A: `P25A-T12` Gemini SDK migration to `google-genai` is proposed low priority.
+- Phase 26A: Market Mood compact Dashboard card is active next work; full Market Context detail page and source/rights production review remain deferred until after the compact card is accepted.
+- Product/research: Claude Design exploration and competitor/Product B pressure-test follow-ups may continue, but unsupported fields must be labelled future-contract-needed and must not be implemented without reviewed backend contracts.
+
 ## Storage and Migration Hardening
 
 - Evaluate service-layer transaction boundaries and a future Unit of Work pattern before larger sync/report workflows need multi-table atomicity.

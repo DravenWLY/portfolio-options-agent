@@ -9,6 +9,7 @@ from app.api.routes import (
     broker_sync,
     economic_calendar,
     imports,
+    market_context,
     portfolio,
     reports,
     symbols,
@@ -44,6 +45,7 @@ app.include_router(trade_reviews.router, dependencies=protected)
 app.include_router(agent_team.router, dependencies=protected)
 app.include_router(symbols.router, dependencies=protected)
 app.include_router(economic_calendar.router, dependencies=protected)
+app.include_router(market_context.router, dependencies=protected)
 
 
 @app.get("/health")

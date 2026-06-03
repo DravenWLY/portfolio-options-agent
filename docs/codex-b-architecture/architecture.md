@@ -182,7 +182,8 @@ AGENTS.md
 docs/codex-b-architecture/architecture.md
 backend/
   README.md
-  requirements.txt
+  pyproject.toml
+  uv.lock
   app/
     main.py
     core/
@@ -1810,7 +1811,7 @@ Goals:
 Files:
 
 - `docker-compose.yml`
-- `backend/pyproject.toml` or updated requirements
+- `backend/pyproject.toml` + `backend/uv.lock`
 - `backend/app/db/*`
 - `backend/alembic/*`
 - `frontend/*`

@@ -1,7 +1,9 @@
 from datetime import UTC, date, datetime, timedelta
+from urllib.error import HTTPError
 
 import pytest
 
+from app.services import economic_calendar
 from app.services.economic_calendar import (
     DEFAULT_ECONOMIC_CALENDAR_SNAPSHOT_PATH,
     EconomicCalendarEventRecord,
@@ -10,10 +12,16 @@ from app.services.economic_calendar import (
     EconomicCalendarSnapshot,
     EconomicCalendarSnapshotStore,
     EmptyEconomicCalendarProvider,
+    FRED_PARTIAL_LIMITATION,
+    FredEconomicCalendarHttpClient,
+    FredEconomicCalendarProvider,
+    FredMacroSeriesDefinition,
     FmpEconomicCalendarHttpClient,
     FmpEconomicCalendarProvider,
     SnapshotEconomicCalendarProvider,
     SyntheticEconomicCalendarProvider,
+    build_fred_economic_calendar_refresh_runner,
+    build_fred_economic_calendar_refresh_runner_from_environment,
     build_fmp_economic_calendar_refresh_runner,
     build_fmp_economic_calendar_refresh_runner_from_environment,
     classify_economic_event,
@@ -32,11 +40,18 @@ from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_for
 pytestmark = [pytest.mark.unit]
 
 NOW = datetime(2026, 5, 29, 14, 30, tzinfo=UTC)
+FRED_LEAK_TOKENS = (
+    "api_key=fred_test_key",
+    "fred_test_key",
+    "raw_payload",
+    "https://api.stlouisfed.org/fred/series/observations",
+)
 
 
 @pytest.fixture(autouse=True)
 def _clear_economic_calendar_snapshot(monkeypatch):
     monkeypatch.delenv("FMP_API_KEY", raising=False)
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
     clear_active_economic_calendar_snapshot(disable_auto_restore=True)
     yield
     clear_active_economic_calendar_snapshot(disable_auto_restore=True)
@@ -294,6 +309,428 @@ def test_environment_refresh_runner_missing_key_is_safe_failure(monkeypatch) -> 
 
     with pytest.raises(EconomicCalendarRefreshError):
         runner()
+
+
+def test_fred_environment_refresh_runner_missing_key_is_safe_failure(monkeypatch) -> None:
+    monkeypatch.delenv("FRED_API_KEY", raising=False)
+    runner = build_fred_economic_calendar_refresh_runner_from_environment()
+
+    with pytest.raises(EconomicCalendarRefreshError):
+        runner()
+
+
+def test_fred_provider_maps_fake_observations_with_attribution() -> None:
+    class FakeFredClient:
+        def fetch_observations(self, *, series_id: str, limit: int = 2):
+            assert series_id == "CPIAUCSL"
+            assert limit == 2
+            return (
+                {"date": "2026-04-01", "value": "314.540"},
+                {"date": "2026-03-01", "value": "313.900"},
+            )
+
+    provider = FredEconomicCalendarProvider(
+        FakeFredClient(),
+        release_registry=(),
+        registry=(FredMacroSeriesDefinition("CPIAUCSL", "Consumer Price Index", "economic_release", "high", "index"),),
+        imported_at=NOW,
+    )
+
+    snapshot = provider.snapshot(window_start=date(2026, 4, 1), window_end=date(2026, 4, 1))
+    payload = read_from_snapshot(snapshot)
+
+    assert payload.data_mode == "provider_reference"
+    assert payload.source_label == "FRED macro snapshot"
+    assert any("This product uses the FRED® API" in limitation for limitation in payload.limitations)
+    assert len(payload.items) == 1
+    item = payload.items[0]
+    assert item.event_date_label == "2026-04-01"
+    assert item.event_title == "Consumer Price Index"
+    assert item.actual_label == "314.540 (obs 2026-04-01)"
+    assert item.previous_label == "313.900 (obs 2026-03-01)"
+    assert item.forecast_label is None
+    assert item.unit_label == "index"
+    assert item.is_trading_signal is False
+    assert item.event_datetime_utc is None
+
+
+def test_fred_provider_uses_observation_date_not_refresh_date_for_window_filtering() -> None:
+    class FakeFredClient:
+        def fetch_observations(self, *, series_id: str, limit: int = 2):
+            return (
+                {"date": "2026-04-01", "value": "314.540"},
+                {"date": "2026-03-01", "value": "313.900"},
+            )
+
+    provider = FredEconomicCalendarProvider(
+        FakeFredClient(),
+        release_registry=(),
+        registry=(FredMacroSeriesDefinition("CPIAUCSL", "Consumer Price Index", "economic_release", "high", "index"),),
+        imported_at=NOW,
+    )
+    snapshot = provider.snapshot(window_start=NOW.date(), window_end=NOW.date())
+
+    refresh_day_payload = read_from_snapshot(snapshot)
+    observation_day_payload = read_from_snapshot(
+        SnapshotEconomicCalendarProvider(snapshot).snapshot(window_start=date(2026, 4, 1), window_end=date(2026, 4, 1))
+    )
+
+    assert snapshot.as_of_label == f"FRED macro snapshot imported {NOW.isoformat()}"
+    assert snapshot.records[0].event_date_label == "2026-04-01"
+    assert refresh_day_payload.items == ()
+    assert len(observation_day_payload.items) == 1
+    assert observation_day_payload.items[0].event_title == "Consumer Price Index"
+
+
+def test_fred_provider_maps_release_calendar_dates_for_date_picker() -> None:
+    class FakeFredClient:
+        def fetch_release_dates_for_release(
+            self,
+            *,
+            release_id: int,
+            start_date: date,
+            end_date: date,
+            include_no_data: bool = True,
+            limit: int = 1000,
+        ):
+            assert start_date == date(2026, 5, 25)
+            assert end_date == date(2026, 6, 5)
+            assert include_no_data is True
+            if release_id == 10:
+                return (
+                    {"release_id": 10, "release_name": "Consumer Price Index", "date": "2026-06-01"},
+                    {"release_id": 999, "release_name": "Ignored Provider Release", "date": "2026-06-05"},
+                )
+            if release_id == 53:
+                return ({"release_id": 53, "release_name": "Gross Domestic Product", "date": "2026-06-04"},)
+            return ()
+
+        def fetch_release_dates(self, *, start_date: date, end_date: date, include_no_data: bool = True, limit: int = 1000):
+            raise AssertionError("runtime provider should use release-specific calendar queries")
+
+        def fetch_observations(self, *, series_id: str, limit: int = 2):
+            raise AssertionError("release-calendar provider should not fetch observations")
+
+    provider = FredEconomicCalendarProvider(FakeFredClient(), imported_at=NOW)
+
+    payload = read_from_snapshot(provider.snapshot(window_start=date(2026, 5, 25), window_end=date(2026, 6, 5)))
+    rendered = repr(payload.model_dump(mode="python")).lower()
+
+    assert payload.data_mode == "provider_reference"
+    assert payload.source_label == "FRED macro snapshot"
+    assert payload.window_start == date(2026, 5, 25)
+    assert payload.window_end == date(2026, 6, 5)
+    assert [item.event_date_label for item in payload.items] == ["2026-06-01", "2026-06-04"]
+    assert [item.event_title for item in payload.items] == ["Consumer Price Index", "Gross Domestic Product"]
+    assert all(item.event_time_label == "Time TBD" for item in payload.items)
+    assert all(item.event_datetime_utc is None for item in payload.items)
+    assert all(item.actual_label is None for item in payload.items)
+    assert all(item.forecast_label is None for item in payload.items)
+    assert all(item.previous_label is None for item in payload.items)
+    assert any("FRED release-calendar rows do not include forecast" in limitation for limitation in payload.limitations)
+    assert "ignored provider release" not in rendered
+    assert "api_key" not in rendered
+    assert "raw_payload" not in rendered
+
+
+def test_fred_provider_fails_when_all_observations_are_empty_or_malformed() -> None:
+    class EmptyFredClient:
+        def fetch_observations(self, *, series_id: str, limit: int = 2):
+            return ({"date": "2026-04-01", "value": "."}, {"value": "123"})
+
+    provider = FredEconomicCalendarProvider(
+        EmptyFredClient(),
+        release_registry=(),
+        registry=(FredMacroSeriesDefinition("CPIAUCSL", "Consumer Price Index", "economic_release", "high", "index"),),
+        imported_at=NOW,
+    )
+
+    with pytest.raises(EconomicCalendarRefreshError) as exc_info:
+        provider.snapshot(window_start=NOW.date(), window_end=NOW.date())
+
+    assert str(exc_info.value) == "economic calendar refresh failed; last good snapshot was preserved"
+    assert_fred_refresh_error_has_no_leaking_chain(exc_info.value)
+
+
+def test_fred_http_client_uses_injected_transport_and_sanitizes_failures() -> None:
+    captured_urls = []
+
+    def fake_fetch(url: str) -> str:
+        captured_urls.append(url)
+        return '{"observations":[{"date":"2026-04-01","value":"314.540"},{"date":"2026-03-01","value":"313.900"}]}'
+
+    client = FredEconomicCalendarHttpClient(api_key="fred_test_key", fetch_text=fake_fetch, sleep=lambda seconds: None)
+    rows = client.fetch_observations(series_id="CPIAUCSL", limit=2)
+
+    assert len(rows) == 2
+    assert "series_id=CPIAUCSL" in captured_urls[0]
+    assert "api_key=fred_test_key" in captured_urls[0]
+
+    def throttled_fetch(_url: str) -> str:
+        return '{"error_code":429,"error_message":"Too Many Requests raw_payload fred_test_key"}'
+
+    with pytest.raises(EconomicCalendarRefreshError) as exc_info:
+        FredEconomicCalendarHttpClient(api_key="fred_test_key", fetch_text=throttled_fetch, sleep=lambda seconds: None).fetch_observations(
+            series_id="CPIAUCSL",
+            limit=2,
+        )
+    rendered = str(exc_info.value).lower()
+    assert "raw_payload" not in rendered
+    assert "fred_test_key" not in rendered
+    assert "too many requests" not in rendered
+    assert_fred_refresh_error_has_no_leaking_chain(exc_info.value)
+
+
+def test_fred_http_client_fetches_release_dates_with_injected_transport() -> None:
+    captured_urls = []
+
+    def fake_fetch(url: str) -> str:
+        captured_urls.append(url)
+        return (
+            '{"release_dates":['
+            '{"release_id":10,"release_name":"Consumer Price Index","date":"2026-06-01"},'
+            '{"release_id":53,"release_name":"Gross Domestic Product","date":"2026-06-04"}'
+            "]}"
+        )
+
+    client = FredEconomicCalendarHttpClient(api_key="fred_test_key", fetch_text=fake_fetch, sleep=lambda seconds: None)
+    rows = client.fetch_release_dates(start_date=date(2026, 5, 25), end_date=date(2026, 6, 5))
+
+    assert len(rows) == 2
+    assert "releases%2Fdates" not in captured_urls[0]
+    assert "realtime_start=2026-05-25" in captured_urls[0]
+    assert "realtime_end=2026-06-05" in captured_urls[0]
+    assert "include_release_dates_with_no_data=true" in captured_urls[0]
+    assert "api_key=fred_test_key" in captured_urls[0]
+
+
+def test_fred_http_client_fetches_single_release_dates_with_injected_transport() -> None:
+    captured_urls = []
+
+    def fake_fetch(url: str) -> str:
+        captured_urls.append(url)
+        return (
+            '{"release_dates":['
+            '{"release_id":10,"release_name":"Consumer Price Index","date":"2026-06-01"}'
+            "]}"
+        )
+
+    client = FredEconomicCalendarHttpClient(api_key="fred_test_key", fetch_text=fake_fetch, sleep=lambda seconds: None)
+    rows = client.fetch_release_dates_for_release(
+        release_id=10,
+        start_date=date(2026, 5, 25),
+        end_date=date(2026, 6, 5),
+    )
+
+    assert len(rows) == 1
+    assert "release_id=10" in captured_urls[0]
+    assert "realtime_start=2026-05-25" in captured_urls[0]
+    assert "realtime_end=2026-06-05" in captured_urls[0]
+    assert "include_release_dates_with_no_data=true" in captured_urls[0]
+    assert "api_key=fred_test_key" in captured_urls[0]
+
+
+def test_fred_http_client_paginates_release_dates_with_injected_transport() -> None:
+    captured_urls = []
+
+    def fake_fetch(url: str) -> str:
+        captured_urls.append(url)
+        if "offset=0" in url:
+            return (
+                '{"count":2,"release_dates":['
+                '{"release_id":10,"release_name":"Consumer Price Index","date":"2026-06-01"}'
+                "]}"
+            )
+        if "offset=1" in url:
+            return (
+                '{"count":2,"release_dates":['
+                '{"release_id":53,"release_name":"Gross Domestic Product","date":"2026-06-04"}'
+                "]}"
+            )
+        raise AssertionError(f"unexpected release-date page URL: {url}")
+
+    client = FredEconomicCalendarHttpClient(
+        api_key="fred_test_key",
+        fetch_text=fake_fetch,
+        min_interval_seconds=0,
+        sleep=lambda seconds: None,
+    )
+    rows = client.fetch_release_dates(start_date=date(2026, 5, 25), end_date=date(2026, 6, 5), limit=1)
+
+    assert [row["release_id"] for row in rows] == [10, 53]
+    assert len(captured_urls) == 2
+    assert "limit=1" in captured_urls[0]
+    assert "offset=0" in captured_urls[0]
+    assert "offset=1" in captured_urls[1]
+
+
+def test_fred_http_client_retries_throttled_response_then_succeeds() -> None:
+    responses = [
+        '{"error_code":429,"error_message":"Too Many Requests raw_payload fred_test_key"}',
+        '{"observations":[{"date":"2026-04-01","value":"314.540"},{"date":"2026-03-01","value":"313.900"}]}',
+    ]
+    sleeps = []
+
+    def fake_fetch(_url: str) -> str:
+        return responses.pop(0)
+
+    client = FredEconomicCalendarHttpClient(
+        api_key="fred_test_key",
+        fetch_text=fake_fetch,
+        min_interval_seconds=0,
+        retry_backoff_seconds=0.25,
+        sleep=sleeps.append,
+    )
+
+    rows = client.fetch_observations(series_id="CPIAUCSL", limit=2)
+
+    assert len(rows) == 2
+    assert sleeps == [0.25]
+
+
+def test_fred_provider_returns_partial_success_with_safe_limitation() -> None:
+    class PartiallyFailingFredClient:
+        def fetch_observations(self, *, series_id: str, limit: int = 2):
+            if series_id == "PCEPI":
+                raise EconomicCalendarRefreshError("FRED macro data request was throttled")
+            return (
+                {"date": "2026-04-01", "value": "314.540"},
+                {"date": "2026-03-01", "value": "313.900"},
+            )
+
+    provider = FredEconomicCalendarProvider(
+        PartiallyFailingFredClient(),
+        release_registry=(),
+        registry=(
+            FredMacroSeriesDefinition("CPIAUCSL", "Consumer Price Index", "economic_release", "high", "index"),
+            FredMacroSeriesDefinition("PCEPI", "PCE Price Index", "economic_release", "high", "index"),
+        ),
+        imported_at=NOW,
+    )
+
+    payload = read_from_snapshot(provider.snapshot(window_start=date(2026, 4, 1), window_end=date(2026, 4, 1)))
+    rendered = repr(payload.model_dump(mode="python")).lower()
+
+    assert payload.data_mode == "provider_reference"
+    assert len(payload.items) == 1
+    assert payload.items[0].event_title == "Consumer Price Index"
+    assert FRED_PARTIAL_LIMITATION in payload.limitations
+    assert "api_key" not in rendered
+    assert "raw_payload" not in rendered
+    assert "too many requests" not in rendered
+
+
+def assert_fred_refresh_error_has_no_leaking_chain(exc: EconomicCalendarRefreshError) -> None:
+    rendered = f"{str(exc)} {repr(exc)} {repr(exc.__cause__)} {repr(exc.__context__)}".lower()
+    for token in FRED_LEAK_TOKENS:
+        assert token not in rendered
+    assert exc.__cause__ is None
+    assert exc.__context__ is None
+
+
+def test_fred_transport_failure_strips_exception_chain() -> None:
+    def failing_fetch(url: str) -> str:
+        raise RuntimeError(f"{url} raw_payload api_key=fred_test_key")
+
+    client = FredEconomicCalendarHttpClient(api_key="fred_test_key", fetch_text=failing_fetch, sleep=lambda seconds: None)
+
+    with pytest.raises(EconomicCalendarRefreshError) as exc_info:
+        client.fetch_observations(series_id="CPIAUCSL", limit=2)
+
+    assert str(exc_info.value) == "FRED macro data fetch failed"
+    assert_fred_refresh_error_has_no_leaking_chain(exc_info.value)
+
+
+def test_fred_http_error_throttled_failure_strips_exception_chain(monkeypatch) -> None:
+    def failing_urlopen(_request, timeout: int):
+        raise HTTPError(
+            url="https://api.stlouisfed.org/fred/series/observations?api_key=fred_test_key&raw_payload=1",
+            code=429,
+            msg="Too Many Requests raw_payload api_key=fred_test_key",
+            hdrs=None,
+            fp=None,
+        )
+
+    monkeypatch.setattr(economic_calendar, "urlopen", failing_urlopen)
+    client = FredEconomicCalendarHttpClient(api_key="fred_test_key", sleep=lambda seconds: None)
+
+    with pytest.raises(EconomicCalendarRefreshError) as exc_info:
+        client.fetch_observations(series_id="CPIAUCSL", limit=2)
+
+    assert str(exc_info.value) == "FRED macro data request was throttled"
+    assert_fred_refresh_error_has_no_leaking_chain(exc_info.value)
+
+
+def test_fred_provider_failure_strips_lower_exception_chain() -> None:
+    class LeakingFredClient:
+        def fetch_observations(self, *, series_id: str, limit: int = 2):
+            raise RuntimeError(
+                "https://api.stlouisfed.org/fred/series/observations?api_key=fred_test_key raw_payload"
+            )
+
+    provider = FredEconomicCalendarProvider(
+        LeakingFredClient(),
+        release_registry=(),
+        registry=(FredMacroSeriesDefinition("CPIAUCSL", "Consumer Price Index", "economic_release", "high", "index"),),
+        imported_at=NOW,
+    )
+
+    with pytest.raises(EconomicCalendarRefreshError) as exc_info:
+        provider.snapshot(window_start=NOW.date(), window_end=NOW.date())
+
+    assert str(exc_info.value) == "economic calendar refresh failed; last good snapshot was preserved"
+    assert_fred_refresh_error_has_no_leaking_chain(exc_info.value)
+
+
+def test_fred_refresh_runner_with_injected_client_persists_provider_reference(tmp_path) -> None:
+    class FakeFredClient:
+        def fetch_release_dates_for_release(
+            self,
+            *,
+            release_id: int,
+            start_date: date,
+            end_date: date,
+            include_no_data: bool = True,
+            limit: int = 1000,
+        ):
+            if release_id != 10:
+                return ()
+            return (
+                {"release_id": 10, "release_name": "Consumer Price Index", "date": "2026-06-01"},
+            )
+
+        def fetch_release_dates(self, *, start_date: date, end_date: date, include_no_data: bool = True, limit: int = 1000):
+            raise AssertionError("runtime refresh should use release-specific calendar queries")
+
+        def fetch_observations(self, *, series_id: str, limit: int = 2):
+            return (
+                {"date": "2026-04-01", "value": "314.540"},
+                {"date": "2026-03-01", "value": "313.900"},
+            )
+
+    path = tmp_path / "economic_calendar_snapshot.json"
+    store = EconomicCalendarSnapshotStore()
+    runner = build_fred_economic_calendar_refresh_runner(
+        client=FakeFredClient(),
+        store=store,
+        snapshot_path=path,
+        now=lambda: NOW,
+    )
+
+    snapshot = runner()
+    payload = read_from_snapshot(snapshot).model_dump(mode="python")
+    rendered = repr(payload).lower()
+
+    assert snapshot.data_mode == "provider_reference"
+    assert store.active_snapshot is snapshot
+    assert path.exists()
+    assert payload["source_label"] == "FRED macro snapshot"
+    assert any("This product uses the FRED® API" in limitation for limitation in payload["limitations"])
+    assert payload["items"][0]["event_date_label"] == "2026-06-01"
+    assert payload["items"][0]["actual_label"] is None
+    assert payload["items"][0]["forecast_label"] is None
+    assert "api_key" not in rendered
+    assert "raw_payload" not in rendered
 
 
 def test_fmp_refresh_runner_with_injected_client_persists_provider_reference(tmp_path) -> None:

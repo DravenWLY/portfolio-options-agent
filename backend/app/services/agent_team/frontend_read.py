@@ -6,11 +6,17 @@ from app.schemas.agent_team import (
     AgentTeamRoleOutputRead,
     AgentTeamStageRead,
 )
+from app.services.agent_team.roles import role_definition
 from app.services.agent_team.state import AgentTeamAnalysisState
 
 
 def build_agent_team_analysis_console_read(state: AgentTeamAnalysisState) -> AgentTeamAnalysisConsoleRead:
-    """Map internal agent-team state to the safe analysis-console contract."""
+    """Map internal agent-team state to the safe analysis-console contract.
+
+    Display labels are backend-owned: ``display_name`` is populated verbatim from
+    the role registry so the frontend renders it as-is (ADR 0009). Machine
+    ``role_name`` values are preserved unchanged.
+    """
 
     return AgentTeamAnalysisConsoleRead(
         run_reference=state.run_reference,
@@ -25,6 +31,7 @@ def build_agent_team_analysis_console_read(state: AgentTeamAnalysisState) -> Age
         role_outputs=tuple(
             AgentTeamRoleOutputRead(
                 role_name=output.role_name,
+                display_name=role_definition(output.role_name).display_name,
                 status=output.status,
                 provider_status=output.provider_status,
                 content_markdown=output.content_markdown,
@@ -46,6 +53,9 @@ def build_agent_team_analysis_console_read(state: AgentTeamAnalysisState) -> Age
                 stage=stage.stage,
                 status=stage.status,
                 role_name=stage.role_name,
+                display_name=(
+                    role_definition(stage.role_name).display_name if stage.role_name is not None else None
+                ),
                 provider_status=stage.provider_status,
                 unavailable_reason=stage.unavailable_reason,
             )

@@ -7,11 +7,12 @@ from app.services.agent_team.llm_provider import validate_llm_provider_payload
 
 
 LLMMode = Literal["mock", "live"]
-LLMProviderName = Literal["mock", "google"]
+LLMProviderName = Literal["mock", "google", "openai"]
 LLMRateLimitFallback = Literal["partial_report"]
 
 DEFAULT_MOCK_MODEL = "mock-agent-team-v1"
 DEFAULT_LIVE_MODEL = "gemini-1.5-flash"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 
 
 class LLMProviderConfigurationError(ValueError):
@@ -31,12 +32,13 @@ class LLMProviderConfig:
     rate_limit_fallback: LLMRateLimitFallback = "partial_report"
     live_tests_enabled: bool = False
     google_credential_available: bool = False
+    openai_credential_available: bool = False
 
     def __post_init__(self) -> None:
         if self.mode not in {"mock", "live"}:
             raise LLMProviderConfigurationError("POA_LLM_MODE must be mock or live")
-        if self.provider not in {"mock", "google"}:
-            raise LLMProviderConfigurationError("POA_LLM_PROVIDER must be mock or google")
+        if self.provider not in {"mock", "google", "openai"}:
+            raise LLMProviderConfigurationError("POA_LLM_PROVIDER must be mock, google, or openai")
         if not self.model.strip():
             raise LLMProviderConfigurationError("POA_LLM_MODEL must not be empty")
         if self.timeout_seconds <= 0:
@@ -49,10 +51,12 @@ class LLMProviderConfig:
             raise LLMProviderConfigurationError("POA_LLM_RATE_LIMIT_FALLBACK must be partial_report")
         if self.mode == "mock" and self.provider != "mock":
             raise LLMProviderConfigurationError("mock mode requires mock provider")
-        if self.mode == "live" and self.provider != "google":
-            raise LLMProviderConfigurationError("live mode currently supports google provider only")
-        if self.mode == "live" and not self.google_credential_available:
+        if self.mode == "live" and self.provider not in {"google", "openai"}:
+            raise LLMProviderConfigurationError("live mode supports google or openai provider only")
+        if self.mode == "live" and self.provider == "google" and not self.google_credential_available:
             raise LLMProviderConfigurationError("live google mode requires backend Google API key")
+        if self.mode == "live" and self.provider == "openai" and not self.openai_credential_available:
+            raise LLMProviderConfigurationError("live openai mode requires backend OpenAI API key")
         validate_llm_provider_payload(asdict(self), label="LLM provider config")
 
     def public_snapshot(self) -> dict[str, object]:
@@ -68,6 +72,7 @@ class LLMProviderConfig:
             "rate_limit_fallback": self.rate_limit_fallback,
             "live_tests_enabled": self.live_tests_enabled,
             "google_credential_configured": self.google_credential_available,
+            "openai_credential_configured": self.openai_credential_available,
         }
 
 
@@ -80,10 +85,13 @@ def load_llm_provider_config(env: Mapping[str, str] | None = None) -> LLMProvide
     values = env or {}
     mode = _text(values.get("POA_LLM_MODE"), default="mock").lower()
     provider = _text(values.get("POA_LLM_PROVIDER"), default="mock" if mode == "mock" else "google").lower()
-    model = _text(
-        values.get("POA_LLM_MODEL"),
-        default=DEFAULT_MOCK_MODEL if mode == "mock" else DEFAULT_LIVE_MODEL,
-    )
+    if mode == "mock":
+        default_model = DEFAULT_MOCK_MODEL
+    elif provider == "openai":
+        default_model = DEFAULT_OPENAI_MODEL
+    else:
+        default_model = DEFAULT_LIVE_MODEL
+    model = _text(values.get("POA_LLM_MODEL"), default=default_model)
     return LLMProviderConfig(
         mode=mode,  # type: ignore[arg-type]
         provider=provider,  # type: ignore[arg-type]
@@ -94,6 +102,7 @@ def load_llm_provider_config(env: Mapping[str, str] | None = None) -> LLMProvide
         rate_limit_fallback=_text(values.get("POA_LLM_RATE_LIMIT_FALLBACK"), default="partial_report"),  # type: ignore[arg-type]
         live_tests_enabled=_bool(values.get("POA_LLM_LIVE_TESTS"), default=False),
         google_credential_available=bool(_text(values.get("GOOGLE_API_KEY"), default="")),
+        openai_credential_available=bool(_text(values.get("OPENAI_API_KEY"), default="")),
     )
 
 

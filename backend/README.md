@@ -20,9 +20,29 @@ Broker sync, market data providers, deterministic option/risk engines, TradingAg
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[dev]"     # editable install + test/dev tooling (pytest, httpx)
 uvicorn app.main:app --reload
 ```
+
+Dependencies are declared in `pyproject.toml` (PEP 621). Install variants:
+
+- `pip install .` — core runtime only (lean, offline, mock-default).
+- `pip install -e ".[dev]"` — editable + test/dev tooling.
+- `pip install ".[live-llm]"` — adds the optional, backend-only live LLM provider
+  SDKs (`google-generativeai`, `openai`); only needed to run a real live-provider
+  smoke. See `docs/claude-e-agentic/LLM_PROVIDER_SMOKE_TEST.md`.
+
+`uv.lock` is the reproducibility lockfile for backend dependencies. When
+`pyproject.toml` changes, regenerate it from `backend/`:
+
+```bash
+uv lock
+```
+
+The backend Docker image exports locked core runtime dependencies from
+`uv.lock` with `uv export --frozen --no-dev --no-emit-project`, then installs the
+project itself without re-resolving dependencies. The default image does not
+install the `live-llm` extra; live-provider SDKs remain local opt-in only.
 
 ## Local PostgreSQL
 

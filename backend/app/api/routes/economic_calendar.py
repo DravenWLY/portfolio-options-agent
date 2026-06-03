@@ -8,7 +8,7 @@ from app.services.economic_calendar import (
     EconomicCalendarRefreshError,
     EconomicCalendarService,
     EconomicCalendarSnapshot,
-    build_fmp_economic_calendar_refresh_runner_from_environment,
+    build_fred_economic_calendar_refresh_runner_from_environment,
     resolve_economic_calendar_window,
 )
 
@@ -20,7 +20,7 @@ def get_economic_calendar_service() -> EconomicCalendarService:
 
 
 def get_economic_calendar_refresh_runner() -> Callable[[], EconomicCalendarSnapshot]:
-    return build_fmp_economic_calendar_refresh_runner_from_environment()
+    return build_fred_economic_calendar_refresh_runner_from_environment()
 
 
 def get_economic_calendar_current_date() -> date:

@@ -2,7 +2,7 @@
 
 Status: PM scope decision
 Owner: Codex A - Product / Founder Strategy / PM
-Last updated: 2026-05-29
+Last updated: 2026-06-02
 
 ## MVP Definition
 
@@ -13,6 +13,11 @@ The broader product framing is a TradingAgents-inspired, portfolio-aware trade r
 The MVP is not a migration target for research terminals or portfolio
 analytics products. It should complement tools such as Stock Rover by covering
 the short, high-stakes moment before a user manually places a trade.
+
+The MVP agent experience is a five-persona specialist review team. The team
+helps the user manage their own portfolio decisions with evidence and
+freshness-aware analysis; it does not manage the portfolio for the user,
+recommend trades, allocate assets, or place orders.
 
 ## In Scope
 
@@ -29,6 +34,7 @@ the short, high-stakes moment before a user manually places a trade.
 | Output | Deterministic review report with optional AI explanation of structured facts. |
 | Storage | Durable report/review history for synthetic/local development and later beta. |
 | UI posture | Operational cockpit and review workspace, not a marketing page or trading terminal. |
+| Agent personas | Fundamentals Analyst, News Analyst, Technical Analyst, Risk Manager, Portfolio Manager. Clean UI labels only; backend keys may stay unchanged. |
 
 ## Out Of Scope
 
@@ -44,6 +50,9 @@ the short, high-stakes moment before a user manually places a trade.
 - Advanced option strategies: spreads, collars, rolls, diagonals, iron condors, multi-leg optimization.
 - TradingAgents in the fast review path.
 - Raw broker holdings/account values/cash/ids sent to LLMs or TradingAgents by default.
+- User-facing Trader persona, debate personas, conviction personas, AI
+  portfolio manager framing, or any persona that produces allocation/trade
+  recommendations.
 - Public SaaS auth, payment, mobile app, PDF export, OPRA redistribution, production deployment, or formal compliance launch.
 
 ## MVP Trade Flows
@@ -63,6 +72,11 @@ the short, high-stakes moment before a user manually places a trade.
 - Wheel lifecycle tracking.
 - Option screener or chain browser.
 - TradingAgents research evidence UI.
+- Additional personas beyond the approved five. The top P1 candidate is an
+  Options Strategist / Options Risk Specialist, likely starting as a bounded
+  extension of Risk Manager. Bull/Bear, aggressive/balanced/conservative, and
+  similar debate concepts may become non-conviction report sections later, not
+  separate MVP personas.
 
 Long call and long put support may remain as backend capability, but they should not drive the first PM/UX slice.
 

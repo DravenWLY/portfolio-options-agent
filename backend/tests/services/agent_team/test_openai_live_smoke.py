@@ -12,9 +12,10 @@ accidentally triggers a paid OpenAI call.
 It makes a real, paid OpenAI call ONLY when all three are set, uses synthetic
 workspace data only, and never prints or inspects the API key value.
 
-Run it manually (paid, with approval):
+Run it manually (paid, with approval; OPENAI_API_KEY must already be exported in
+your shell; do not pass a key inline):
     cd backend
-    POA_LLM_LIVE_TESTS=1 POA_LLM_OPENAI_LIVE=1 OPENAI_API_KEY=your_key \
+    POA_LLM_LIVE_TESTS=1 POA_LLM_OPENAI_LIVE=1 \
       ./.venv/bin/python -m pytest tests/services/agent_team/test_openai_live_smoke.py -m external -q
     # optional model override, e.g. POA_LLM_MODEL=gpt-5-nano (falls back to gpt-4o-mini)
 """
@@ -26,6 +27,11 @@ import os
 import pytest
 
 from app.schemas.trade_review_workspace import TradeReviewPortfolioPreviewRequest
+from app.services.agent_team.llm_provider import (
+    find_forbidden_string_values,
+    find_prohibited_llm_phrases,
+    find_secret_like_values,
+)
 from app.services.agent_team.provider_config import DEFAULT_OPENAI_MODEL, LLMProviderConfig
 from app.services.agent_team.provider_factory import resolve_llm_provider
 from app.services.agent_team.review_runner import ReviewRunner
@@ -78,13 +84,35 @@ def test_openai_live_smoke_runs_through_safety_and_eval() -> None:
     eval_checks = {flag.check for flag in state.eval_flags}
     assert {"generated_output_safety", "evidence_faithfulness", "role_boundary"} <= eval_checks
 
-    assert find_forbidden_keys(asdict(state), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS) == set()
     assert state.broker_snapshot_freshness["freshness_scope"] == "broker_snapshot"
     assert state.market_quote_freshness["freshness_scope"] == "market_quote"
 
-    # Provider warnings, if any, are safe "role:status" codes — no raw provider data.
+    # Output leaks no private data, introduces no advice/execution wording, and
+    # exposes no raw provider details on failure (reuses the app's validators).
+    _assert_live_run_state_safe(state)
+
+
+def _assert_live_run_state_safe(state) -> None:
+    payload = asdict(state)
+    # No forbidden private keys, private value tokens, or secret/key/URL-with-key
+    # patterns anywhere in the run state.
+    assert find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS) == set()
+    assert find_forbidden_string_values(payload) == set()
+    assert find_secret_like_values(payload) == set()
+    # No advice / order / execution / buy-sell / readiness wording introduced.
+    assert find_prohibited_llm_phrases(payload) == set()
+    # Generated output passed the safety boundary (unsafe live output is filtered
+    # upstream to a safe role failure, never surfaced as content).
+    eval_status = {flag.check: flag.status for flag in state.eval_flags}
+    assert eval_status["generated_output_safety"] == "passed"
+    # Provider warnings are safe "role:status" codes — no raw provider body/URL.
     for warning in state.provider_warnings:
-        assert ":" in warning
+        assert ":" in warning and "\n" not in warning and "http" not in warning.lower()
+    # Failures expose no raw exception body or URL via unavailable_reason.
+    for output in state.role_outputs:
+        reason = (output.unavailable_reason or "").lower()
+        assert "traceback" not in reason
+        assert "http://" not in reason and "https://" not in reason
 
 
 def _workspace():

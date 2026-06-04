@@ -11,9 +11,10 @@ import { MpIcon } from "../shared/mp";
  *   - quick question chips
  *   - send button
  *
- * This composer is visibly disabled and labelled "not yet active".
- * It does not submit, store, call an API, write to localStorage or
- * sessionStorage, or imply realtime behavior is live.
+ * This console is read-only. The composer is a permanently disabled, non-
+ * interactive surface — the copy frames it as not part of this build rather
+ * than "coming soon". It does not submit, store, call an API, write to
+ * localStorage or sessionStorage, or imply realtime behavior.
  *
  * All controls use `disabled`, `pointer-events: none`, and `aria-disabled`.
  * No click or keyboard interaction produces a side-effect.
@@ -38,7 +39,7 @@ export default function AgentTeamComposerPlaceholder() {
   return (
     <section
       style={styles.wrap}
-      aria-label="Follow-up composer (not yet active)"
+      aria-label="Follow-up composer (read-only, disabled)"
       aria-disabled="true"
     >
       {/* Quick question chips */}
@@ -54,7 +55,7 @@ export default function AgentTeamComposerPlaceholder() {
             {q}
           </button>
         ))}
-        <span style={styles.caveat}>Agent commentary is not advice</span>
+        <span style={styles.caveat}>Read-only</span>
       </div>
 
       {/* Input row */}
@@ -65,7 +66,7 @@ export default function AgentTeamComposerPlaceholder() {
           disabled
           placeholder="Ask a follow-up question…"
           style={styles.input}
-          aria-label="Follow-up question input (not yet active)"
+          aria-label="Follow-up question input (read-only, disabled)"
           tabIndex={-1}
         />
 
@@ -73,7 +74,7 @@ export default function AgentTeamComposerPlaceholder() {
         <select
           disabled
           style={styles.select}
-          aria-label="Direct to agent (not yet active)"
+          aria-label="Direct to agent (read-only, disabled)"
           tabIndex={-1}
         >
           <option>Broadcast to team</option>
@@ -96,7 +97,7 @@ export default function AgentTeamComposerPlaceholder() {
 
       <p style={styles.note}>
         <MpIcon name="lock" size={10} style={{ verticalAlign: "middle", marginRight: 4, color: "var(--mp-mute)" }} />
-        Follow-up questions are not yet active. This is a layout placeholder only.
+        This console is read-only. Interactive follow-up is not part of this build.
       </p>
     </section>
   );

@@ -27,10 +27,10 @@ import type { AgentTeamAnalysisConsoleRead } from "../types/agentTeam";
  * Single network path. No localStorage / sessionStorage writes for analysis,
  * role, prompt, provider, credential, or account data.
  *
- * The disabled composer is visually attached to the bottom of the middle
- * transcript panel. It makes no API calls and stores nothing.
- * Follow-up controls are disabled placeholders and are not active in this
- * build.
+ * This console is read-only: it renders one analysis run as a report, not an
+ * interactive agent chat. The composer at the bottom of the transcript is a
+ * permanently disabled, non-interactive surface — it makes no API calls and
+ * stores nothing, and the copy avoids implying it will become usable.
  */
 
 type Status = "idle" | "loading" | "success" | "error";
@@ -71,12 +71,15 @@ export default function AgentTeamAnalysisPage() {
       <PageHeader
         eyebrow="Workspace · agent console"
         title="Agent team analysis"
-        sub="Five role-separated agents review the proposed trade in fixed order. Deterministic facts come from the backend; agent commentary sits next to them, never instead of them. Analysis only — not advice, not a recommendation."
+        sub="A read-only review workspace: five role-separated agents analyze the proposed trade in fixed order, with deterministic backend facts shown alongside their commentary."
         right={
-          <>
-            <Badge tone="info" dot>mock provider</Badge>
-            <Badge tone="mute" dot={false}>analysis-only</Badge>
-          </>
+          <Badge
+            tone="mute"
+            dot={false}
+            title="Read-only analysis output. There is no interactive agent chat in this build."
+          >
+            Read-only
+          </Badge>
         }
       />
 

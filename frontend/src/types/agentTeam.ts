@@ -53,6 +53,8 @@ export type AgentTeamAnalysisPreviewRequest = TradeReviewPortfolioPreviewRequest
 
 export interface AgentTeamRoleOutputRead {
   role_name: AgentTeamRole;
+  /** Backend-owned user-facing label (P25A-T11). Render verbatim. */
+  display_name: string;
   status: AgentTeamRoleOutputStatus;
   provider_status: LLMProviderStatus;
   content_markdown: string | null;
@@ -64,6 +66,8 @@ export interface AgentTeamStageRead {
   stage: string;
   status: string;
   role_name?: AgentTeamRole | null;
+  /** Backend-owned user-facing label (P25A-T11); null for non-persona stages. */
+  display_name?: string | null;
   provider_status?: LLMProviderStatus | null;
   unavailable_reason?: string | null;
 }

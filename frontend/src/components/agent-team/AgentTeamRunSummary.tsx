@@ -86,7 +86,7 @@ export default function AgentTeamRunSummary({
 
       <p style={styles.note}>
         <MpIcon name="info" size={10} style={{ verticalAlign: "middle", marginRight: 3, color: "var(--mp-mute)" }} />
-        Analysis-only output. Not advice, not a recommendation. Generated {data.generated_at}.
+        Read-only analysis output · Generated {data.generated_at}
       </p>
     </section>
   );

@@ -18,6 +18,10 @@ import { MpIcon, type MpIconName } from "../shared/mp";
  * Each status indicator uses icon + text — never color alone.
  */
 
+/** Local fallback name + presentational subtitle. The `name` is used only when
+ *  no role output exists yet (pending); when output exists, the backend-owned
+ *  `display_name` is rendered verbatim. Subtitles/icons/order are presentational
+ *  helpers only and are never derived from the machine `role_name` as a label. */
 const ROLE_DISPLAY: Record<AgentTeamRole, { name: string; sub: string }> = {
   fundamentals_analyst: { name: "Fundamentals analyst", sub: "Earnings, valuation, margins" },
   news_analyst: { name: "News analyst", sub: "Catalysts, sentiment, events" },
@@ -25,6 +29,10 @@ const ROLE_DISPLAY: Record<AgentTeamRole, { name: string; sub: string }> = {
   risk_management_agent: { name: "Risk management agent", sub: "Coverage, collateral, rules" },
   portfolio_manager_agent: { name: "Portfolio manager", sub: "Synthesis, final stance" },
 };
+
+/** Quiet guardrail tooltip on the Portfolio Manager persona. */
+const PORTFOLIO_MANAGER_GUARDRAIL =
+  "Synthesizes the team's analysis for your review — does not manage your portfolio or recommend trades.";
 
 function statusIcon(status: AgentTeamRoleOutputRead["status"]): { icon: MpIconName; tone: MpTone } {
   if (status === "completed") return { icon: "check", tone: "live" };
@@ -60,6 +68,10 @@ export default function AgentTeamPipelineRail({ data }: PipelineRailProps) {
           const st = out ? statusIcon(out.status) : { icon: "circle" as MpIconName, tone: "mute" as MpTone };
           const statusLabel = out?.status ?? "pending";
           const display = ROLE_DISPLAY[role];
+          // Backend-owned label verbatim when output exists; local fallback only
+          // while the role is still pending (no output yet).
+          const roleName = out ? out.display_name : display.name;
+          const isPortfolioManager = role === "portfolio_manager_agent";
           const toneColor =
             st.tone === "live" ? "var(--mp-live)" :
             st.tone === "stale" ? "var(--mp-stale)" :
@@ -81,7 +93,12 @@ export default function AgentTeamPipelineRail({ data }: PipelineRailProps) {
 
               {/* Body */}
               <div style={styles.body}>
-                <span style={styles.roleName}>{display.name}</span>
+                <span
+                  style={styles.roleName}
+                  title={isPortfolioManager ? PORTFOLIO_MANAGER_GUARDRAIL : undefined}
+                >
+                  {roleName}
+                </span>
                 <span style={styles.roleSub}>{display.sub}</span>
                 <div style={styles.chips}>
                   <Pill tone={out ? statusToTone(out.status) : "mute"} title={`role status = ${statusLabel}`}>

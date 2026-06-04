@@ -134,12 +134,14 @@ Recent status:
 - P25A-T9 - Backend packaging/build migration cleanup: done after documentation cleanup.
 - P25A-T10 - Persona model analysis: done.
 - P25A-T11 - Backend display-label contract: done; frontend may render `display_name` verbatim when scheduled.
+- P25A-T12 - Read-only Agent Console handoff polish: done; Codex B review PASS.
+  - Frontend-only copy/label cleanup. Agent Console now presents itself as a read-only analysis report, not an interactive chat surface. Composer remains disabled and non-interactive; no backend, endpoint, fetch, payload, storage, provider/model selector, LLM, TradingAgents, MCP, LangGraph, or financial-computation behavior changed.
+- P25A-T13 - Single-run real-provider gate: done; Codex B review PASS.
+  - Hardened the opt-in Gemini/OpenAI live-smoke tests (synthetic data only) so a single controlled live run through `ReviewRunner` asserts: output passes the existing safety/eval path; run status is `completed`/`partially_completed`/`failed_safe`; no forbidden private keys/values, secret/key/URL patterns, or advice/order/execution wording; and provider failures degrade safely with no raw provider details leaked. Gemini path: `POA_LLM_LIVE_TESTS=1` + already-exported `GOOGLE_API_KEY`, cheap Flash model default, rate-limit/quota/unavailable are safe non-blocking. OpenAI path: extra `POA_LLM_OPENAI_LIVE=1` paid-ack gate; not run by default. Default suite stays offline/mock; no route/persistence/frontend/composer change. Live Gemini run not executed in this session (key not exported in the agent shell; agents do not read/source `.env`).
 
 Next possible work:
 
-- Safe read-only Agent Console handoff using reviewed display labels.
-- Single-run real-provider gate if explicitly approved and cost/rate-limit caveats are clear.
-- P25A-T12 - Migrate Gemini adapter from deprecated SDK to `google-genai`: proposed, low priority.
+- P25A-T14 - Migrate Gemini adapter from deprecated SDK to `google-genai`: proposed, low priority.
 
 ### Phase 24B - FRED Economic Awareness
 

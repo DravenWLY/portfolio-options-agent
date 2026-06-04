@@ -23,6 +23,9 @@ import { MpIcon, type MpIconName } from "../shared/mp";
  * computation, no HTML interpretation of content_markdown.
  */
 
+/** Local fallback labels — used ONLY for pending/no-output placeholder rows,
+ *  where no backend `display_name` is available yet. When a role output
+ *  exists, its backend-owned `display_name` is rendered verbatim instead. */
 const ROLE_DISPLAY: Record<AgentTeamRole, string> = {
   fundamentals_analyst: "Fundamentals analyst",
   news_analyst: "News analyst",
@@ -30,6 +33,10 @@ const ROLE_DISPLAY: Record<AgentTeamRole, string> = {
   risk_management_agent: "Risk management agent",
   portfolio_manager_agent: "Portfolio manager agent",
 };
+
+/** Quiet guardrail shown wherever the Portfolio Manager persona is identified. */
+const PORTFOLIO_MANAGER_GUARDRAIL =
+  "Synthesizes the team's analysis for your review — does not manage your portfolio or recommend trades.";
 
 const ROLE_ICON: Record<AgentTeamRole, MpIconName> = {
   fundamentals_analyst: "spark",
@@ -152,6 +159,10 @@ function RoleTurn({
 }) {
   const accent = ROLE_ACCENT[role];
   const icon = ROLE_ICON[role];
+  // Backend-owned label verbatim when output exists; local fallback only for
+  // the pending/no-output placeholder row.
+  const name = out ? out.display_name : ROLE_DISPLAY[role];
+  const isPortfolioManager = role === "portfolio_manager_agent";
 
   return (
     <div style={styles.turn}>
@@ -165,7 +176,7 @@ function RoleTurn({
         {/* Turn header */}
         <div style={styles.turnHeader}>
           <span style={{ ...styles.turnName, color: accent }}>
-            {ROLE_DISPLAY[role]}
+            {name}
           </span>
           <div style={styles.turnBadges}>
             {out ? (
@@ -181,6 +192,11 @@ function RoleTurn({
             )}
           </div>
         </div>
+
+        {/* Portfolio Manager persona guardrail — quiet, compact, once per turn */}
+        {isPortfolioManager && (
+          <p style={styles.roleGuardrail}>{PORTFOLIO_MANAGER_GUARDRAIL}</p>
+        )}
 
         {/* Content */}
         {out ? (
@@ -220,8 +236,7 @@ function FinalSynthesisTurn({ text }: { text: string | null }) {
           <Badge tone="info" dot={false}>analysis-only narrative</Badge>
         </div>
         <p style={styles.synthesisNote}>
-          Narrative summary from the portfolio-manager role. Not advice, not a
-          recommendation, not a forecast.
+          Narrative summary from the portfolio-manager role.
         </p>
         {text ? (
           <pre style={styles.synthesisPre}>{text}</pre>
@@ -330,6 +345,13 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     gap: "var(--space-1)",
     flexWrap: "wrap",
+  },
+  roleGuardrail: {
+    margin: 0,
+    fontSize: "var(--font-size-xs)",
+    color: "var(--mp-mute)",
+    lineHeight: 1.5,
+    fontStyle: "italic",
   },
   unavailable: {
     fontSize: "var(--font-size-sm)",

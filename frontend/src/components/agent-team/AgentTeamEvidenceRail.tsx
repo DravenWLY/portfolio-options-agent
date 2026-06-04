@@ -141,8 +141,11 @@ function StageList({ stages }: { stages: AgentTeamStageRead[] }) {
           <div style={styles.stageBody}>
             <span style={styles.stageName}>{s.stage}</span>
             <span style={styles.stageStatus}>{s.status}</span>
-            {s.role_name && (
-              <span style={styles.stageMeta}>role: {s.role_name}</span>
+            {/* Backend-owned persona label verbatim when present; for null
+                display_name stages keep the deterministic stage/status only —
+                never surface the machine role_name or invent a persona. */}
+            {s.display_name && (
+              <span style={styles.stageMeta}>{s.display_name}</span>
             )}
             {s.provider_status && (
               <span style={styles.stageMeta}>provider: {s.provider_status}</span>

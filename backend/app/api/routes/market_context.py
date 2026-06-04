@@ -2,12 +2,12 @@ from collections.abc import Callable
 
 from fastapi import APIRouter, Depends
 
-from app.schemas.market_mood import MarketMoodRead, MarketMoodRefreshStatusRead
+from app.schemas.market_mood import MarketMoodDetailRead, MarketMoodRead, MarketMoodRefreshStatusRead
 from app.services.market_mood import (
     MarketMoodRefreshError,
     MarketMoodService,
     MarketMoodSnapshot,
-    refresh_market_mood_unconfigured,
+    build_cnn_market_mood_refresh_runner,
 )
 
 router = APIRouter(prefix="/market-context", tags=["market-context"])
@@ -18,7 +18,7 @@ def get_market_mood_service() -> MarketMoodService:
 
 
 def get_market_mood_refresh_runner() -> Callable[[], MarketMoodSnapshot]:
-    return refresh_market_mood_unconfigured
+    return build_cnn_market_mood_refresh_runner()
 
 
 @router.get("/market-mood", response_model=MarketMoodRead)
@@ -28,6 +28,15 @@ def get_market_mood(
     """Return broad market sentiment context for display only."""
 
     return service.get_market_mood()
+
+
+@router.get("/market-mood/detail", response_model=MarketMoodDetailRead)
+def get_market_mood_detail(
+    service: MarketMoodService = Depends(get_market_mood_service),
+) -> MarketMoodDetailRead:
+    """Return full Market Mood detail context for display only."""
+
+    return service.get_market_mood_detail()
 
 
 @router.post("/market-mood/refresh", response_model=MarketMoodRefreshStatusRead)

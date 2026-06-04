@@ -77,6 +77,45 @@ Reads first:
 - the current task section in `docs/shared/implementation_plan.md`
 - relevant backend source and tests
 
+### Codex F - Frontend UI Design Support
+
+Owns:
+
+- Backup frontend UI implementation and visual polish when Claude A is unavailable
+  or usage-limited.
+- React/Vite/TypeScript frontend work, dashboard/detail-page polish, chart
+  presentation, layout quality, responsive behavior, accessibility, and
+  Portfolio Copilot visual consistency.
+
+Does not own:
+
+- Backend implementation, API contract invention, database migrations,
+  deterministic finance calculations, broker/provider integration, product
+  scope approval, or safety/privacy sign-off.
+
+Boundaries:
+
+- Follow the same frontend standards as Claude A.
+- Always read and follow `.claude/skills/frontend-design/SKILL.md` before
+  frontend UI implementation or review.
+- Use `.claude/skills/finance-dashboard-ux-review/SKILL.md` when portfolio,
+  options, dashboard, or fintech UX judgment is part of the task.
+- Consume reviewed backend contracts only. Do not invent frontend-only data
+  fields to fill visual gaps.
+- Do not add frontend-direct provider calls, storage writes for sensitive data,
+  execution/order controls, advice/recommendation language, or LLM/agent
+  ingestion paths.
+- Report using `docs/shared/AGENT_REPORT_FORMAT.md`.
+
+Reads first:
+
+- `AGENTS.md`
+- `CLAUDE.md`
+- `docs/shared/AGENT_REPORT_FORMAT.md`
+- `.claude/skills/frontend-design/SKILL.md`
+- current task section in `docs/shared/implementation_plan.md`
+- changed frontend files and directly relevant backend read contracts
+
 ### Claude A - Frontend UI/UX Design
 
 Owns:
@@ -94,22 +133,31 @@ Reads first:
 - relevant backend API contracts/schemas
 - `docs/shared/AI_TEAM.md`
 
-### Claude B - Code Review / QA / Security Review for Codex Work
+### Claude B - Frontend Visual / Design Review
 
 Owns:
 
-- Review of Codex backend implementation, QA checklist, test coverage, error handling, secret leakage risk, API contract consistency, maintainability, and financial-advice wording risk.
+- Visual/design review of frontend work, especially dashboard layout, page
+  hierarchy, readability, accessibility, responsive behavior, and fintech UX
+  clarity.
+- Lightweight UI safety review when visible copy or controls could imply
+  advice, execution, urgency, or unsupported product capability.
 
 Does not own:
 
-- Large implementation changes unless explicitly asked. Review output should be adjudicated by Codex C or Codex B before implementation.
+- Backend contract review, architecture sign-off, provider/data-source review,
+  broad repo-wide audits, or large implementation changes unless explicitly
+  asked.
+- Claude B should not redo Codex B's contract/safety review by default.
 
 Reads first:
 
 - changed files and directly related tests
 - relevant `docs/shared/implementation_plan.md` task section
 - `docs/shared/AI_TEAM.md`
-- relevant skills or review checklists
+- `.claude/skills/frontend-design/SKILL.md`
+- `.claude/skills/finance-dashboard-ux-review/SKILL.md` when portfolio/options
+  UX judgment is needed
 
 ### Claude C - Competitor / Product Intelligence
 

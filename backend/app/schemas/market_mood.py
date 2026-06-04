@@ -13,6 +13,8 @@ MarketMoodFreshnessStatus: TypeAlias = Literal["fresh", "stale", "unavailable"]
 MarketMoodRating: TypeAlias = Literal["extreme_fear", "fear", "neutral", "greed", "extreme_greed", "unknown"]
 MarketMoodComparisonWindow: TypeAlias = Literal["1w", "1m", "1y"]
 MarketMoodRefreshStatus: TypeAlias = Literal["refreshed", "failed"]
+MarketMoodAxisValueFormat: TypeAlias = Literal["number", "percent", "ratio", "index", "currency", "spread", "unknown"]
+MarketMoodValueMeaning: TypeAlias = Literal["fear", "greed", "neutral_or_contextual", "unknown"]
 
 PROHIBITED_MARKET_MOOD_PHRASES = (
     "i recommend",
@@ -77,6 +79,39 @@ class MarketMoodComponentRead(BaseModel):
     rating_label: str
 
 
+class MarketMoodIndicatorHistoryPointRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    date: str
+    value: float | None = None
+    value_label: str | None = None
+    score: float | None = None
+    score_label: str | None = None
+    rating: MarketMoodRating
+    rating_label: str
+
+
+class MarketMoodIndicatorRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    component_key: str
+    display_name: str
+    subtitle: str
+    description: str
+    current_score: float | None = None
+    current_score_label: str | None = None
+    current_rating: MarketMoodRating
+    current_rating_label: str
+    current_value: float | None = None
+    current_value_label: str | None = None
+    unit_label: str | None = None
+    axis_label: str | None = None
+    axis_value_format: MarketMoodAxisValueFormat
+    higher_value_meaning: MarketMoodValueMeaning
+    lower_value_meaning: MarketMoodValueMeaning
+    history: tuple[MarketMoodIndicatorHistoryPointRead, ...]
+
+
 class MarketMoodRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
@@ -109,6 +144,44 @@ class MarketMoodRead(BaseModel):
     def market_mood_read_must_be_safe(self) -> "MarketMoodRead":
         if self.is_trading_signal or self.is_actionability_input or self.is_risk_rule_input:
             raise ValueError("market mood must not be a signal, actionability input, or risk-rule input")
+        if self.score_min != 0 or self.score_max != 100:
+            raise ValueError("market mood score range must remain 0-100")
+        validate_market_mood_payload(self.model_dump(mode="python"))
+        return self
+
+
+class MarketMoodDetailRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    data_mode: MarketMoodDataMode
+    source_label: str
+    source_detail_label: str
+    source_rights_notice: str
+    generated_at: datetime
+    updated_at_utc: datetime | None = None
+    updated_at_label: str | None = None
+    freshness_status: MarketMoodFreshnessStatus
+    freshness_label: str
+    is_trading_signal: bool
+    is_actionability_input: bool
+    is_risk_rule_input: bool
+    score: float | None = None
+    score_label: str | None = None
+    score_min: int = Field(default=0)
+    score_max: int = Field(default=100)
+    rating: MarketMoodRating
+    rating_label: str
+    trend_series: tuple[MarketMoodTrendPointRead, ...]
+    comparisons: tuple[MarketMoodComparisonRead, ...]
+    indicators: tuple[MarketMoodIndicatorRead, ...]
+    caveat_codes: tuple[str, ...]
+    limitations: tuple[str, ...]
+    status_message: str | None = None
+
+    @model_validator(mode="after")
+    def market_mood_detail_must_be_safe(self) -> "MarketMoodDetailRead":
+        if self.is_trading_signal or self.is_actionability_input or self.is_risk_rule_input:
+            raise ValueError("market mood detail must not be a signal, actionability input, or risk-rule input")
         if self.score_min != 0 or self.score_max != 100:
             raise ValueError("market mood score range must remain 0-100")
         validate_market_mood_payload(self.model_dump(mode="python"))

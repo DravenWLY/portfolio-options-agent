@@ -8,10 +8,14 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
+from urllib.request import Request, urlopen
 
 from app.schemas.market_mood import (
     MarketMoodComparisonRead,
     MarketMoodComponentRead,
+    MarketMoodDetailRead,
+    MarketMoodIndicatorHistoryPointRead,
+    MarketMoodIndicatorRead,
     MarketMoodRead,
     MarketMoodTrendPointRead,
 )
@@ -20,6 +24,15 @@ from app.schemas.market_mood import (
 _SNAPSHOT_VERSION = 1
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MARKET_MOOD_SNAPSHOT_PATH = _BACKEND_ROOT / "cache" / "market_mood_snapshot.json"
+CNN_FEAR_GREED_GRAPH_URL = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata/2021-03-01"
+CNN_FEAR_GREED_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+    ),
+    "Accept": "application/json,text/plain,*/*",
+    "Referer": "https://www.cnn.com/markets/fear-and-greed",
+}
 
 SOURCE_LABEL = "CNN-derived Fear & Greed"
 SOURCE_DETAIL_LABEL = "Latest available snapshot"
@@ -46,6 +59,80 @@ COMPONENT_DEFINITIONS = (
     ("junk_bond_demand", "Junk Bond Demand"),
 )
 DETAIL_COMPONENT_KEYS = tuple(key for key, _label in COMPONENT_DEFINITIONS if key != OVERALL_COMPONENT_KEY)
+PROVIDER_COMPONENT_ALIASES = {
+    "market_momentum": ("market_momentum_sp500", "marketMomentumSp500"),
+    "stock_price_strength": ("stock_price_strength", "stockPriceStrength"),
+    "stock_price_breadth": ("stock_price_breadth", "stockPriceBreadth"),
+    "put_call_options": ("put_call_options", "putCallOptions"),
+    "market_volatility": ("market_volatility_vix", "market_volatility", "marketVolatilityVix", "marketVolatility"),
+    "safe_haven_demand": ("safe_haven_demand", "safeHavenDemand"),
+    "junk_bond_demand": ("junk_bond_demand", "junkBondDemand"),
+}
+INDICATOR_METADATA = {
+    "market_momentum": {
+        "subtitle": "Broad index momentum context",
+        "description": "Shows whether broad equity index levels are above or below a longer-term reference line.",
+        "unit_label": "%",
+        "axis_label": "Distance from reference line",
+        "axis_value_format": "percent",
+        "higher_value_meaning": "greed",
+        "lower_value_meaning": "fear",
+    },
+    "stock_price_strength": {
+        "subtitle": "New highs and lows context",
+        "description": "Summarizes the balance of stocks making new highs versus new lows.",
+        "unit_label": "%",
+        "axis_label": "Net strength",
+        "axis_value_format": "percent",
+        "higher_value_meaning": "greed",
+        "lower_value_meaning": "fear",
+    },
+    "stock_price_breadth": {
+        "subtitle": "Participation breadth context",
+        "description": "Shows whether participation across stocks is broad or narrow.",
+        "unit_label": "index",
+        "axis_label": "Breadth index",
+        "axis_value_format": "index",
+        "higher_value_meaning": "greed",
+        "lower_value_meaning": "fear",
+    },
+    "put_call_options": {
+        "subtitle": "Options positioning context",
+        "description": "Shows option activity balance through a ratio-style measure.",
+        "unit_label": "ratio",
+        "axis_label": "Put/call ratio",
+        "axis_value_format": "ratio",
+        "higher_value_meaning": "fear",
+        "lower_value_meaning": "greed",
+    },
+    "market_volatility": {
+        "subtitle": "Expected volatility context",
+        "description": "Shows whether expected volatility is elevated or muted.",
+        "unit_label": "index",
+        "axis_label": "Volatility index",
+        "axis_value_format": "index",
+        "higher_value_meaning": "fear",
+        "lower_value_meaning": "greed",
+    },
+    "safe_haven_demand": {
+        "subtitle": "Defensive demand context",
+        "description": "Shows relative demand for defensive assets versus broad equity exposure.",
+        "unit_label": "bps",
+        "axis_label": "Relative demand spread",
+        "axis_value_format": "spread",
+        "higher_value_meaning": "fear",
+        "lower_value_meaning": "greed",
+    },
+    "junk_bond_demand": {
+        "subtitle": "Credit spread context",
+        "description": "Shows whether lower-quality credit spreads are tight or wide.",
+        "unit_label": "bps",
+        "axis_label": "Credit spread",
+        "axis_value_format": "spread",
+        "higher_value_meaning": "fear",
+        "lower_value_meaning": "greed",
+    },
+}
 
 
 class MarketMoodRefreshError(RuntimeError):
@@ -82,6 +169,14 @@ class MarketMoodComponent:
 
 
 @dataclass(frozen=True)
+class MarketMoodIndicatorPoint:
+    day: date
+    value: float | None
+    score: float | None
+    rating: str
+
+
+@dataclass(frozen=True)
 class MarketMoodSnapshot:
     data_mode: str
     source_label: str
@@ -91,6 +186,7 @@ class MarketMoodSnapshot:
     updated_at_utc: datetime | None
     trend_series: tuple[MarketMoodPoint, ...]
     components: tuple[MarketMoodComponent, ...]
+    indicator_history: Mapping[str, tuple[MarketMoodIndicatorPoint, ...]]
     caveat_codes: tuple[str, ...]
     limitations: tuple[str, ...]
     status_message: str | None = None
@@ -152,6 +248,7 @@ class SyntheticMarketMoodProvider:
             updated_at_utc=generated,
             trend_series=points,
             components=_synthetic_components(),
+            indicator_history=_synthetic_indicator_history(),
             caveat_codes=("synthetic_fixture", "internal_demo_source_review_pending"),
             limitations=LIMITATIONS,
             status_message="Synthetic Market Mood fixture.",
@@ -164,6 +261,13 @@ class SnapshotMarketMoodProvider:
 
     def snapshot(self) -> MarketMoodSnapshot:
         return self._snapshot
+
+
+class UnavailableMarketMoodProvider:
+    """Runtime product fallback when no provider-reference snapshot is available."""
+
+    def snapshot(self) -> MarketMoodSnapshot:
+        raise MarketMoodRefreshError("market mood provider-reference snapshot unavailable")
 
 
 class CnnDerivedMarketMoodProvider:
@@ -184,6 +288,55 @@ class CnnDerivedMarketMoodProvider:
         return snapshot
 
 
+class CnnFearGreedHttpClient:
+    """Tiny runtime client used only by the explicit protected Market Mood refresh."""
+
+    def __init__(
+        self,
+        *,
+        fetch_text: Any | None = None,
+        endpoint_url: str = CNN_FEAR_GREED_GRAPH_URL,
+        timeout_seconds: int = 15,
+    ) -> None:
+        self._fetch_text = fetch_text or self._fetch_public_text_url
+        self._endpoint_url = endpoint_url
+        self._timeout_seconds = timeout_seconds
+
+    def fetch_market_mood(self) -> Mapping[str, Any]:
+        raw_text: str | None = None
+        try:
+            raw_text = self._fetch_text(self._endpoint_url)
+        except Exception:
+            # Suppress the exception chain: transport/parser failures can embed
+            # internal URLs or raw provider bodies. Keep refresh responses/logs
+            # on the sanitized MarketMoodRefreshError boundary.
+            pass
+        if raw_text is None:
+            raise MarketMoodRefreshError("market mood provider fetch failed")
+        payload: Any | None = None
+        try:
+            payload = json.loads(raw_text)
+        except Exception:
+            pass
+        if payload is None:
+            raise MarketMoodRefreshError("market mood provider fetch failed")
+        if not isinstance(payload, Mapping):
+            raise MarketMoodRefreshError("market mood provider response was unavailable")
+        return payload
+
+    def _fetch_public_text_url(self, url: str) -> str:
+        request = Request(url, headers=CNN_FEAR_GREED_HEADERS)
+        text: str | None = None
+        try:
+            with urlopen(request, timeout=self._timeout_seconds) as response:  # nosec B310 - explicit protected public reference fetch
+                text = response.read().decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        if text is None:
+            raise MarketMoodRefreshError("market mood provider fetch failed")
+        return text
+
+
 class MarketMoodService:
     def __init__(self, provider: MarketMoodProvider | None = None) -> None:
         self._provider = provider or default_market_mood_provider()
@@ -195,18 +348,29 @@ class MarketMoodService:
             return unavailable_market_mood_read(current_time=current_time)
         return read_from_snapshot(snapshot, current_time=current_time)
 
+    def get_market_mood_detail(self, *, current_time: datetime | None = None) -> MarketMoodDetailRead:
+        try:
+            snapshot = self._provider.snapshot()
+        except Exception:
+            return unavailable_market_mood_detail_read(current_time=current_time)
+        return detail_from_snapshot(snapshot, current_time=current_time)
+
 
 def default_market_mood_provider() -> MarketMoodProvider:
     snapshot = get_active_market_mood_snapshot()
-    if snapshot is not None:
+    if snapshot is not None and _is_product_display_snapshot(snapshot):
         return SnapshotMarketMoodProvider(snapshot)
-    return SyntheticMarketMoodProvider()
+    return UnavailableMarketMoodProvider()
 
 
 def get_active_market_mood_snapshot() -> MarketMoodSnapshot | None:
     if _AUTO_RESTORE_ENABLED and GLOBAL_MARKET_MOOD_STORE.active_snapshot is None:
         restore_active_market_mood_snapshot()
     return GLOBAL_MARKET_MOOD_STORE.active_snapshot
+
+
+def _is_product_display_snapshot(snapshot: MarketMoodSnapshot) -> bool:
+    return snapshot.data_mode == "provider_reference"
 
 
 def clear_active_market_mood_snapshot(*, disable_auto_restore: bool = False) -> None:
@@ -278,10 +442,93 @@ def unavailable_market_mood_read(*, current_time: datetime | None = None) -> Mar
     )
 
 
+def detail_from_snapshot(snapshot: MarketMoodSnapshot, *, current_time: datetime | None = None) -> MarketMoodDetailRead:
+    current = current_time or datetime.now(UTC)
+    freshness_status, freshness_label = _freshness(snapshot, current_time=current)
+    score = snapshot.score
+    rating = _normalize_rating(snapshot.rating, score=score)
+    return MarketMoodDetailRead(
+        data_mode=snapshot.data_mode,
+        source_label=snapshot.source_label,
+        source_detail_label=snapshot.source_detail_label,
+        source_rights_notice=snapshot.source_rights_notice,
+        generated_at=snapshot.generated_at,
+        updated_at_utc=snapshot.updated_at_utc,
+        updated_at_label=_updated_label(snapshot.updated_at_utc),
+        freshness_status=freshness_status,
+        freshness_label=freshness_label,
+        is_trading_signal=False,
+        is_actionability_input=False,
+        is_risk_rule_input=False,
+        score=score,
+        score_label=_score_label(score),
+        rating=rating,
+        rating_label=_rating_label(rating),
+        trend_series=tuple(_trend_point_read(point) for point in snapshot.trend_series),
+        comparisons=_comparisons(snapshot.trend_series),
+        indicators=_indicator_reads(snapshot),
+        caveat_codes=snapshot.caveat_codes,
+        limitations=snapshot.limitations,
+        status_message=snapshot.status_message,
+    )
+
+
+def unavailable_market_mood_detail_read(*, current_time: datetime | None = None) -> MarketMoodDetailRead:
+    generated = current_time or datetime.now(UTC)
+    return MarketMoodDetailRead(
+        data_mode="unavailable",
+        source_label=UNAVAILABLE_SOURCE_LABEL,
+        source_detail_label=UNAVAILABLE_SOURCE_DETAIL_LABEL,
+        source_rights_notice=SOURCE_RIGHTS_NOTICE,
+        generated_at=generated,
+        updated_at_utc=None,
+        updated_at_label=None,
+        freshness_status="unavailable",
+        freshness_label="Market Mood unavailable.",
+        is_trading_signal=False,
+        is_actionability_input=False,
+        is_risk_rule_input=False,
+        score=None,
+        score_label=None,
+        rating="unknown",
+        rating_label="Unknown",
+        trend_series=(),
+        comparisons=_empty_comparisons(),
+        indicators=(),
+        caveat_codes=("unavailable", "internal_demo_source_review_pending"),
+        limitations=LIMITATIONS,
+        status_message="Market Mood is temporarily unavailable.",
+    )
+
+
 def refresh_market_mood_unconfigured() -> MarketMoodSnapshot:
     """Default protected route runner. It is intentionally disabled until configured."""
 
     raise MarketMoodRefreshError("market mood refresh is not configured")
+
+
+def build_cnn_market_mood_refresh_runner(
+    *,
+    client: MarketMoodClient | None = None,
+    fetch_text: Any | None = None,
+    endpoint_url: str = CNN_FEAR_GREED_GRAPH_URL,
+    store: MarketMoodSnapshotStore = GLOBAL_MARKET_MOOD_STORE,
+    snapshot_path: Path | str | None = None,
+    now: Any | None = None,
+) -> Any:
+    """Create the explicit protected refresh runner for CNN-derived provider-reference data."""
+
+    def run() -> MarketMoodSnapshot:
+        current = now() if now is not None else datetime.now(UTC)
+        http_client = client or CnnFearGreedHttpClient(fetch_text=fetch_text, endpoint_url=endpoint_url)
+        provider = CnnDerivedMarketMoodProvider(http_client, generated_at=current)
+        return refresh_and_persist_market_mood_snapshot(
+            provider=provider,
+            store=store,
+            snapshot_path=snapshot_path or DEFAULT_MARKET_MOOD_SNAPSHOT_PATH,
+        )
+
+    return run
 
 
 def refresh_and_persist_market_mood_snapshot(
@@ -320,6 +567,10 @@ def save_market_mood_snapshot(
         "updated_at_utc": snapshot.updated_at_utc.isoformat() if snapshot.updated_at_utc else None,
         "trend_series": [_point_payload(point) for point in snapshot.trend_series],
         "components": [_component_payload(component) for component in snapshot.components],
+        "indicator_history": {
+            key: [_indicator_point_payload(point) for point in history]
+            for key, history in snapshot.indicator_history.items()
+        },
         "caveat_codes": list(snapshot.caveat_codes),
         "limitations": list(snapshot.limitations),
         "status_message": snapshot.status_message,
@@ -365,9 +616,13 @@ def _snapshot_from_provider_payload(payload: Mapping[str, Any], *, generated_at:
     score = _safe_score(_first_value(overall, ("score", "value", "current_value", "currentValue")))
     rating = _normalize_rating(_first_string(overall, ("rating", "status", "classification")), score=score)
     updated = _parse_datetime(_first_value(overall, ("updated_at", "updatedAt", "timestamp", "lastUpdated")) or payload.get("updated_at"))
-    trend_rows = _first_sequence(payload, ("trend", "history", "historical", "one_year_trend", "oneYearTrend"))
+    trend_rows = _first_sequence(
+        payload,
+        ("trend", "history", "historical", "one_year_trend", "oneYearTrend", "fear_and_greed_historical", "fearGreedHistorical"),
+    )
     trend_points = _trend_points_from_provider(trend_rows, current_score=score, current_rating=rating, updated_at=updated)
     components = _components_from_provider_payload(payload)
+    indicator_history = _indicator_history_from_provider_payload(payload)
     return MarketMoodSnapshot(
         data_mode="provider_reference",
         source_label=SOURCE_LABEL,
@@ -377,6 +632,7 @@ def _snapshot_from_provider_payload(payload: Mapping[str, Any], *, generated_at:
         updated_at_utc=updated,
         trend_series=trend_points,
         components=components,
+        indicator_history=indicator_history,
         caveat_codes=("provider_reference", "internal_demo_source_review_pending"),
         limitations=LIMITATIONS,
         status_message="Latest available Market Mood snapshot.",
@@ -417,8 +673,37 @@ def _components_from_provider_payload(payload: Mapping[str, Any]) -> tuple[Marke
     return tuple(components)
 
 
+def _indicator_history_from_provider_payload(payload: Mapping[str, Any]) -> dict[str, tuple[MarketMoodIndicatorPoint, ...]]:
+    component_source = _nested_mapping(payload, ("components", "indicators")) or payload
+    history: dict[str, tuple[MarketMoodIndicatorPoint, ...]] = {}
+    for key in DETAIL_COMPONENT_KEYS:
+        source = _component_source(component_source, key)
+        if source is None:
+            history[key] = ()
+            continue
+        rows = _first_sequence(source, ("history", "trend", "series", "data"))
+        points = []
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            day = _parse_date(_first_value(row, ("date", "day", "x")))
+            score = _safe_score(_first_value(row, ("score", "sentiment_score", "sentimentScore")))
+            value = _safe_float(_first_value(row, ("value", "raw_value", "rawValue", "y")))
+            if day is None or (score is None and value is None):
+                continue
+            points.append(MarketMoodIndicatorPoint(day, value, score, _normalize_rating(_first_string(row, ("rating", "status")), score=score)))
+        history[key] = tuple(sorted(points, key=lambda point: point.day))
+    return history
+
+
 def _component_source(source: Mapping[str, Any], key: str) -> Mapping[str, Any] | None:
-    candidates = (key, key.replace("_", "-"), _camel_case(key), _pascal_case(key))
+    candidates = (
+        key,
+        key.replace("_", "-"),
+        _camel_case(key),
+        _pascal_case(key),
+        *PROVIDER_COMPONENT_ALIASES.get(key, ()),
+    )
     for candidate in candidates:
         value = source.get(candidate)
         if isinstance(value, Mapping):
@@ -426,8 +711,63 @@ def _component_source(source: Mapping[str, Any], key: str) -> Mapping[str, Any] 
     return None
 
 
+def _indicator_reads(snapshot: MarketMoodSnapshot) -> tuple[MarketMoodIndicatorRead, ...]:
+    components = {component.component_key: component for component in snapshot.components}
+    indicators = []
+    for key in DETAIL_COMPONENT_KEYS:
+        metadata = INDICATOR_METADATA[key]
+        component = components.get(key)
+        history = tuple(snapshot.indicator_history.get(key, ()))
+        current_point = history[-1] if history else None
+        current_score = component.score if component is not None else (current_point.score if current_point is not None else None)
+        current_rating = _normalize_rating(component.rating if component is not None else None, score=current_score)
+        current_value = current_point.value if current_point is not None else None
+        indicators.append(
+            MarketMoodIndicatorRead(
+                component_key=key,
+                display_name=_display_name(key),
+                subtitle=str(metadata["subtitle"]),
+                description=str(metadata["description"]),
+                current_score=current_score,
+                current_score_label=_score_label(current_score),
+                current_rating=current_rating,
+                current_rating_label=_rating_label(current_rating),
+                current_value=current_value,
+                current_value_label=_value_label(current_value, axis_value_format=str(metadata["axis_value_format"])),
+                unit_label=str(metadata["unit_label"]) if metadata["unit_label"] is not None else None,
+                axis_label=str(metadata["axis_label"]) if metadata["axis_label"] is not None else None,
+                axis_value_format=str(metadata["axis_value_format"]),
+                higher_value_meaning=str(metadata["higher_value_meaning"]),
+                lower_value_meaning=str(metadata["lower_value_meaning"]),
+                history=tuple(_indicator_history_point_read(point, axis_value_format=str(metadata["axis_value_format"])) for point in history),
+            )
+        )
+    return tuple(indicators)
+
+
+def _indicator_history_point_read(point: MarketMoodIndicatorPoint, *, axis_value_format: str) -> MarketMoodIndicatorHistoryPointRead:
+    rating = _normalize_rating(point.rating, score=point.score)
+    return MarketMoodIndicatorHistoryPointRead(
+        date=point.day.isoformat(),
+        value=point.value,
+        value_label=_value_label(point.value, axis_value_format=axis_value_format),
+        score=point.score,
+        score_label=_score_label(point.score),
+        rating=rating,
+        rating_label=_rating_label(rating),
+    )
+
+
+def _display_name(component_key: str) -> str:
+    for key, label in COMPONENT_DEFINITIONS:
+        if key == component_key:
+            return label
+    return component_key.replace("_", " ").title()
+
+
 def _validate_snapshot(snapshot: MarketMoodSnapshot) -> None:
     read_from_snapshot(snapshot)
+    detail_from_snapshot(snapshot)
 
 
 def _snapshot_from_payload(payload: Any) -> MarketMoodSnapshot:
@@ -442,6 +782,11 @@ def _snapshot_from_payload(payload: Any) -> MarketMoodSnapshot:
         updated_at_utc=_optional_datetime(payload.get("updated_at_utc")),
         trend_series=tuple(_point_from_payload(item) for item in payload.get("trend_series", ())),
         components=tuple(_component_from_payload(item) for item in payload.get("components", ())),
+        indicator_history={
+            str(key): tuple(_indicator_point_from_payload(item) for item in value)
+            for key, value in payload.get("indicator_history", {}).items()
+            if isinstance(value, list)
+        },
         caveat_codes=tuple(str(item) for item in payload.get("caveat_codes", ())),
         limitations=tuple(str(item) for item in payload.get("limitations", LIMITATIONS)),
         status_message=payload.get("status_message"),
@@ -458,6 +803,15 @@ def _component_payload(component: MarketMoodComponent) -> dict[str, Any]:
         "display_name": component.display_name,
         "score": component.score,
         "rating": component.rating,
+    }
+
+
+def _indicator_point_payload(point: MarketMoodIndicatorPoint) -> dict[str, Any]:
+    return {
+        "date": point.day.isoformat(),
+        "value": point.value,
+        "score": point.score,
+        "rating": point.rating,
     }
 
 
@@ -481,6 +835,19 @@ def _component_from_payload(payload: Any) -> MarketMoodComponent:
     )
 
 
+def _indicator_point_from_payload(payload: Any) -> MarketMoodIndicatorPoint:
+    if not isinstance(payload, Mapping):
+        raise ValueError("invalid market mood indicator history point")
+    day = date.fromisoformat(str(payload["date"]))
+    score = _safe_score(payload.get("score"))
+    return MarketMoodIndicatorPoint(
+        day=day,
+        value=_safe_float(payload.get("value")),
+        score=score,
+        rating=_normalize_rating(str(payload.get("rating", "unknown")), score=score),
+    )
+
+
 def _synthetic_components() -> tuple[MarketMoodComponent, ...]:
     scores = {
         "market_momentum": 61.0,
@@ -496,6 +863,36 @@ def _synthetic_components() -> tuple[MarketMoodComponent, ...]:
         for key, label in COMPONENT_DEFINITIONS
         if key != OVERALL_COMPONENT_KEY
     )
+
+
+def _synthetic_indicator_history() -> dict[str, tuple[MarketMoodIndicatorPoint, ...]]:
+    dates = (date(2026, 5, 12), date(2026, 5, 19), date(2026, 5, 26), date(2026, 6, 2))
+    values = {
+        "market_momentum": (1.8, 2.4, 3.1, 3.6),
+        "stock_price_strength": (48.0, 51.0, 54.0, 57.0),
+        "stock_price_breadth": (102.0, 106.0, 111.0, 115.0),
+        "put_call_options": (0.92, 0.88, 0.84, 0.81),
+        "market_volatility": (19.2, 17.4, 16.3, 15.8),
+        "safe_haven_demand": (24.0, 19.0, 16.0, 14.0),
+        "junk_bond_demand": (382.0, 361.0, 342.0, 335.0),
+    }
+    scores = {
+        "market_momentum": (54.0, 57.0, 60.0, 61.0),
+        "stock_price_strength": (48.0, 50.0, 53.0, 54.0),
+        "stock_price_breadth": (45.0, 48.0, 50.0, 51.0),
+        "put_call_options": (43.0, 45.0, 47.0, 48.0),
+        "market_volatility": (51.0, 55.0, 57.0, 58.0),
+        "safe_haven_demand": (41.0, 44.0, 45.0, 46.0),
+        "junk_bond_demand": (52.0, 55.0, 57.0, 59.0),
+    }
+    history: dict[str, tuple[MarketMoodIndicatorPoint, ...]] = {}
+    for key in DETAIL_COMPONENT_KEYS:
+        points = []
+        for index, day in enumerate(dates):
+            score = scores[key][index]
+            points.append(MarketMoodIndicatorPoint(day, values[key][index], score, _rating_from_score(score)))
+        history[key] = tuple(points)
+    return history
 
 
 def _trend_point_read(point: MarketMoodPoint) -> MarketMoodTrendPointRead:
@@ -589,12 +986,42 @@ def _safe_score(value: Any) -> float | None:
     return round(score, 2)
 
 
+def _safe_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed != parsed:
+        return None
+    return round(parsed, 4)
+
+
 def _score_label(score: float | None) -> str | None:
     if score is None:
         return None
     if float(score).is_integer():
         return str(int(score))
     return f"{score:.1f}"
+
+
+def _value_label(value: float | None, *, axis_value_format: str) -> str | None:
+    if value is None:
+        return None
+    if axis_value_format == "percent":
+        return f"{value:.1f}%"
+    if axis_value_format == "ratio":
+        return f"{value:.2f}"
+    if axis_value_format == "currency":
+        return f"${value:,.2f}"
+    if axis_value_format == "spread":
+        return f"{value:.0f} bps"
+    if axis_value_format == "index":
+        return f"{value:.1f}"
+    if float(value).is_integer():
+        return str(int(value))
+    return f"{value:.2f}"
 
 
 def _rating_from_score(score: float | None) -> str:
@@ -700,6 +1127,10 @@ def _first_sequence(payload: Mapping[str, Any], keys: Sequence[str]) -> Sequence
         value = payload.get(key)
         if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
             return value
+        if isinstance(value, Mapping):
+            nested = value.get("data")
+            if isinstance(nested, Sequence) and not isinstance(nested, (str, bytes, bytearray)):
+                return nested
     return ()
 
 

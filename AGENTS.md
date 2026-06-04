@@ -59,6 +59,9 @@ This project may connect to real read-only brokerage data through SnapTrade. Tre
 
 ## Context Efficiency Rules
 
+- Use `docs/shared/AGENT_REPORT_FORMAT.md` for all implementation prompts, review prompts, completion reports, and review reports.
+- Keep prompts short and role-specific. Do not ask a reviewer to redo implementation verification unless the review requires it.
+- Always include the required skill path in a prompt when a Claude/Codex skill is relevant.
 - Prefer `docs/shared/current_roadmap.md` for high-level project direction.
 - Use `docs/shared/agent_workflows.md` when a task explicitly calls for a repo-specific workflow such as frontend contract review, backend TDD slices, or docs/roadmap grilling.
 - Prefer `docs/codex-c-backend/WORKING_CONTEXT.md` before implementation tasks.
@@ -70,6 +73,15 @@ This project may connect to real read-only brokerage data through SnapTrade. Tre
 - For Claude review prompts, provide a strict read whitelist with only the current task docs, changed files, and directly related tests.
 - Use Opus only for high-risk architecture, finance semantics, schema/migration, broker/security, or disagreement-resolution reviews.
 - Use Sonnet for normal code review, frontend UI/UX, copy, accessibility, and implementation-plan scope checks.
+
+## Standard Agent Output Format
+
+- Implementation handoffs, completion reports, and reviews must follow `docs/shared/AGENT_REPORT_FORMAT.md`.
+- Review verdicts should be `PASS` or `BLOCKED`; use deferred polish for non-blocking improvements.
+- Every completion/review report must end with a `Next step`.
+- Frontend UI prompts must explicitly cite `.claude/skills/frontend-design/SKILL.md`.
+- Frontend UX review prompts should cite `.claude/skills/finance-dashboard-ux-review/SKILL.md` when portfolio/options UX judgment is needed.
+- Keep review prompts scoped to changed files and directly relevant contracts/tests. Use "read additional files only if necessary" instead of broad repo-wide reading.
 
 ## Testing Rules
 

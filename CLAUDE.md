@@ -35,6 +35,15 @@ Always inspect these first:
 - Stop for review after each task.
 - Default backend test command: `cd backend && pytest`. Fallback: `cd backend && ./.venv/bin/python -m pytest`.
 
+## Required output format
+
+- Use `docs/shared/AGENT_REPORT_FORMAT.md` for implementation handoffs, completion reports, review requests, and review reports.
+- Keep reports short and role-specific. Do not paste long logs or broad safety boilerplate.
+- Every report must include: `Task`, `Status` or `Verdict`, `Files changed` or `Files reviewed`, `Verification`, `Blockers`, and `Next step`.
+- Review prompts should ask for `PASS` or `BLOCKED`; put non-blocking improvements under `Deferred polish`.
+- When frontend UI design or review is involved, explicitly follow `.claude/skills/frontend-design/SKILL.md`.
+- When portfolio/options UX judgment is involved, also follow `.claude/skills/finance-dashboard-ux-review/SKILL.md`.
+
 ## Project boundary
 
 - Do not modify `../TradingAgents`.

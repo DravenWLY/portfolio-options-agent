@@ -16,6 +16,7 @@ import type {
 } from "../types/dashboard";
 import type { PortfolioContextListRead, PortfolioContextRead } from "../types/portfolioContext";
 import EconomicCalendarPanel from "../components/economic-calendar/EconomicCalendarPanel";
+import MarketMoodCard from "../components/market-context/MarketMoodCard";
 
 /**
  * DashboardPage — compact review-readiness cockpit (P20D-T2 → T5).
@@ -169,6 +170,9 @@ export default function DashboardPage() {
 
           {/* Economic awareness — self-fetching, failures stay local (P24A-T5) */}
           <EconomicCalendarPanel />
+
+          {/* Market Mood — secondary market-context card, self-fetching (P26A-T2) */}
+          <MarketMoodCard />
         </div>
 
         <div style={styles.colRight}>
@@ -213,20 +217,49 @@ function ReadinessVerdict({
     <section style={styles.verdict}>
       <div style={styles.verdictTop}>
         <span style={styles.verdictEyebrow}>Review readiness</span>
-        <div style={styles.verdictBadges}>
-          {isDemoMode && <DemoChip tight />}
-          <Badge tone={reviewModeTone(r.overall_review_mode)} dot>
-            {r.overall_review_mode.replace(/_/g, " ")}
-          </Badge>
-        </div>
+        {isDemoMode && <DemoChip tight />}
       </div>
+      {/* Primary user-facing answer — backend-owned plain-English verdict. */}
       <div style={styles.verdictAnswerRow}>
         <MpIcon name="review" size={18} style={{ color: "var(--mp-accent)", flexShrink: 0, marginTop: 2 }} />
-        {/* Backend-owned plain-English verdict, rendered verbatim. */}
-        <span style={styles.verdictAnswer}>{r.recommended_user_action_label}</span>
+        <span style={styles.verdictAnswer}>{readinessHeadline(r)}</span>
       </div>
+      {/* Quiet secondary line — what affects review quality, in plain copy. */}
+      <p style={styles.verdictSub}>{readinessQualityHint(r)}</p>
     </section>
   );
+}
+
+/* Plain-English headline derived from the backend overall_review_mode. */
+function readinessHeadline(r: ReviewReadinessRead): string {
+  switch (r.overall_review_mode) {
+    case "normal_review":
+      return "Reviews are available.";
+    case "analysis_only":
+      return "Reviews are available with data limitations.";
+    case "manual_confirmation_required":
+      return "Reviews need manual confirmation before they can run.";
+    case "blocked":
+      return "Reviews are currently blocked.";
+    default:
+      // Backend verdict — kept as a safe fallback if a new mode is introduced.
+      return r.recommended_user_action_label;
+  }
+}
+
+/* Quiet secondary line — what limits review quality. Stays generic and
+ * user-facing; backend display labels are not exposed as internal enum text. */
+function readinessQualityHint(r: ReviewReadinessRead): string {
+  const issues: string[] = [];
+  if (r.broker_snapshot.status !== "fresh") issues.push("refresh broker snapshot");
+  if (r.market_quotes.status !== "fresh") issues.push("refresh market data");
+  if (issues.length === 0) {
+    return "Broker snapshot and market data are fresh.";
+  }
+  if (issues.length === 1) {
+    return `Connect a portfolio and ${issues[0]} for higher-confidence context.`;
+  }
+  return "Connect a portfolio and refresh broker / market data for higher-confidence context.";
 }
 
 /* ── Agent provider operational status (off first viewport) ────────────── */
@@ -291,7 +324,7 @@ function AccountSummaryPanel({ slot, onRetry }: { slot: DashboardState["summary"
   }
   if (slot.status === "error") {
     return (
-      <Panel title="Account summary" tag="summary" right={<DemoChip />}>
+      <Panel title="Account summary" tag="summary">
         <ErrorState message={slot.error ?? "Failed to load account summary."} onRetry={onRetry} />
       </Panel>
     );
@@ -363,13 +396,10 @@ function AccountSummaryPanel({ slot, onRetry }: { slot: DashboardState["summary"
       {s.market_data_unavailable && (
         <p style={styles.acctNote}>Market data unavailable.</p>
       )}
-      {s.caveat_codes.length > 0 && (
-        <div style={styles.caveatWrap}>
-          {s.caveat_codes.map((c) => (
-            <Badge key={c} tone="stale" dot={false}>{c}</Badge>
-          ))}
-        </div>
-      )}
+      {/* Raw backend caveat codes (e.g. summary_demo_only, broker_snapshot_stale)
+          are internal labels — they no longer appear in the visible Dashboard.
+          The qualitative cash state, portfolio shape, and "amounts hidden" /
+          demo signaling above already convey what the user needs to see. */}
     </Panel>
   );
 }
@@ -403,11 +433,11 @@ function RecentReviewsPanel({ slot, onRetry }: { slot: DashboardState["reviews"]
   // Collapse to compact note when synthetic demo — avoids presenting fake history
   if (isDemoMode && slot.status === "success") {
     return (
-      <Panel title="Recent trade reviews" tag="demo" right={<DemoChip />}>
+      <Panel title="Recent trade reviews" tag="history">
         <div style={styles.collapsedRow}>
           <MpIcon name="info" size={14} style={{ color: "var(--mp-mute)", marginTop: 1 }} />
           <p style={styles.collapsedNote}>
-            No persisted review history yet. Start a new trade review or connect a real portfolio context to generate review history.
+            No review history yet. Start a new trade review or connect a real portfolio context to generate review history.
           </p>
         </div>
       </Panel>
@@ -415,7 +445,7 @@ function RecentReviewsPanel({ slot, onRetry }: { slot: DashboardState["reviews"]
   }
 
   return (
-    <Panel title="Recent trade reviews" tag="last 7 days" right={isDemoMode ? <DemoChip /> : undefined}>
+    <Panel title="Recent trade reviews" tag="last 7 days">
       {slot.status === "loading" && <LoadingSkeleton rows={4} label="Loading reviews…" />}
       {slot.status === "error" && <ErrorState message={slot.error ?? "Failed to load reviews."} onRetry={onRetry} />}
       {slot.status === "success" && slot.data && slot.data.items.length === 0 && (
@@ -451,7 +481,7 @@ function RiskAlertsPanel({ slot, onRetry }: { slot: DashboardState["alerts"]; on
   // Collapse to compact note when synthetic demo — avoids presenting fake urgency
   if (isDemoMode && slot.status === "success") {
     return (
-      <Panel title="Risk alerts" tag="demo" right={<DemoChip />}>
+      <Panel title="Risk alerts" tag="deterministic">
         <div style={styles.collapsedRow}>
           <MpIcon name="shield" size={14} style={{ color: "var(--mp-mute)", marginTop: 1 }} />
           <p style={styles.collapsedNote}>
@@ -463,7 +493,7 @@ function RiskAlertsPanel({ slot, onRetry }: { slot: DashboardState["alerts"]; on
   }
 
   return (
-    <Panel title="Risk alerts" tag="deterministic" right={isDemoMode ? <DemoChip /> : undefined}>
+    <Panel title="Risk alerts" tag="deterministic">
       {slot.status === "loading" && <LoadingSkeleton rows={3} label="Loading alerts…" />}
       {slot.status === "error" && <ErrorState message={slot.error ?? "Failed to load alerts."} onRetry={onRetry} />}
       {slot.status === "success" && slot.data && slot.data.items.length === 0 && (
@@ -493,15 +523,14 @@ function RiskAlertsPanel({ slot, onRetry }: { slot: DashboardState["alerts"]; on
 /* ── Portfolio context summary ──────────────────────────────────────────── */
 
 function PortfolioContextSummaryPanel({ slot, onRetry }: { slot: DashboardState["contexts"]; onRetry: () => void }) {
-  const isDemoMode = slot.data?.data_mode === "synthetic_demo";
   return (
-    <Panel title="Portfolio context" tag="summary" accent right={isDemoMode ? <DemoChip /> : undefined}>
+    <Panel title="Portfolio context" tag="summary" accent>
       {slot.status === "loading" && <LoadingSkeleton rows={3} label="Loading contexts…" />}
       {slot.status === "error" && <ErrorState message={slot.error ?? "Failed to load portfolio contexts."} onRetry={onRetry} />}
       {slot.status === "success" && slot.data && slot.data.items.length === 0 && (
         <KV rows={[
           ["Available contexts", "0"],
-          ["Snapshot as of", isDemoMode ? "demo · not yet connected" : "—"],
+          ["Snapshot as of", "—"],
         ]} />
       )}
       {slot.status === "success" && slot.data && slot.data.items.length > 0 && (
@@ -559,16 +588,6 @@ function agentProviderTone(status: string): MpTone {
     case "mock_default": return "info";
     case "error": return "block";
     case "unavailable": return "mute";
-    default: return "mute";
-  }
-}
-
-function reviewModeTone(mode: string): MpTone {
-  switch (mode) {
-    case "normal_review": return "live";
-    case "analysis_only": return "info";
-    case "manual_confirmation_required": return "stale";
-    case "blocked": return "block";
     default: return "mute";
   }
 }
@@ -666,10 +685,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "var(--font-size-xs)", color: "var(--mp-mute)",
     textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600,
   },
-  verdictBadges: { display: "flex", alignItems: "center", gap: "var(--space-2)" },
   verdictAnswerRow: { display: "flex", alignItems: "flex-start", gap: "var(--space-2)", minWidth: 0 },
   verdictAnswer: {
     fontSize: "var(--font-size-lg)", fontWeight: 600, color: "var(--mp-ink)", lineHeight: 1.35,
+  },
+  verdictSub: {
+    margin: 0, fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", lineHeight: 1.5,
   },
 
   /* ── Thin operational status row (agent provider, off first viewport) ─── */
@@ -741,7 +762,6 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: "var(--space-2)",
   },
   privacyNotice: { marginBottom: "var(--space-2)" },
-  caveatWrap: { display: "flex", gap: "var(--space-1)", flexWrap: "wrap", marginTop: "var(--space-2)" },
 
   /* ── Tables and alerts ───────────────────────────────────────────────── */
   tbl: { width: "100%", borderCollapse: "collapse" },

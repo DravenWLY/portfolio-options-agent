@@ -438,6 +438,46 @@ a:hover {
   }
 }
 
+.market-mood-rail-button:focus-visible,
+.market-mood-info-summary:focus-visible {
+  outline: 2px solid var(--mp-accent);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px var(--mp-accent-soft);
+}
+
+.market-mood-rail-button:focus:not(:focus-visible),
+.market-mood-info-summary:focus:not(:focus-visible) {
+  outline: 0;
+}
+
+.market-mood-rail-button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.market-mood-rail-button:not([aria-pressed="true"]):focus:not(:focus-visible),
+.market-mood-rail-button:not([aria-pressed="true"]):active:not(:focus-visible) {
+  border-color: var(--mp-rule) !important;
+  box-shadow: none !important;
+  outline: 0;
+}
+
+.market-mood-info-popover {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+}
+
+.market-mood-info-wrap:hover .market-mood-info-popover,
+.market-mood-info-wrap:focus-within .market-mood-info-popover,
+.market-mood-info-summary:hover + .market-mood-info-popover,
+.market-mood-info-summary:focus-visible + .market-mood-info-popover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
 /* Skeleton pulse animation */
 @keyframes pulse {
   0%, 100% { opacity: 1; }

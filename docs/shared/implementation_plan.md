@@ -159,6 +159,16 @@ Recent status:
     image import probe returned `{"google.genai": true, "openai": true}`. No live
     provider calls were run, no keys were read or printed, touched docs/config
     contained no inline key assignments, and `git diff --check` passed.
+  - Founder-approved Gemini route-function smoke: restarted backend with the
+    opt-in live profile and `POA_LLM_MODE=live`, `POA_LLM_PROVIDER=google`,
+    `POA_LLM_MODEL=gemini-2.5-flash-lite`; confirmed key presence/SDK availability
+    without printing the key. Host-to-container HTTP ports were unavailable in the
+    sandbox, so the backend route function was invoked inside the live backend
+    container. Result: `run_status=completed`, 5 role outputs, all provider
+    statuses `ok`, `is_mock=False`, `safety_flags=["provider:google",
+    "analysis_only", "deterministic_metrics_owned_by_backend"]`, no provider
+    warnings. The backend was then restored to the ordinary mock-default Compose
+    profile.
 
 Next possible work:
 

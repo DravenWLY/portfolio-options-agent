@@ -46,6 +46,10 @@ def test_agent_team_preview_returns_safe_analysis_console(client: TestClient) ->
         "Risk Manager",
         "Portfolio Manager",
     ]
+    # Route runs the ReviewRunner spine: provider-neutral synthesis, no "Mock"
+    # wording even on the default mock provider (P25A-T15).
+    assert payload["final_synthesis"].startswith("Portfolio-team synthesis")
+    assert "Mock" not in (payload["final_synthesis"] or "")
 
 
 def test_agent_team_preview_display_names_match_registry_and_drop_agent_suffix(client: TestClient) -> None:
@@ -92,6 +96,31 @@ def test_agent_team_preview_display_names_match_registry_and_drop_agent_suffix(c
     rendered = repr(payload).lower()
     assert "you should buy" not in rendered
     assert "ready to trade" not in rendered
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_agent_team_preview_blocked_actionability_degrades_to_deterministic_only(client: TestClient) -> None:
+    response = client.post(
+        "/agent-team/trade-review-analysis/preview",
+        json={
+            "supported_flow": "stock_buy",
+            "symbol": "XYZ",
+            "quantity": "3",
+            "price_assumption": "50",
+            "portfolio_context_selection": {"mode": "selected_context", "context_reference": "ctx_demo_stale"},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    # The ReviewRunner actionability gate is respected through the route: blocked
+    # snapshot -> deterministic-only console, no LLM role commentary, safe contract.
+    assert payload["review_actionability_status"] == "blocked_stale_broker_snapshot"
+    assert payload["role_outputs"] == []
+    assert payload["run_status"] == "completed"
+    assert "deterministic_only_blocked_actionability" in payload["safety_flags"]
+    assert payload["final_synthesis"].startswith("Deterministic-only review")
+    assert payload["broker_snapshot_freshness"]["freshness_scope"] == "broker_snapshot"
     assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
 
 

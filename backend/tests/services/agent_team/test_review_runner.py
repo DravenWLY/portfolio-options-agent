@@ -38,7 +38,7 @@ def test_review_runner_normal_mock_run_completes(flow: str) -> None:
     assert all(output.status == "completed" for output in state.role_outputs)
     assert state.broker_snapshot_freshness["freshness_scope"] == "broker_snapshot"
     assert state.market_quote_freshness["freshness_scope"] == "market_quote"
-    assert state.final_synthesis.startswith("Mock portfolio-team synthesis")
+    assert state.final_synthesis.startswith("Portfolio-team synthesis")
     assert find_forbidden_keys(asdict(state), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS) == set()
 
 

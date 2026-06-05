@@ -454,11 +454,11 @@ def _compose_final_synthesis(role_outputs: list[AgentReviewRoleOutput]) -> str:
     completed = [output.role_name for output in role_outputs if output.provider_status == "ok"]
     unavailable = [output.role_name for output in role_outputs if output.provider_status != "ok"]
     text = (
-        "Mock portfolio-team synthesis. Analysis-only educational summary based on "
+        "Portfolio-team synthesis. Analysis-only educational summary based on "
         f"{len(completed)} completed role output(s). Deterministic backend services own all calculations."
     )
     if unavailable:
-        text += f" Some mock role output was unavailable: {', '.join(unavailable)}."
+        text += f" Some role output was unavailable: {', '.join(unavailable)}."
     return text
 
 

@@ -77,10 +77,10 @@ class GoogleGeminiLLMProvider:
         if not self._api_key:
             raise GoogleGeminiProviderError(status="provider_auth_error")
         try:
-            genai = import_module("google.generativeai")
+            genai = import_module("google.genai")
         except Exception as exc:
             raise GoogleGeminiProviderError(status="provider_unavailable") from exc
-        return _GoogleGenerativeAIClient(genai=genai, api_key=self._api_key, model=self.model)
+        return _GoogleGenAIClient(genai=genai, api_key=self._api_key, model=self.model)
 
     def _failure_response(
         self,
@@ -107,17 +107,16 @@ class GoogleGeminiLLMProvider:
         )
 
 
-class _GoogleGenerativeAIClient:
+class _GoogleGenAIClient:
+    """Lazy google-genai client; constructed only for live Gemini use."""
+
     def __init__(self, *, genai, api_key: str, model: str) -> None:  # noqa: ANN001
-        self._genai = genai
-        self._api_key = api_key
+        self._client = genai.Client(api_key=api_key)
         self._model = model
 
     def generate(self, request: LLMProviderRequest) -> str:
-        self._genai.configure(api_key=self._api_key)
-        model = self._genai.GenerativeModel(self._model)
         prompt = "\n\n".join(message.content for message in request.messages)
-        response = model.generate_content(prompt)
+        response = self._client.models.generate_content(model=self._model, contents=prompt)
         text = getattr(response, "text", None)
         if not isinstance(text, str):
             raise GoogleGeminiProviderError(status="invalid_response")

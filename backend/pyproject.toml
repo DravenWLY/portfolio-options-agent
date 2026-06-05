@@ -28,11 +28,12 @@ dev = [
     "httpx",
 ]
 # Optional, backend-only live LLM provider SDKs: `pip install ".[live-llm]"`.
-# google-generativeai -> google_provider.py (`import google.generativeai`).
+# google-genai -> google_provider.py (lazy `import google.genai`; the supported
+#   SDK that replaces the deprecated google-generativeai package).
 # openai -> openai_provider.py (plain SDK `import openai`, NOT the OpenAI Agents SDK).
 # The default app and default (offline/mock) test suite need none of these.
 live-llm = [
-    "google-generativeai",
+    "google-genai",
     "openai",
 ]
 

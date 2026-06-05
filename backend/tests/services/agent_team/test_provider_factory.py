@@ -27,7 +27,7 @@ def test_mock_mode_does_not_import_or_construct_google_provider() -> None:
 
     assert resolution.available is True
     assert "google" not in after - before
-    assert "google.generativeai" not in sys.modules
+    assert "google.genai" not in sys.modules
 
 
 def test_live_google_mode_returns_google_provider_when_backend_key_is_passed() -> None:

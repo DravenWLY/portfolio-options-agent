@@ -139,9 +139,12 @@ Recent status:
 - P25A-T13 - Single-run real-provider gate: done; Codex B review PASS.
   - Hardened the opt-in Gemini/OpenAI live-smoke tests (synthetic data only) so a single controlled live run through `ReviewRunner` asserts: output passes the existing safety/eval path; run status is `completed`/`partially_completed`/`failed_safe`; no forbidden private keys/values, secret/key/URL patterns, or advice/order/execution wording; and provider failures degrade safely with no raw provider details leaked. Gemini path: `POA_LLM_LIVE_TESTS=1` + already-exported `GOOGLE_API_KEY`, cheap Flash model default, rate-limit/quota/unavailable are safe non-blocking. OpenAI path: extra `POA_LLM_OPENAI_LIVE=1` paid-ack gate; not run by default. Default suite stays offline/mock; no route/persistence/frontend/composer change. Founder-run Gemini live smoke passed (`1 passed, 1 warning in 1.77s`); the warning tracks the known `google.generativeai` deprecation and is covered by P25A-T14.
 
+- P25A-T14 - Migrate Gemini adapter to `google-genai`: done; Codex B review PASS.
+  - The Gemini adapter now lazily imports `google.genai` and uses `genai.Client(...).models.generate_content(...)`; the app-owned `LLMProvider` protocol, injected/fake-client testability, `LLMProviderResponse` shape, safe status mapping, and mock-default posture are unchanged. `pyproject.toml` `live-llm` extra and `uv.lock` updated (removed deprecated `google-generativeai`; added `google-genai` v2.8.0, which also slimmed the transitive tree). Default suite stays offline/mock with injected fakes; no route/persistence/frontend/composer change.
+
 Next possible work:
 
-- P25A-T14 - Migrate Gemini adapter from deprecated SDK to `google-genai`: proposed, low priority.
+- None scheduled for Phase 25A; the foundation is complete pending reviews. Larger agentic work (Options Strategist persona P1, or the durable conversational Console) needs a separate product decision.
 
 ### Phase 24B - FRED Economic Awareness
 

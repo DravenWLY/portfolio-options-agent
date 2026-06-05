@@ -1,0 +1,24 @@
+# Dev-only override for running the existing backend with optional live LLM SDKs
+# installed. It is opt-in via `-f docker-compose.live-llm.yml`; ordinary Compose
+# builds remain lean/offline/mock-default.
+
+services:
+  backend:
+    image: portfolio-options-agent-backend:live-llm
+    build:
+      context: ./backend
+      args:
+        INSTALL_LIVE_LLM: "true"
+    environment:
+      # Mock remains the default even for this live-capable image. Set these in
+      # the local environment or private `.env` only when intentionally running a
+      # live backend provider; never put provider keys in commands or docs.
+      POA_LLM_MODE: ${POA_LLM_MODE:-mock}
+      POA_LLM_PROVIDER: ${POA_LLM_PROVIDER:-mock}
+      POA_LLM_MODEL: ${POA_LLM_MODEL:-}
+      POA_LLM_TIMEOUT_SECONDS: ${POA_LLM_TIMEOUT_SECONDS:-30}
+      POA_LLM_MAX_RETRIES: ${POA_LLM_MAX_RETRIES:-0}
+      POA_LLM_TOKEN_BUDGET_PER_RUN: ${POA_LLM_TOKEN_BUDGET_PER_RUN:-4000}
+      POA_LLM_RATE_LIMIT_FALLBACK: ${POA_LLM_RATE_LIMIT_FALLBACK:-partial_report}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}

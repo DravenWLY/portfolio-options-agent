@@ -29,7 +29,7 @@ Dependencies are declared in `pyproject.toml` (PEP 621). Install variants:
 - `pip install .` — core runtime only (lean, offline, mock-default).
 - `pip install -e ".[dev]"` — editable + test/dev tooling.
 - `pip install ".[live-llm]"` — adds the optional, backend-only live LLM provider
-  SDKs (`google-generativeai`, `openai`); only needed to run a real live-provider
+  SDKs (`google-genai`, `openai`); only needed to run a real live-provider
   smoke. See `docs/claude-e-agentic/LLM_PROVIDER_SMOKE_TEST.md`.
 
 `uv.lock` is the reproducibility lockfile for backend dependencies. When
@@ -43,6 +43,32 @@ The backend Docker image exports locked core runtime dependencies from
 `uv.lock` with `uv export --frozen --no-dev --no-emit-project`, then installs the
 project itself without re-resolving dependencies. The default image does not
 install the `live-llm` extra; live-provider SDKs remain local opt-in only.
+
+## Dev-Only Live LLM Docker Runtime
+
+The ordinary Docker/Compose backend remains lean, offline, and mock-default.
+For development only, an explicit Compose override can build a live-capable
+backend image with the optional `live-llm` extra installed:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.live-llm.yml build backend
+docker compose -f docker-compose.yml -f docker-compose.live-llm.yml up -d postgres backend
+```
+
+This builds `portfolio-options-agent-backend:live-llm`; the default
+`docker compose build backend` path still excludes `google-genai` and `openai`.
+Mock remains the default even in the live-capable image. To intentionally run the
+existing read-only Agent Console route with a live provider, configure only
+backend environment variables in your private `.env` or shell environment:
+
+- `POA_LLM_MODE=live`
+- `POA_LLM_PROVIDER=google` or `POA_LLM_PROVIDER=openai`
+- the matching backend-only provider key variable
+- optional backend-only model/timeout/retry variables
+
+Never put API keys in commands, docs, frontend code, or screenshots. OpenAI live
+usage is paid. Gemini/Flash may still hit quota or rate limits; provider
+failures should degrade safely through the backend provider gate.
 
 ## Local PostgreSQL
 

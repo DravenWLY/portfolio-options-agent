@@ -59,6 +59,24 @@ The smoke commands below assume the relevant key (`GOOGLE_API_KEY` /
 key. Use your real key (not the literal `<...>` placeholder). How you export it is
 your choice; agents/reviewers must not read or source `.env`.
 
+## Dev-only Docker runtime for Agent Console
+
+The default Compose backend image stays lean, offline, and mock-default. For
+local development of the existing read-only Agent Console route with live
+provider SDKs installed, use the explicit override:
+
+```
+docker compose -f docker-compose.yml -f docker-compose.live-llm.yml build backend
+docker compose -f docker-compose.yml -f docker-compose.live-llm.yml up -d postgres backend
+```
+
+The override builds `portfolio-options-agent-backend:live-llm` with the
+`live-llm` extra installed. It still defaults to `POA_LLM_MODE=mock`; live mode
+only activates when backend env gates are explicitly configured in a private
+`.env` or shell environment. Do not put API keys inline in commands. OpenAI is
+paid; Gemini/Flash may hit quota or rate limits, and those provider failures are
+handled as safe degradation.
+
 ## Gemini live smoke (free-tier friendly, routine)
 
 `backend/tests/services/agent_team/test_gemini_live_smoke.py` is marked

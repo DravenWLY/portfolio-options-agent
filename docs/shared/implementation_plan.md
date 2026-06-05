@@ -143,6 +143,22 @@ Recent status:
   - The Gemini adapter now lazily imports `google.genai` and uses `genai.Client(...).models.generate_content(...)`; the app-owned `LLMProvider` protocol, injected/fake-client testability, `LLMProviderResponse` shape, safe status mapping, and mock-default posture are unchanged. `pyproject.toml` `live-llm` extra and `uv.lock` updated (removed deprecated `google-generativeai`; added `google-genai` v2.8.0, which also slimmed the transitive tree). Default suite stays offline/mock with injected fakes; no route/persistence/frontend/composer change. Founder-run post-migration Gemini live smoke passed (`1 passed in 0.03s`) with no `google.generativeai` deprecation warning.
 - P25A-T15 - Agent Console read-only run path on `ReviewRunner`: done; Codex B review PASS.
   - The `/agent-team/trade-review-analysis/preview` route now runs the reviewed `ReviewRunner` spine (safety/eval/timing/budget) via a new backend projection `build_console_read_from_review_run_state(AgentReviewRunState) -> AgentTeamAnalysisConsoleRead`, preserving the endpoint, response contract, and backend-owned `display_name` labels (ADR 0009). `run_status` maps `failed_safe -> failed` for the console vocabulary; provider warnings are sanitized and provider-neutral (no raw payload/URL/key/exception body); `deterministic_evidence_summary` keeps the legacy `stock_position_count` key for payload parity. Fixed the hardcoded "Mock portfolio-team synthesis" wording in `ReviewRunner._compose_final_synthesis` to provider-neutral "Portfolio-team synthesis" so it is correct on live runs. Behavior note: blocked-actionability snapshots now correctly degrade to a deterministic-only console (no LLM role commentary) instead of emitting mock commentary that ignored the gate. Mock stays default; live providers via backend env only; composer stays disabled; no new endpoint, streaming, persistence, parallel dispatch, or tool execution.
+- P25A-T16 - Live LLM development runtime profile for Agent Console: done.
+  - Need: the default Docker backend intentionally excludes optional live-provider SDKs, so the Agent Console route remains mock-only in ordinary Compose runs even when provider keys are present. Add a dev-only, opt-in runtime/build path that installs the `live-llm` extra and lets the existing backend env gate run Gemini/OpenAI from the read-only Agent Console route. Default Docker image must remain lean/offline/mock; no secrets in commands/docs; no frontend provider selector, streaming, composer activation, persistence, or new endpoint.
+  - Implementation: added Docker build arg `INSTALL_LIVE_LLM=false` and opt-in
+    `docker-compose.live-llm.yml`, which builds
+    `portfolio-options-agent-backend:live-llm` with `INSTALL_LIVE_LLM=true`.
+    The ordinary `backend` build path remains lean and mock-default. The live
+    override still defaults `POA_LLM_MODE`/`POA_LLM_PROVIDER` to mock unless
+    backend env gates are explicitly configured in private `.env` or shell
+    environment.
+  - Verification: `docker compose build backend` passed; default image import
+    probe returned `{"google.genai": false, "openai": false}`. Opt-in build
+    `docker compose -f docker-compose.yml -f docker-compose.live-llm.yml build
+    backend` passed and tagged `portfolio-options-agent-backend:live-llm`; live
+    image import probe returned `{"google.genai": true, "openai": true}`. No live
+    provider calls were run, no keys were read or printed, touched docs/config
+    contained no inline key assignments, and `git diff --check` passed.
 
 Next possible work:
 

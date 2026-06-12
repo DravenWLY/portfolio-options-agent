@@ -413,10 +413,14 @@ def test_cnn_refresh_runner_persists_and_activates_provider_reference_snapshot(t
         snapshot_path=path,
         now=lambda: NOW,
     )
-    snapshot = runner()
+    result = runner()
+    snapshot = result.snapshot
     loaded = load_market_mood_snapshot(path=path)
     cache_text = path.read_text(encoding="utf-8").lower()
 
+    assert result.status == "refreshed"
+    assert result.source_changed is True
+    assert result.last_checked_at_utc == NOW
     assert snapshot.data_mode == "provider_reference"
     assert store.active_snapshot is snapshot
     assert loaded is not None
@@ -425,6 +429,79 @@ def test_cnn_refresh_runner_persists_and_activates_provider_reference_snapshot(t
     assert "raw_payload" not in cache_text
     assert "cookie" not in cache_text
     assert "provider_id" not in cache_text
+
+
+def test_refresh_unchanged_source_preserves_source_update_time_and_snapshot(tmp_path) -> None:
+    class FakeProvider:
+        def snapshot(self):
+            return CnnDerivedMarketMoodProvider(
+                type("Client", (), {"fetch_market_mood": lambda self: provider_payload()})(),
+                generated_at=datetime(2026, 6, 2, 16, 0, tzinfo=UTC),
+            ).snapshot()
+
+    path = tmp_path / "market_mood_snapshot.json"
+    store = MarketMoodSnapshotStore()
+    last_good = CnnDerivedMarketMoodProvider(
+        type("Client", (), {"fetch_market_mood": lambda self: provider_payload()})(),
+        generated_at=NOW,
+    ).snapshot()
+    save_market_mood_snapshot(last_good, path=path)
+    store.activate(last_good)
+
+    result = refresh_and_persist_market_mood_snapshot(
+        provider=FakeProvider(),
+        store=store,
+        snapshot_path=path,
+        checked_at=datetime(2026, 6, 2, 16, 5, tzinfo=UTC),
+    )
+    loaded = load_market_mood_snapshot(path=path)
+
+    assert result.status == "unchanged"
+    assert result.source_changed is False
+    assert result.last_checked_at_utc == datetime(2026, 6, 2, 16, 5, tzinfo=UTC)
+    assert result.snapshot is last_good
+    assert store.active_snapshot is last_good
+    assert loaded is not None
+    assert loaded.generated_at == NOW
+    assert loaded.updated_at_utc == datetime(2026, 6, 2, 14, 30, tzinfo=UTC)
+
+
+def test_refresh_changed_source_timestamp_updates_last_good_snapshot(tmp_path) -> None:
+    class ChangedProvider:
+        def snapshot(self):
+            payload = provider_payload()
+            payload["fear_and_greed"]["updated_at"] = "2026-06-02T16:30:00Z"
+            payload["fear_and_greed"]["score"] = 67
+            payload["history"][-2]["score"] = 67
+            return CnnDerivedMarketMoodProvider(
+                type("Client", (), {"fetch_market_mood": lambda self: payload})(),
+                generated_at=datetime(2026, 6, 2, 16, 45, tzinfo=UTC),
+            ).snapshot()
+
+    path = tmp_path / "market_mood_snapshot.json"
+    store = MarketMoodSnapshotStore()
+    last_good = CnnDerivedMarketMoodProvider(
+        type("Client", (), {"fetch_market_mood": lambda self: provider_payload()})(),
+        generated_at=NOW,
+    ).snapshot()
+    save_market_mood_snapshot(last_good, path=path)
+    store.activate(last_good)
+
+    result = refresh_and_persist_market_mood_snapshot(
+        provider=ChangedProvider(),
+        store=store,
+        snapshot_path=path,
+        checked_at=datetime(2026, 6, 2, 16, 50, tzinfo=UTC),
+    )
+    loaded = load_market_mood_snapshot(path=path)
+
+    assert result.status == "refreshed"
+    assert result.source_changed is True
+    assert result.snapshot.updated_at_utc == datetime(2026, 6, 2, 16, 30, tzinfo=UTC)
+    assert result.snapshot.score == 67.0
+    assert store.active_snapshot is result.snapshot
+    assert loaded is not None
+    assert loaded.updated_at_utc == datetime(2026, 6, 2, 16, 30, tzinfo=UTC)
 
 
 def test_cnn_refresh_runner_failure_preserves_last_good_and_sanitizes(tmp_path) -> None:
@@ -471,6 +548,8 @@ def test_refresh_failure_preserves_active_and_persisted_last_good(tmp_path) -> N
         refresh_and_persist_market_mood_snapshot(provider=FailingProvider(), store=store, snapshot_path=path)
 
     assert store.active_snapshot is last_good
+    assert store.last_refresh_status == "failed"
+    assert store.last_source_changed is None
     loaded = load_market_mood_snapshot(path=path)
     assert loaded is not None
     assert loaded.generated_at == last_good.generated_at

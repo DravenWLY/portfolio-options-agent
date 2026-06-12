@@ -213,6 +213,34 @@ Rules:
 - Synthetic fallback is allowed only through explicit test/design injection, not
   as the normal product GET fallback.
 
+## Source-Update Detection Follow-Up
+
+The displayed `updated_at_utc` / `updated_at_label` fields mean the provider or
+source data update time. They must not be treated as the user's page-refresh
+time or the backend's latest fetch-attempt time.
+
+Backend owns source-update detection:
+
+- compare refreshed provider data using a stable provider/source timestamp when
+  available, such as provider `updated_at_utc`, plus normalized snapshot
+  equivalence when needed;
+- preserve the last-good provider-reference snapshot on refresh failure;
+- do not activate a new snapshot if the provider source timestamp and normalized
+  data are unchanged, except for safe backend-owned refresh metadata;
+- if the UI needs fetch-attempt visibility, expose separate safe fields such as
+  `last_checked_at_utc` / `last_checked_at_label` or equivalent status metadata;
+- never conflate `last_checked_at` with `updated_at_utc`;
+- never expose raw provider payloads, URLs, headers, cookies, provider IDs, raw
+  exception bodies, prompts, traces, broker/account data, or secrets.
+
+Frontend may refresh or poll backend-owned state only:
+
+- no frontend-direct CNN/provider call;
+- no user-facing `live` or `real-time` wording;
+- page refresh/mount may request a backend refresh and then read backend detail;
+- optional polling must be against backend state only, must pause/resume safely
+  with tab visibility, and must update the page only from backend responses.
+
 ## Safety Boundaries
 
 Do not expose:

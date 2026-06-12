@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type MutableRefObject, type ReactNode } from "react";
 import { Badge, DemoChip, KV, MpIcon, PageHeader, Panel, SafetyStrip, type MpTone } from "../components/shared/mp";
 import { LoadingSkeleton, ErrorState, EmptyState } from "../components/shared/StateViews";
 import { useAccountContext } from "../context/useAccountContext";
@@ -65,10 +65,21 @@ interface SyncUiState {
 
 const INITIAL_SYNC_STATE: SyncUiState = { status: "idle", message: null };
 
+interface LoadOptions {
+  quiet?: boolean;
+}
+
 function errMsg(err: unknown): string {
   if (err instanceof ApiRequestError) return err.detail;
   if (err instanceof Error) return err.message;
   return "Request failed.";
+}
+
+function restoreScrollPositionIfNeeded(scrollRef: MutableRefObject<number | null>) {
+  const y = scrollRef.current;
+  if (y == null) return;
+  scrollRef.current = null;
+  window.requestAnimationFrame(() => window.scrollTo({ top: y, left: window.scrollX, behavior: "auto" }));
 }
 
 function dataModeBadge(mode: AccountDetailsRead["data_mode"]): { tone: MpTone; label: string; title: string } | null {
@@ -117,14 +128,23 @@ export default function AccountDetailsPage() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailReloadKey, setDetailReloadKey] = useState(0);
   const [syncState, setSyncState] = useState<SyncUiState>(INITIAL_SYNC_STATE);
+  const selectedDetailRef = useRef<SelectedAccountDetailsRead | null>(null);
+  const selectedAccountRefRef = useRef<string | null>(null);
+  const detailAccountRef = useRef<string | null>(null);
+  const restoreScrollYRef = useRef<number | null>(null);
 
-  const load = useCallback((uid: string) => {
-    setStatus("loading");
+  const load = useCallback((uid: string, options: LoadOptions = {}) => {
+    if (!options.quiet) setStatus("loading");
     setError(null);
-    accountDetailsApi
+    return accountDetailsApi
       .get(uid)
       .then((res) => { setData(res); setStatus("success"); })
-      .catch((err) => { setError(errMsg(err)); setStatus("error"); });
+      .catch((err) => {
+        if (!options.quiet) {
+          setError(errMsg(err));
+          setStatus("error");
+        }
+      });
   }, []);
 
   useEffect(() => {
@@ -151,25 +171,33 @@ export default function AccountDetailsPage() {
   // Reset the sync UI state when the selected account changes so a prior
   // refresh's outcome never carries over to a different account.
   useEffect(() => {
+    selectedAccountRefRef.current = selectedAccountRef;
     setSyncState(INITIAL_SYNC_STATE);
   }, [selectedAccountRef]);
 
   const refreshSelectedAccount = useCallback(async () => {
     if (!userId || !selectedAccountRef) return;
+    restoreScrollYRef.current = window.scrollY;
     setSyncState({ status: "syncing", message: null });
     try {
       const res = await accountDetailsApi.sync(userId, selectedAccountRef);
+      if (selectedAccountRefRef.current !== selectedAccountRef) return;
       setSyncState({ status: res.status, message: res.message });
       if (res.status === "succeeded" || res.status === "partially_succeeded") {
-        load(userId);
+        void load(userId, { quiet: true });
         setDetailReloadKey((prev) => prev + 1);
+      } else {
+        restoreScrollPositionIfNeeded(restoreScrollYRef);
       }
     } catch (err) {
+      if (selectedAccountRefRef.current !== selectedAccountRef) return;
       if (err instanceof ApiRequestError && err.status === 409) {
         setSyncState({ status: "running", message: "Sync already in progress." });
+        restoreScrollPositionIfNeeded(restoreScrollYRef);
         return;
       }
       setSyncState({ status: "error", message: errMsg(err) });
+      restoreScrollPositionIfNeeded(restoreScrollYRef);
     }
   }, [load, selectedAccountRef, userId]);
 
@@ -177,25 +205,36 @@ export default function AccountDetailsPage() {
     if (!userId || !selectedAccountRef) {
       setDetailStatus("idle");
       setSelectedDetail(null);
+      selectedDetailRef.current = null;
+      detailAccountRef.current = null;
       setDetailError(null);
       return;
     }
 
     let cancelled = false;
+    const accountChanged = detailAccountRef.current !== selectedAccountRef;
+    const hasCurrentDetail = selectedDetailRef.current?.account_reference === selectedAccountRef;
     setDetailStatus("loading");
-    setSelectedDetail(null);
+    if (accountChanged || !hasCurrentDetail) {
+      setSelectedDetail(null);
+      selectedDetailRef.current = null;
+    }
+    detailAccountRef.current = selectedAccountRef;
     setDetailError(null);
     accountDetailsApi
       .getSelected(userId, selectedAccountRef)
       .then((res) => {
         if (cancelled) return;
         setSelectedDetail(res);
+        selectedDetailRef.current = res;
         setDetailStatus("success");
+        restoreScrollPositionIfNeeded(restoreScrollYRef);
       })
       .catch((err) => {
         if (cancelled) return;
         setDetailError(errMsg(err));
         setDetailStatus("error");
+        restoreScrollPositionIfNeeded(restoreScrollYRef);
       });
 
     return () => { cancelled = true; };
@@ -479,6 +518,9 @@ function SelectedAccountDetail({
   const header = detail ?? acc;
   const caveatCodes = detail?.caveat_codes ?? acc.caveat_codes;
   const readinessCaveats = acc.readiness_caveats ?? [];
+  const hasDetail = detail != null;
+  const isRefreshingDetail = status === "loading" && hasDetail;
+  const isStaleError = status === "error" && hasDetail;
 
   return (
     <Panel
@@ -511,22 +553,36 @@ function SelectedAccountDetail({
           )}
         </div>
 
-        {status === "loading" && (
+        {isRefreshingDetail && (
+          <div style={styles.detailRefreshNotice} role="status" aria-live="polite">
+            <MpIcon name="refresh" size={12} style={styles.refreshIconSpin} />
+            <span>Updating selected detail…</span>
+          </div>
+        )}
+
+        {isStaleError && (
+          <div style={styles.detailRefreshNotice} role="status" aria-live="polite">
+            <MpIcon name="alert" size={12} />
+            <span>{error ?? "Could not update selected detail. Previous detail remains visible."}</span>
+          </div>
+        )}
+
+        {status === "loading" && !hasDetail && (
           <LoadingSkeleton rows={5} label="Loading selected account details…" />
         )}
 
-        {status === "error" && (
+        {status === "error" && !hasDetail && (
           <ErrorState message={error ?? "Failed to load selected account details."} onRetry={onRetry} />
         )}
 
-        {status === "success" && detail?.data_mode === "unavailable" && (
+        {detail?.data_mode === "unavailable" && (
           <EmptyState
             title="Selected account details unavailable"
             body="This account does not currently have a private detail snapshot available."
           />
         )}
 
-        {status === "success" && detail?.data_mode === "private_real_source" && (
+        {detail?.data_mode === "private_real_source" && (
           <>
             <AccountSummaryBand detail={detail} />
             <PositionReadinessRows detail={detail} />
@@ -1491,6 +1547,12 @@ const styles: Record<string, CSSProperties> = {
   metaRow: { display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap", fontSize: "var(--font-size-xs)", color: "var(--mp-ink-2)" },
   metaItem: { color: "var(--mp-ink-2)" },
   metaDot: { color: "var(--mp-mute)" },
+  detailRefreshNotice: {
+    display: "inline-flex", alignItems: "center", gap: 6, alignSelf: "flex-start",
+    padding: "4px 8px", borderRadius: "var(--radius-sm)",
+    backgroundColor: "var(--mp-card-2)",
+    color: "var(--mp-mute)", fontSize: "var(--font-size-xs)", lineHeight: 1.4,
+  },
 
   /* Account summary band — promoted stat tiles + cash detail + freshness line. */
   summarySection: { display: "flex", flexDirection: "column", gap: "var(--space-3)", minWidth: 0 },

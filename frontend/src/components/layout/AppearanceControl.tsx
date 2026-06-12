@@ -13,11 +13,11 @@ const OPTIONS: { mode: AppearanceMode; label: string; icon: string }[] = [
   { mode: "dark", label: "Dark", icon: "☾" },
 ];
 
-export default function AppearanceControl() {
+export default function AppearanceControl({ compact = false }: { compact?: boolean }) {
   const { appearance, setAppearance } = useUIPreference();
 
   return (
-    <div style={styles.group} role="group" aria-label="Appearance">
+    <div style={{ ...styles.group, ...(compact ? styles.groupCompact : {}) }} role="group" aria-label="Appearance">
       {OPTIONS.map(({ mode, label, icon }) => {
         const active = appearance === mode;
         return (
@@ -27,12 +27,12 @@ export default function AppearanceControl() {
             onClick={() => setAppearance(mode)}
             aria-pressed={active}
             title={`Appearance: ${label}`}
-            style={{ ...styles.btn, ...(active ? styles.btnActive : {}) }}
+            style={{ ...styles.btn, ...(compact ? styles.btnCompact : {}), ...(active ? styles.btnActive : {}) }}
           >
             <span aria-hidden="true" style={styles.icon}>
               {icon}
             </span>
-            <span style={styles.label}>{label}</span>
+            {!compact && <span style={styles.label}>{label}</span>}
           </button>
         );
       })}
@@ -50,6 +50,11 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
     backgroundColor: "var(--color-border-subtle)",
   },
+  groupCompact: {
+    flexDirection: "column",
+    width: 36,
+    marginInline: "auto",
+  },
   btn: {
     display: "flex",
     alignItems: "center",
@@ -62,6 +67,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "var(--font-family)",
     cursor: "pointer",
     letterSpacing: "0.02em",
+  },
+  btnCompact: {
+    width: 34,
+    height: 30,
+    justifyContent: "center",
+    padding: 0,
   },
   btnActive: {
     backgroundColor: "var(--color-accent-dim)",

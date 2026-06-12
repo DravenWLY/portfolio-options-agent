@@ -30,7 +30,7 @@ export type MarketMoodRating =
 
 export type MarketMoodComparisonWindow = "1w" | "1m" | "1y";
 
-export type MarketMoodRefreshStatus = "refreshed" | "failed";
+export type MarketMoodRefreshStatus = "refreshed" | "unchanged" | "failed";
 
 export type MarketMoodAxisValueFormat =
   | "number"
@@ -172,6 +172,9 @@ export interface MarketMoodRefreshStatusRead {
   source_label: string;
   generated_at: string | null;
   updated_at_utc: string | null;
+  source_changed: boolean | null;
+  last_checked_at_utc: string | null;
+  last_checked_at_label: string | null;
   record_count: number;
   message: string;
 }

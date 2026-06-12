@@ -61,6 +61,7 @@ const DATA_NAV: NavGroup = {
     { label: "Broker",          icon: "broker",    to: "/broker" },
     { label: "Account Details", icon: "portfolio", to: "/account-details" },
     { label: "Market Data",     icon: "spark",     to: "/market-data" },
+    { label: "Market Mood",     icon: "spark",     to: "/market-context/market-mood" },
     { label: "Risk Review",     icon: "alert",     to: "/risk" },
   ],
 };
@@ -146,9 +147,9 @@ export default function Sidebar() {
         <NavGroupBlock group={DATA_NAV} collapsed={sidebarCollapsed} />
       </div>
 
-      <footer style={styles.footer}>
+      <footer style={{ ...styles.footer, ...(sidebarCollapsed ? styles.footerCollapsed : {}) }}>
         {!sidebarCollapsed && <div style={styles.footerEyebrow}>Appearance</div>}
-        <AppearanceControl />
+        <AppearanceControl compact={sidebarCollapsed} />
         {sidebarCollapsed ? (
           <span
             style={styles.footerBadgeMini}
@@ -212,6 +213,7 @@ function NavItem({ label, icon, to, collapsed, end, tag }: NavEntry & { collapse
         style={({ isActive }) => ({
           ...styles.navLink,
           justifyContent: collapsed ? "center" : "flex-start",
+          ...(collapsed ? styles.navLinkCollapsed : {}),
           ...(isActive ? styles.navLinkActive : styles.navLinkIdle),
         })}
       >
@@ -281,6 +283,7 @@ const styles: Record<string, React.CSSProperties> = {
   brandHeadCollapsed: {
     display: "flex",
     justifyContent: "center",
+    paddingInline: "var(--space-2)",
     paddingBottom: "var(--space-3)",
     borderBottom: "1px solid var(--mp-rule)",
   },
@@ -343,6 +346,12 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid transparent",
     transition: "background-color 120ms, color 120ms, border-color 120ms",
   },
+  navLinkCollapsed: {
+    width: 34,
+    height: 34,
+    padding: 0,
+    marginInline: "auto",
+  },
   navLinkIdle: {
     color: "var(--mp-ink-2)",
     backgroundColor: "transparent",
@@ -366,6 +375,10 @@ const styles: Record<string, React.CSSProperties> = {
     paddingInline: "var(--space-4)", paddingTop: "var(--space-3)",
     borderTop: "1px solid var(--mp-rule)",
     display: "flex", flexDirection: "column", gap: "var(--space-2)",
+  },
+  footerCollapsed: {
+    paddingInline: "var(--space-2)",
+    alignItems: "center",
   },
   footerEyebrow: {
     fontSize: "var(--font-size-xs)", color: "var(--mp-mute)",

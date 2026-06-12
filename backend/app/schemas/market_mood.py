@@ -12,7 +12,7 @@ MarketMoodDataMode: TypeAlias = Literal["synthetic", "provider_reference", "unav
 MarketMoodFreshnessStatus: TypeAlias = Literal["fresh", "stale", "unavailable"]
 MarketMoodRating: TypeAlias = Literal["extreme_fear", "fear", "neutral", "greed", "extreme_greed", "unknown"]
 MarketMoodComparisonWindow: TypeAlias = Literal["1w", "1m", "1y"]
-MarketMoodRefreshStatus: TypeAlias = Literal["refreshed", "failed"]
+MarketMoodRefreshStatus: TypeAlias = Literal["refreshed", "unchanged", "failed"]
 MarketMoodAxisValueFormat: TypeAlias = Literal["number", "percent", "ratio", "index", "currency", "spread", "unknown"]
 MarketMoodValueMeaning: TypeAlias = Literal["fear", "greed", "neutral_or_contextual", "unknown"]
 
@@ -196,6 +196,9 @@ class MarketMoodRefreshStatusRead(BaseModel):
     source_label: str
     generated_at: datetime | None = None
     updated_at_utc: datetime | None = None
+    source_changed: bool | None = None
+    last_checked_at_utc: datetime | None = None
+    last_checked_at_label: str | None = None
     record_count: int
     message: str
 

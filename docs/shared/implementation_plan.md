@@ -64,6 +64,9 @@ Delivered:
   polish.
 - Agent Team evidence boundary remains lossy and excludes account refs, labels,
   cash values, holdings, option rows, tax lots, provider IDs, and raw payloads.
+- Frontend follow-up polish: collapsed sidebar controls no longer clip, Account
+  Details selected-account refresh preserves the current scroll/detail context,
+  and Market Mood has a Data Sources sidebar shortcut.
 
 Review state:
 
@@ -74,6 +77,69 @@ Review state:
   safe test DB is explicitly enabled.
 
 ## Next Recommended Work
+
+### Phase 26A Follow-Up - Market Mood Source-Update Detection
+
+Status: complete through P26A-T12; ready to archive on the next docs pass.
+
+Goal:
+
+- Keep Market Mood honest when a page refresh triggers a backend refresh:
+  `updated_at_label` remains provider/source update time, while backend refresh
+  attempts and unchanged-source states are represented separately.
+
+Reference doc:
+
+- `docs/codex-b-architecture/PHASE_26A_MARKET_MOOD_CONTRACT.md`
+
+Tasks:
+
+- `P26A-T11` - Backend source-change detection and refresh-status metadata.
+  - Owner: Codex C.
+  - Reviewer: Codex B.
+  - Scope: detect source changes from provider `updated_at_utc` or normalized
+    snapshot equivalence; preserve last-good snapshot; optionally expose safe
+    `last_checked_at_utc` / `last_checked_at_label` style metadata; no raw
+    provider payloads, URLs, headers, cookies, provider IDs, exception bodies,
+    prompts, traces, broker/account data, or secrets.
+  - Acceptance: unchanged provider source does not imply a new source update;
+    refresh failures preserve last-good; source update time and backend checked
+    time are separate; tests use fake/injected provider responses only.
+  - Verification 2026-06-12 by Codex C: implemented backend refresh result
+    metadata with `status="refreshed" | "unchanged" | "failed"`,
+    `source_changed`, `last_checked_at_utc`, and `last_checked_at_label`;
+    `updated_at_utc` remains provider/source update time. Refresh compares
+    provider `updated_at_utc` plus normalized snapshot equivalence, preserves
+    and reuses last-good snapshots on unchanged checks, and records sanitized
+    failed checks without replacing last-good data. Files changed:
+    `backend/app/services/market_mood.py`,
+    `backend/app/schemas/market_mood.py`,
+    `backend/app/api/routes/market_context.py`,
+    `backend/tests/services/test_market_mood.py`,
+    `backend/tests/api/test_market_context.py`. Tests:
+    `cd backend && ./.venv/bin/python -m pytest tests/services/test_market_mood.py tests/api/test_market_context.py -q`
+    -> 30 passed. Codex B review 2026-06-12: PASS. Source update time and
+    backend checked time remain separate, last-good snapshot preservation is
+    intact, default tests are fake/offline, and no raw provider payloads or
+    provider-private metadata are exposed.
+- `P26A-T12` - Frontend Market Mood backend-state auto-update.
+  - Owner: Codex F.
+  - Dependency: P26A-T11 reviewed and passed.
+  - Reviewer: Codex B for contract/safety; Claude B for visual review if UI copy
+    or status display changes.
+  - Scope: on Market Mood page mount/page refresh, use backend refresh/status and
+    detail reads only; optionally poll backend state with tab-visibility pause;
+    update page from backend detail only; preserve honest provider timestamp
+    display; no frontend CNN/provider calls.
+  - Acceptance: `updated_at_label` is never treated as page-refresh time;
+    backend checked/status metadata, if shown, is compact and clearly separate;
+    no `live`/`real-time`, advice, recommendation, buy/sell, risk-on/risk-off,
+    order, execution, safe-to-trade, or ready-to-trade wording.
+  - Verification 2026-06-12 by Codex B: PASS. Frontend calls only backend
+    Market Mood endpoints, refreshes/reads backend state on mount, polls backend
+    on a visibility-aware interval, keeps provider `updated_at_label` distinct
+    from backend `Checked` metadata, and adds no frontend provider call,
+    storage write, advice/execution wording, or CNN branding.
 
 ### Phase 27C - Trade Review And Agent Team Scope Integration
 

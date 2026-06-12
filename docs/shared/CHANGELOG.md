@@ -1,5 +1,11 @@
 # Changelog
 
+- 2026-06-12: Closed the Market Mood source-update follow-up: backend refresh
+  now reports refreshed/unchanged/failed source checks with separate
+  `last_checked_at` metadata, while the detail page refreshes from backend state
+  only and preserves provider `updated_at` as source time. Also added the Market
+  Mood sidebar shortcut, fixed collapsed sidebar controls, and preserved Account
+  Details scroll/detail context during selected-account refresh.
 - 2026-06-12: Reorganized coordination docs so routine agents start from the
   short active plan and current roadmap instead of historical task logs. Archived
   the pre-cleanup active plan as

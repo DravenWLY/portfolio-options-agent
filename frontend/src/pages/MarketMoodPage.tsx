@@ -10,6 +10,7 @@ import type {
   MarketMoodIndicatorRead,
   MarketMoodComparisonRead,
   MarketMoodRating,
+  MarketMoodRefreshStatusRead,
   MarketMoodTrendPointRead,
   MarketMoodValueMeaning,
 } from "../types/marketMood";
@@ -17,6 +18,9 @@ import { dataModeBadge, formatAxisValue, indicatorScaleCalibration } from "../co
 import MarketMoodIndicatorChart from "../components/market-context/MarketMoodIndicatorChart";
 
 type LoadStatus = "idle" | "loading" | "success" | "error";
+type RefreshIntent = "initial" | "background";
+
+const MARKET_MOOD_BACKEND_CHECK_INTERVAL_MS = 15 * 60 * 1000;
 
 function errMsg(err: unknown): string {
   if (err instanceof ApiRequestError) return err.detail;
@@ -29,21 +33,63 @@ export default function MarketMoodPage() {
   const [data, setData] = useState<MarketMoodDetailRead | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [refreshStatus, setRefreshStatus] = useState<MarketMoodRefreshStatusRead | null>(null);
+  const dataRef = useRef<MarketMoodDetailRead | null>(null);
 
-  const load = useCallback(async () => {
-    setStatus("loading");
-    setError(null);
+  const load = useCallback(async (intent: RefreshIntent = "initial") => {
+    if (intent === "initial" || !dataRef.current) {
+      setStatus("loading");
+      setError(null);
+    }
+    let nextRefreshStatus: MarketMoodRefreshStatusRead | null = null;
     try {
+      try {
+        nextRefreshStatus = await marketMoodApi.refresh();
+        setRefreshStatus(nextRefreshStatus);
+      } catch (refreshErr) {
+        // Refresh failure should not block reading the latest backend detail.
+        if (refreshErr instanceof ApiRequestError || refreshErr instanceof Error) {
+          setRefreshStatus(null);
+        }
+      }
       const res = await marketMoodApi.detail();
-      setData(res);
+      setData((prev) => {
+        if (
+          prev &&
+          intent === "background" &&
+          nextRefreshStatus?.status === "unchanged" &&
+          prev.updated_at_utc === res.updated_at_utc &&
+          prev.generated_at === res.generated_at
+        ) {
+          dataRef.current = prev;
+          return prev;
+        }
+        dataRef.current = res;
+        return res;
+      });
       setStatus("success");
     } catch (err) {
       setError(errMsg(err));
-      setStatus("error");
+      if (intent === "initial" || !dataRef.current) setStatus("error");
     }
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void load("background");
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [load]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load("background");
+    }, MARKET_MOOD_BACKEND_CHECK_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [load]);
 
   useEffect(() => {
     if (!data?.indicators.length) return;
@@ -89,7 +135,7 @@ export default function MarketMoodPage() {
           />
         ) : (
           <>
-            <OverallBand data={data} />
+            <OverallBand data={data} refreshStatus={refreshStatus} />
 
             <section style={styles.workbenchSection}>
               <div style={styles.sectionHead}>
@@ -126,7 +172,13 @@ export default function MarketMoodPage() {
   );
 }
 
-function OverallBand({ data }: { data: MarketMoodDetailRead }) {
+function OverallBand({
+  data,
+  refreshStatus,
+}: {
+  data: MarketMoodDetailRead;
+  refreshStatus: MarketMoodRefreshStatusRead | null;
+}) {
   const scoreText = data.score_label ?? (data.score != null ? String(data.score) : "Unavailable");
   const visual = ratingVisualFor(data.rating);
   return (
@@ -162,6 +214,14 @@ function OverallBand({ data }: { data: MarketMoodDetailRead }) {
         <div style={styles.heroBottomRow}>
           <span style={styles.heroFreshLabel}>{data.freshness_label}</span>
           {data.updated_at_label && <span style={styles.heroUpdated}>Updated {data.updated_at_label}</span>}
+          {refreshStatus?.last_checked_at_label && (
+            <span
+              style={styles.heroChecked}
+              title={refreshStatusLabel(refreshStatus)}
+            >
+              Checked {refreshStatus.last_checked_at_label}
+            </span>
+          )}
         </div>
       </div>
 
@@ -180,6 +240,21 @@ function OverallBand({ data }: { data: MarketMoodDetailRead }) {
       </div>
     </section>
   );
+}
+
+function refreshStatusLabel(status: MarketMoodRefreshStatusRead): string {
+  switch (status.status) {
+    case "refreshed":
+      return status.source_changed === false
+        ? "Backend checked the source; source data was unchanged."
+        : "Backend checked the source and refreshed the stored snapshot.";
+    case "unchanged":
+      return "Backend checked the source; source data was unchanged.";
+    case "failed":
+      return "Backend source check failed; latest backend detail is still shown when available.";
+    default:
+      return status.message;
+  }
 }
 
 const GAUGE_ZONES: Array<{ rating: MarketMoodRating; label: string }> = [
@@ -704,6 +779,7 @@ const styles: Record<string, CSSProperties> = {
   heroBottomRow: { display: "flex", justifyContent: "space-between", gap: "var(--space-3)", flexWrap: "wrap" },
   heroFreshLabel: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)" },
   heroUpdated: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)" },
+  heroChecked: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)" },
   heroAside: {
     display: "flex",
     flexDirection: "column",

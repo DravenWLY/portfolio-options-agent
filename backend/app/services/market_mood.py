@@ -204,21 +204,59 @@ class MarketMoodSnapshot:
         return self.trend_series[-1].rating
 
 
+@dataclass(frozen=True)
+class MarketMoodRefreshResult:
+    snapshot: MarketMoodSnapshot
+    status: str
+    source_changed: bool
+    last_checked_at_utc: datetime
+    message: str
+
+
 class MarketMoodSnapshotStore:
     """In-memory last-good Market Mood snapshot boundary."""
 
     def __init__(self) -> None:
         self._active_snapshot: MarketMoodSnapshot | None = None
+        self._last_checked_at_utc: datetime | None = None
+        self._last_refresh_status: str | None = None
+        self._last_source_changed: bool | None = None
 
     @property
     def active_snapshot(self) -> MarketMoodSnapshot | None:
         return self._active_snapshot
 
+    @property
+    def last_checked_at_utc(self) -> datetime | None:
+        return self._last_checked_at_utc
+
+    @property
+    def last_refresh_status(self) -> str | None:
+        return self._last_refresh_status
+
+    @property
+    def last_source_changed(self) -> bool | None:
+        return self._last_source_changed
+
     def activate(self, snapshot: MarketMoodSnapshot) -> None:
         self._active_snapshot = snapshot
 
+    def record_refresh_check(
+        self,
+        *,
+        checked_at_utc: datetime,
+        status: str,
+        source_changed: bool | None,
+    ) -> None:
+        self._last_checked_at_utc = _ensure_utc(checked_at_utc)
+        self._last_refresh_status = status
+        self._last_source_changed = source_changed
+
     def clear(self) -> None:
         self._active_snapshot = None
+        self._last_checked_at_utc = None
+        self._last_refresh_status = None
+        self._last_source_changed = None
 
 
 GLOBAL_MARKET_MOOD_STORE = MarketMoodSnapshotStore()
@@ -518,7 +556,7 @@ def build_cnn_market_mood_refresh_runner(
 ) -> Any:
     """Create the explicit protected refresh runner for CNN-derived provider-reference data."""
 
-    def run() -> MarketMoodSnapshot:
+    def run() -> MarketMoodRefreshResult:
         current = now() if now is not None else datetime.now(UTC)
         http_client = client or CnnFearGreedHttpClient(fetch_text=fetch_text, endpoint_url=endpoint_url)
         provider = CnnDerivedMarketMoodProvider(http_client, generated_at=current)
@@ -526,6 +564,7 @@ def build_cnn_market_mood_refresh_runner(
             provider=provider,
             store=store,
             snapshot_path=snapshot_path or DEFAULT_MARKET_MOOD_SNAPSHOT_PATH,
+            checked_at=current,
         )
 
     return run
@@ -536,18 +575,79 @@ def refresh_and_persist_market_mood_snapshot(
     provider: MarketMoodProvider,
     store: MarketMoodSnapshotStore = GLOBAL_MARKET_MOOD_STORE,
     snapshot_path: Path | str = DEFAULT_MARKET_MOOD_SNAPSHOT_PATH,
-) -> MarketMoodSnapshot:
+    checked_at: datetime | None = None,
+) -> MarketMoodRefreshResult:
     """Refresh, validate, persist, then activate a normalized Market Mood snapshot."""
 
+    checked_at_utc = _ensure_utc(checked_at or datetime.now(UTC))
+    previous = store.active_snapshot
+    if previous is None:
+        previous = load_market_mood_snapshot(path=snapshot_path)
+        if previous is not None:
+            store.activate(previous)
     try:
         snapshot = provider.snapshot()
         _validate_snapshot(snapshot)
+        if previous is not None and not _market_mood_source_changed(previous, snapshot):
+            store.record_refresh_check(
+                checked_at_utc=checked_at_utc,
+                status="unchanged",
+                source_changed=False,
+            )
+            return MarketMoodRefreshResult(
+                snapshot=previous,
+                status="unchanged",
+                source_changed=False,
+                last_checked_at_utc=checked_at_utc,
+                message="Market Mood source data was unchanged.",
+            )
         save_market_mood_snapshot(snapshot, path=snapshot_path)
         store.activate(snapshot)
-        return snapshot
+        store.record_refresh_check(
+            checked_at_utc=checked_at_utc,
+            status="refreshed",
+            source_changed=True,
+        )
+        return MarketMoodRefreshResult(
+            snapshot=snapshot,
+            status="refreshed",
+            source_changed=True,
+            last_checked_at_utc=checked_at_utc,
+            message="Market Mood source data changed and snapshot was refreshed.",
+        )
     except Exception:
-        pass
+        store.record_refresh_check(
+            checked_at_utc=checked_at_utc,
+            status="failed",
+            source_changed=None,
+        )
     raise MarketMoodRefreshError("market mood refresh failed; last good snapshot was preserved") from None
+
+
+def _market_mood_source_changed(previous: MarketMoodSnapshot, current: MarketMoodSnapshot) -> bool:
+    if previous.updated_at_utc is not None and current.updated_at_utc is not None:
+        if _ensure_utc(previous.updated_at_utc) != _ensure_utc(current.updated_at_utc):
+            return True
+    return _snapshot_equivalence_payload(previous) != _snapshot_equivalence_payload(current)
+
+
+def _snapshot_equivalence_payload(snapshot: MarketMoodSnapshot) -> dict[str, Any]:
+    return {
+        "data_mode": snapshot.data_mode,
+        "source_label": snapshot.source_label,
+        "source_detail_label": snapshot.source_detail_label,
+        "source_rights_notice": snapshot.source_rights_notice,
+        "updated_at_utc": _ensure_utc(snapshot.updated_at_utc).isoformat() if snapshot.updated_at_utc else None,
+        "trend_series": [_point_payload(point) for point in snapshot.trend_series],
+        "components": [_component_payload(component) for component in snapshot.components],
+        "indicator_history": {
+            key: [_indicator_point_payload(point) for point in history]
+            for key, history in sorted(snapshot.indicator_history.items())
+        },
+        "caveat_codes": list(snapshot.caveat_codes),
+        "limitations": list(snapshot.limitations),
+        "status_message": snapshot.status_message,
+    }
 
 
 def save_market_mood_snapshot(

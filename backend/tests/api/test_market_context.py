@@ -9,6 +9,7 @@ from app.services.market_mood import (
     CnnDerivedMarketMoodProvider,
     GLOBAL_MARKET_MOOD_STORE,
     MarketMoodRefreshError,
+    MarketMoodRefreshResult,
     build_cnn_market_mood_refresh_runner,
     clear_active_market_mood_snapshot,
     load_market_mood_snapshot,
@@ -246,9 +247,46 @@ def test_market_mood_refresh_route_returns_sanitized_provider_reference_success(
     assert payload["data_mode"] == "provider_reference"
     assert payload["source_label"] == "CNN-derived Fear & Greed"
     assert payload["record_count"] == 4
-    assert payload["message"] == "Market Mood refresh completed."
+    assert payload["source_changed"] is True
+    assert payload["last_checked_at_utc"] == "2026-06-02T15:00:00Z"
+    assert payload["last_checked_at_label"] == "2026-06-02 15:00 UTC"
+    assert payload["updated_at_utc"] == "2026-06-02T14:30:00Z"
+    assert payload["message"] == "Market Mood source data changed and snapshot was refreshed."
     assert loaded is not None
     assert client.get("/market-context/market-mood").json()["data_mode"] == "provider_reference"
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_market_mood_refresh_route_can_report_unchanged_source_check(app, client: TestClient) -> None:
+    class FakeClient:
+        def fetch_market_mood(self):
+            return provider_payload()
+
+    snapshot = CnnDerivedMarketMoodProvider(FakeClient(), generated_at=NOW).snapshot()
+
+    def runner():
+        return MarketMoodRefreshResult(
+            snapshot=snapshot,
+            status="unchanged",
+            source_changed=False,
+            last_checked_at_utc=datetime(2026, 6, 2, 16, 5, tzinfo=UTC),
+            message="Market Mood source data was unchanged.",
+        )
+
+    app.dependency_overrides[get_market_mood_refresh_runner] = lambda: runner
+    try:
+        response = client.post("/market-context/market-mood/refresh")
+    finally:
+        app.dependency_overrides.pop(get_market_mood_refresh_runner, None)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "unchanged"
+    assert payload["source_changed"] is False
+    assert payload["updated_at_utc"] == "2026-06-02T14:30:00Z"
+    assert payload["last_checked_at_utc"] == "2026-06-02T16:05:00Z"
+    assert payload["last_checked_at_label"] == "2026-06-02 16:05 UTC"
+    assert payload["message"] == "Market Mood source data was unchanged."
     assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
 
 
@@ -267,6 +305,9 @@ def test_market_mood_refresh_route_returns_sanitized_failure(app, client: TestCl
     rendered = repr(payload).lower()
     assert payload["status"] == "failed"
     assert payload["data_mode"] == "unavailable"
+    assert payload["source_changed"] is None
+    assert payload["last_checked_at_utc"] is not None
+    assert payload["last_checked_at_label"] is not None
     assert payload["record_count"] == 0
     assert payload["message"] == "Market Mood refresh failed; last good snapshot was preserved."
     assert "raw_payload" not in rendered

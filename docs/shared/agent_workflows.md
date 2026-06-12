@@ -42,6 +42,11 @@ Use the smallest workflow that fits the task:
   phase splits, or decisions that could duplicate docs or change task sources
   of truth.
 
+When an implementation agent needs a scoped review-only sub-agent, use the
+`Review-Only Sub-Agent Pattern` in `docs/shared/AGENT_REPORT_FORMAT.md`.
+Review sub-agents must not edit files, must return `PASS` or `BLOCKED`, and the
+task must not be marked done until the required review gate passes.
+
 Deferred workflow candidates are listed at the end of this file. Do not apply
 or implement them yet.
 

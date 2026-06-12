@@ -107,6 +107,114 @@ Next step:
 - <what should happen next>
 ```
 
+## Review-Only Sub-Agent Pattern
+
+Implementation agents may request a review-only sub-agent after their assigned
+work is complete and local verification has run. The review sub-agent must not
+implement, broaden scope, inspect private data, or mark the task done. It returns
+`PASS` or `BLOCKED`; if blocked, the original implementation owner fixes the
+blocker and requests a narrow re-review.
+
+### Who May Request Which Review
+
+- Codex C may request Codex B review for backend/API/schema/DB/provider work.
+- Claude A may request Claude B visual/design review, and Codex B review when
+  the frontend work consumes or changes backend contracts.
+- Codex F may request Claude B visual/design review, and Codex B review when
+  the frontend work consumes or changes backend contracts.
+- Claude E may request Codex B review for agentic workflow architecture,
+  contracts, tool-use boundaries, prompt/evidence boundaries, and safety.
+- Codex D may request Codex B review for Docker, build, runtime, environment,
+  CI, and deployment-boundary work.
+- Codex B may request a specialist second opinion: Claude B for visual/UX,
+  Claude E for agentic workflow, Codex C for backend feasibility, or Codex A for
+  product scope.
+- Codex A may request Codex B architecture review, Claude C product/competitor
+  research, or other review support for roadmap decisions.
+- Claude B may request Codex B review only when a visual review finds a contract,
+  privacy, endpoint, or safety uncertainty.
+
+Review agents should not chain more reviewers unless they hit a clear blocker.
+Review-only agents should not spawn implementation agents.
+
+### Review Agent Types
+
+- Codex B contract/privacy/architecture reviewer: backend contracts, API routes,
+  schemas, Account Details, Trade Review, Agent Team evidence, provider
+  boundaries, and cross-layer integration.
+- Claude B visual/design reviewer: frontend layout, readability, accessibility,
+  responsive behavior, fintech UX quality, and visible safety copy.
+- Claude E agentic AI workflow reviewer: multi-agent flow, tool-use policy,
+  eval harness, prompt/evidence boundary, latency/cost design.
+- Codex D devops/runtime reviewer: Docker, Compose, build packaging, CI,
+  runtime profiles, deployment boundaries.
+- Codex A product acceptance reviewer: product scope, user value, priority,
+  wording intent, and whether a feature is enough.
+- Claude D security/privacy reviewer, when available: threat model, broker-data
+  exposure, data deletion/export, credentials, compliance language.
+
+### Review-Only Prompt Template
+
+Use this exact shape when asking a sub-agent to review completed work.
+
+```text
+Agent: <Codex B | Claude B | Claude E | Codex D | Codex A>
+Task: <phase-task id> - <short title>
+Mode: review-only
+
+Goal:
+Review the completed work and return PASS or BLOCKED. Do not implement changes. Do not edit files.
+
+Read:
+- Use CodeGraph first when available:
+  - explore <main symbols/routes/components/contracts>
+- <current task or architecture doc>
+- <changed files>
+- <directly related tests/contracts>
+- Read additional files only if necessary.
+
+Scope:
+- Review only <contract/privacy/safety | visual/design | agentic workflow | devops/runtime | product scope>.
+
+Out of scope:
+- Do not edit files.
+- Do not broaden into unrelated repo audit.
+- Do not inspect .env, secrets, DB contents, logs, broker payloads, screenshots, generated reports, or real brokerage data.
+- Do not call external providers unless explicitly authorized.
+
+Acceptance:
+- <criterion 1>
+- <criterion 2>
+- <criterion 3>
+- <criterion 4>
+
+Verification already run:
+- <command> -> <result>
+- <command> -> <result>
+- git diff --check -> <result>
+
+Return:
+- Task
+- Verdict: PASS or BLOCKED
+- Files reviewed
+- Blockers with file/line references, if any
+- Important issues, if any
+- Deferred polish, max 3
+- Verification, including anything not run
+- Next step
+```
+
+### Cautions
+
+- Keep review prompts narrow. Include exact changed files, directly related
+  contracts/tests, and the relevant task doc.
+- Say `Do not edit files` for review-only work.
+- Do not ask review sub-agents to rerun broad verification unless the review
+  requires it.
+- Do not mark a task `done` until the required review gate returns `PASS`.
+- Close the review sub-agent after it returns the report.
+- A review sub-agent never receives broader data access than the original task.
+
 ## Prompt Rules
 
 - Agent prompts must be copyable as one fenced `text` block. Avoid nested code

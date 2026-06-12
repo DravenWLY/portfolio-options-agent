@@ -77,12 +77,16 @@ Review state:
 
 ### Phase 27C - Trade Review And Agent Team Scope Integration
 
-Status: not started.
+Status: architecture ready; implementation not started.
 
 Goal:
 
 - Use the stabilized Account Details scope/account model to make Trade Review,
   saved reports, and Agent Team readouts state scope clearly and consistently.
+
+Reference doc:
+
+- `docs/codex-b-architecture/PHASE_27C_TRADE_REVIEW_AGENT_SCOPE_INTEGRATION_CONTRACT.md`
 
 Recommended first task:
 
@@ -90,6 +94,8 @@ Recommended first task:
   - Owner: Claude A or Codex F.
   - Reviewer: Codex B for contract/safety; Claude B for UI if visual changes are
     substantial.
+  - Architecture: follow
+    `docs/codex-b-architecture/PHASE_27C_TRADE_REVIEW_AGENT_SCOPE_INTEGRATION_CONTRACT.md`.
   - Scope: consume existing backend scope metadata and selected review account
     contract; no new backend fields unless Codex B opens a separate backend task.
   - Acceptance: Trade Review clearly separates `Review account` from broader

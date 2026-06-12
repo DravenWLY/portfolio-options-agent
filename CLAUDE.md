@@ -15,23 +15,30 @@ This file is loaded automatically by Claude Code when it works in this repositor
 - Code review with safety in mind: small, reviewable diffs and respect for project boundaries.
 - Documentation work that supports the above.
 
-Treat backend, agent, broker, and market-data work as out of scope by default unless the active task in `docs/implementation_plan.md` explicitly calls for it.
+Treat backend, agent, broker, and market-data work as out of scope by default unless the active task in `docs/shared/implementation_plan.md` explicitly calls for it.
 
 ## Required reading before making changes
 
 Always inspect these first:
 
 1. `AGENTS.md`
-2. `docs/implementation_plan.md` (find the currently active task)
-3. `docs/architecture.md`
-4. `README.md` and `frontend/README.md` when frontend work is involved
+2. `docs/shared/current_roadmap.md`
+3. `docs/shared/implementation_plan.md` (find the current handoff)
+4. `docs/shared/agent_workflows.md` when preview, review, or workflow rules matter
+5. `docs/codex-b-architecture/architecture.md` only when full architecture context is needed
+6. `README.md` and `frontend/README.md` when frontend work is involved
 
 ## Working rules
 
-- Implement one task at a time. The current task is whichever entry in `docs/implementation_plan.md` is `in_progress`, or the next `not_started` task in order if none is in progress.
+- Implement one task at a time. Use `docs/shared/implementation_plan.md` for
+  the current handoff and next recommended task.
+- Treat `docs/shared/implementation_plan.md` as a short active-work index, not a historical ledger. Do not load dated archives or `completed_phases_log.md` unless the task explicitly needs historical verification.
 - Keep changes small and reviewable. No multi-phase rewrites in one pass.
 - Do not run unrelated refactors.
-- After each task, propose a status update for `docs/implementation_plan.md`. Only mark a task `done` after acceptance criteria are met and verified.
+- Use CodeGraph first when it is available for codebase exploration. Start with one focused `codegraph_explore` for the relevant symbols/flow, then use `codegraph_search`, `codegraph_callers`, `codegraph_callees`, or `codegraph_impact` as needed. Avoid broad file-reading loops; direct file reads should be targeted confirmations, especially for files edited after the index.
+- After each task, propose a status update for
+  `docs/shared/implementation_plan.md`. Only mark a task `done` after
+  acceptance criteria are met and verified.
 - Stop for review after each task.
 - Default backend test command: `cd backend && pytest`. Fallback: `cd backend && ./.venv/bin/python -m pytest`.
 
@@ -91,6 +98,17 @@ If a frontend or review task appears to need real brokerage data, Claude Code mu
 ## Frontend preferences
 
 - React + Vite + TypeScript is the assumed stack once the frontend task starts.
+- For data-backed pages such as Account Details, Agent Console success states,
+  Dashboard account panels, and broker/market pages, do not start only the
+  frontend dev server for final preview. Start the full local stack first:
+  `docker compose up -d postgres backend frontend`, then verify
+  `curl -i http://localhost:8000/health`, `curl -i http://localhost:8000/users`,
+  and `curl -i http://localhost:5173/api/users`.
+  Only then open the frontend route. If backend/Postgres/dev user setup is
+  unavailable, state that the browser smoke was route-shell only and explain the
+  exact blocker.
+  Do not rely on `.claude/launch.json` or a `frontend` preview label alone as
+  proof of connected-data state; the probes above are the proof.
 - Component-driven structure. Small composable components, not page-sized blobs.
 - Every data-driven component handles loading, empty, error, stale, reauth-required, and offline states.
 - Every panel that shows broker positions or market quotes shows its timestamp and source.
@@ -106,7 +124,8 @@ See the project skill at `.claude/skills/frontend-design/SKILL.md` for full visu
 - `docs/shared/agent_workflows.md` - repo-specific workflow guidance for frontend contract review, backend TDD slices, and product/architecture docs grilling. These are not installed external skills and do not override `AGENTS.md`.
 - `.claude/skills/frontend-design/` - production-grade React/Vite dashboard UI standards and review checklist.
 - `.claude/skills/finance-dashboard-ux-review/` - fintech-specific UX review for portfolio/options dashboards.
-- `.claude/skills/implementation-plan-review/` - enforces single-task discipline against `docs/implementation_plan.md`.
+- `.claude/skills/implementation-plan-review/` - enforces single-task discipline against `docs/shared/implementation_plan.md`.
+- `docs/shared/AGENT_REPORT_FORMAT.md` - canonical copyable prompt and report format. Agent prompts should be one fenced `text` block, not a markdown fence with nested code blocks.
 
 Prefer invoking these explicitly when reviewing or designing UI, or when proposing/closing a plan task.
 

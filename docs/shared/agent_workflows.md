@@ -45,6 +45,24 @@ Use the smallest workflow that fits the task:
 Deferred workflow candidates are listed at the end of this file. Do not apply
 or implement them yet.
 
+## CodeGraph-First Context Rule
+
+When CodeGraph is available, agents should use it before broad file reading:
+
+- start implementation/review exploration with one focused `codegraph_explore`
+  naming the relevant symbols, contract, route, component, or flow;
+- use `codegraph_search` only to locate a specific symbol;
+- use `codegraph_callers`, `codegraph_callees`, or `codegraph_impact` for
+  dependency and blast-radius checks;
+- read files directly only for changed files, directly related contracts/tests,
+  or recently edited files that may not be indexed yet;
+- do not ask Claude or Codex agents to read large source lists, archived docs,
+  generated logs, or broad directories by default.
+
+This rule exists to reduce session usage and avoid turning a narrow task into a
+repo-wide audit. Prompts should name the CodeGraph exploration target and then
+list only the task docs, changed files, and directly related tests.
+
 ## portfolio-frontend-contract-review
 
 ### Purpose
@@ -76,7 +94,7 @@ Read only the current task scope and directly relevant files:
 2. `CLAUDE.md`
 3. `docs/shared/current_roadmap.md`
 4. `docs/shared/AI_TEAM.md`
-5. the current Phase 20A task in `docs/shared/implementation_plan.md`
+5. the current task or handoff in `docs/shared/implementation_plan.md`
 6. relevant backend schema/API contract files named by the task
 7. relevant frontend API/type/component files named by the task
 8. design prototype files only when the task explicitly references them
@@ -124,6 +142,94 @@ policy strings as placeholders.
   - Agent Console uses only the approved agent-team preview endpoint;
   - no frontend calls to SnapTrade, brokers, market providers, LLM providers,
     TradingAgents, or external APIs.
+- Preview verification:
+  - data-backed pages (`/account-details`, Agent Console success states,
+    Dashboard account panels, broker/market pages) need the **full stack** —
+    Postgres + backend + the local dev user/account data — not just the
+    frontend. See `Full-stack preview for data-backed pages` below. A
+    frontend-only start renders the app shell but cannot show connected data.
+  - if the stack cannot start, or backend `/users` / proxy `/api/users` does not
+    return the local dev user, report that blocker and do not describe the smoke
+    as a complete data-state preview.
+
+## Full-stack preview for data-backed pages
+
+Do not trust `.claude/launch.json` or a tool label such as `frontend` as proof
+that a preview is full-stack. Some preview tools start only a standalone Vite
+frontend. That can render the shell but fail every connected-data request.
+
+For `/account-details` and other data-backed pages, the required proof is the
+probe sequence below: Postgres is up, backend is healthy, backend `/users`
+returns the local dev user, frontend proxy `/api/users` returns the same local
+dev user, and the route renders connected data. If any probe fails, report a
+preview blocker instead of judging the page's data state.
+
+Standard command sequence (run from the repo root):
+
+```bash
+cd /Users/wulingyun/Desktop/Trading_Agents_Projects/portfolio-options-agent
+docker compose up -d postgres backend frontend
+curl -i http://localhost:8000/health     # backend liveness
+curl -i http://localhost:8000/users      # backend direct route (authed dev user)
+curl -i http://localhost:5173/api/users  # Vite proxy → same backend route
+```
+
+Then open the real route in a browser:
+
+```
+http://localhost:5173/account-details
+```
+
+Success conditions (all must hold before trusting a data-state smoke):
+
+- `http://localhost:8000/health` returns `200`;
+- backend `http://localhost:8000/users` returns the local dev user;
+- Vite proxy `http://localhost:5173/api/users` returns the **same** local dev
+  user (confirms the proxy is forwarding with the dev access token);
+- `http://localhost:5173/account-details` renders connected account data — the
+  account rail and selected-account detail — not only the shell.
+
+Route difference (do not get fooled by this):
+
+- backend direct route is `/users` (no `/api` prefix);
+- frontend / Vite proxy route is `/api/users` (the proxy strips `/api` and adds
+  the local dev access-token header before forwarding to the backend);
+- `http://localhost:8000/api/users` will typically `404` — that is expected and
+  **not** an app failure. Use `http://localhost:8000/users` against the backend
+  and `http://localhost:5173/api/users` against the proxy.
+
+Warning — Claude Preview vs the Docker frontend:
+
+- The Docker `frontend` service is the safest default for data-backed pages
+  because it runs with the local dev proxy configuration expected by the repo.
+- If a review tool insists on starting a standalone Claude Preview / Vite
+  process, keep Docker `postgres` and `backend` running and verify the Vite proxy
+  can read the local dev token (for example through the approved, gitignored
+  `frontend/.env.local` path). Do not read or print that token.
+- Do not stop the Docker frontend just to run a frontend-only preview unless the
+  preview is started with equivalent proxy configuration and the probes above
+  pass. If `/api/*` returns `401`, the preview is not a valid connected-data
+  smoke.
+
+Copyable Preview Review Instruction (paste into Claude B / Codex F visual-review
+prompts for data-backed pages):
+
+```text
+Preview (full stack required — frontend-only is insufficient for connected data):
+  cd /Users/wulingyun/Desktop/Trading_Agents_Projects/portfolio-options-agent
+  docker compose up -d postgres backend frontend
+  curl -i http://localhost:8000/health     # expect 200
+  curl -i http://localhost:8000/users      # backend route → dev user
+  curl -i http://localhost:5173/api/users  # proxy route → same dev user
+Then open: http://localhost:5173/account-details
+Expect: account rail + selected-account detail render with connected data, not just the shell.
+Notes:
+  - Backend route is /users; frontend/proxy route is /api/users.
+  - http://localhost:8000/api/users may 404 — that is expected, not a failure.
+  - Do NOT judge connected-data UI from a frontend-only preview unless the
+    /api/users proxy probe passes; a standalone Vite process without the local
+    dev token returns 401 and only proves the route shell can render.
+```
 
 ### Expected Output Format
 

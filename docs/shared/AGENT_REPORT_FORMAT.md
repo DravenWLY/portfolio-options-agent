@@ -11,7 +11,10 @@ Use this format for Codex and Claude implementation handoffs, review requests, a
 
 ## Prompt Format
 
-Use this structure when asking another agent to work.
+Use this structure when asking another agent to work. When sending a prompt to
+another agent, wrap the entire prompt in one fenced `text` block. Do not use a
+`markdown` fence for agent prompts, and do not put nested triple-backtick code
+fences inside the prompt body; use indented commands or bullet lists instead.
 
 ```text
 Agent: <Claude A | Claude B | Claude E | Codex C | Codex D>
@@ -25,6 +28,11 @@ Goal:
 <one or two sentences>
 
 Read:
+- Use CodeGraph first when available:
+  - start with one focused `codegraph_explore` for the main symbols/flow;
+  - use `codegraph_search` for locations;
+  - use `codegraph_callers` / `codegraph_callees` / `codegraph_impact` for dependency checks;
+  - direct file reads should be targeted confirmations, not broad read loops.
 - <only task docs and directly changed files>
 - Read additional files only if necessary.
 
@@ -101,15 +109,28 @@ Next step:
 
 ## Prompt Rules
 
+- Agent prompts must be copyable as one fenced `text` block. Avoid nested code
+  fences, HTML textareas, or markdown fences that render awkwardly in the app.
 - Always include the required skill path when a task depends on a Claude/Codex skill.
+- For code implementation or code review prompts, include a short "Use CodeGraph first when available" instruction instead of asking the agent to read many large source files. Name the key symbols/flows to explore, then list only changed files and directly related contracts/tests.
 - Use a strict read list for reviews, but allow "read additional files only if necessary."
 - Do not ask a reviewer to re-run all implementation verification unless that is the purpose of the review.
 - Do not ask Claude B to review backend contracts. Claude B reviews visual/design quality unless explicitly assigned otherwise.
 - Do not ask Codex B to do visual polish unless the issue is also contract/safety related.
+- For data-backed frontend pages, include the full-stack preview instruction
+  instead of a frontend-only dev-server instruction:
+  `docker compose up -d postgres backend frontend`, then
+  `curl -i http://localhost:8000/health`,
+  `curl -i http://localhost:8000/users`, and
+  `curl -i http://localhost:5173/api/users`, then open the target frontend route.
+  If the full stack cannot start, the agent must report the exact blocker and
+  label any browser check as route-shell only.
 - Keep copied verification output to one-line results.
+- Avoid token-heavy prompt bodies: do not paste large source excerpts, screenshots as text, full logs, broad file trees, or repeated safety boilerplate. Put the narrow objective, changed files, acceptance checks, and verification result only.
 - Do not include giant archived docs in read lists by default:
   - `docs/shared/completed_phases_log.md`
   - `docs/shared/implementation_plan_archive_2026-06-03.md`
+  - `docs/shared/implementation_plan_archive_2026-06-12.md`
 - For frontend work, cite:
   - `.claude/skills/frontend-design/SKILL.md`
 - For fintech UX review, cite:

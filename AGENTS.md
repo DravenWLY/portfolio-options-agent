@@ -52,9 +52,15 @@ This project may connect to real read-only brokerage data through SnapTrade. Tre
 ## Implementation Loop Rule
 
 - For multi-step work, maintain `docs/shared/implementation_plan.md`.
-- Each task in `docs/shared/implementation_plan.md` must include task id, objective, expected files, dependencies, implementation steps, acceptance criteria, tests, rollback notes, and status.
+- Keep `docs/shared/implementation_plan.md` as the short active-work index. It
+  should include current task id, owner, dependencies, acceptance criteria,
+  review gate, and status, but long implementation steps, verification
+  transcripts, and completed task detail belong in dated archives or
+  `docs/shared/completed_phases_log.md`.
 - Implement only one task at a time unless explicitly told otherwise.
-- After each task, update `docs/shared/implementation_plan.md`.
+- After each task, update only the active task status/next handoff in
+  `docs/shared/implementation_plan.md`; move detailed completion notes to the
+  changelog, completed log, or a phase archive.
 - Stop for review after each task.
 
 ## Context Efficiency Rules
@@ -62,6 +68,8 @@ This project may connect to real read-only brokerage data through SnapTrade. Tre
 - Use `docs/shared/AGENT_REPORT_FORMAT.md` for all implementation prompts, review prompts, completion reports, and review reports.
 - Keep prompts short and role-specific. Do not ask a reviewer to redo implementation verification unless the review requires it.
 - Always include the required skill path in a prompt when a Claude/Codex skill is relevant.
+- Use CodeGraph first for codebase understanding when the tool is available. Start with one focused `codegraph_explore` for the relevant symbols/flow; use `codegraph_search` for locations, `codegraph_callers` / `codegraph_callees` for call relationships, and `codegraph_impact` for blast radius. Do not do broad grep/read loops unless CodeGraph is unavailable, incomplete, or a recently edited file needs direct confirmation.
+- Prompts to implementation/review agents should say "Use CodeGraph first when available" instead of listing many large files to read. Keep read lists to task docs, changed files, directly related contracts/tests, and "read additional files only if necessary."
 - Prefer `docs/shared/current_roadmap.md` for high-level project direction.
 - Use `docs/shared/agent_workflows.md` when a task explicitly calls for a repo-specific workflow such as frontend contract review, backend TDD slices, or docs/roadmap grilling.
 - Prefer `docs/codex-c-backend/WORKING_CONTEXT.md` before implementation tasks.
@@ -94,6 +102,17 @@ This project may connect to real read-only brokerage data through SnapTrade. Tre
 - Register and use pytest markers consistently: `unit`, `api`, `db`, `migration`, `integration`, `external`, `slow`, `regression`, `adapter`, and `smoke`.
 - `external` and `slow` tests must not run by default.
 - Run relevant tests after behavior changes.
+- For data-backed frontend pages, do not run frontend-only preview as the final
+  smoke. Start the full local stack first so the app can load the dev user,
+  backend API, and database-backed state:
+  `docker compose up -d postgres backend frontend`, then check
+  `curl -i http://localhost:8000/health`, `curl -i http://localhost:8000/users`,
+  and `curl -i http://localhost:5173/api/users`.
+  Use the frontend route only after those checks pass. If full-stack preview is
+  blocked, report the blocker explicitly instead of claiming a complete browser
+  smoke.
+- Stop preview/backend/database ports only after the work or review is finished,
+  unless the user explicitly asks to free ports earlier.
 - Any deterministic finance calculation must have unit tests.
 - Any API route should have API tests.
 - Any database schema change should include migration verification.

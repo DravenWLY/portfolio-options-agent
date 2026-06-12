@@ -2,6 +2,33 @@
 
 Archived implementation history for completed work. Keep this file for auditability, but do not load it into Claude/Opus reviews unless the review specifically concerns historical implementation details.
 
+## 2026-06-12 Archive Note
+
+The active implementation plan was compacted again on 2026-06-12. The full
+pre-cleanup active-plan snapshot, including detailed Phase 27B task notes and
+verification history, is preserved at:
+
+- `docs/shared/implementation_plan_archive_2026-06-12.md`
+
+Phase 27B completed Account Details stability through P27B-T22:
+
+- latest-sync membership foundation for normalized broker rows;
+- option current/expired/closed semantics;
+- Account Details overview as broker-readiness rather than an authoritative
+  holdings mirror;
+- selected-account detail with private backend-owned display labels;
+- display-only cash/buying-power/collateral policy;
+- Agent Team evidence boundary preservation;
+- opaque selected-account sync bridge and refresh UI;
+- optional tax-lot display contract with purchase-history hidden when lots are
+  absent;
+- frontend Account Details visual polish and full-stack preview dev-token
+  tooling.
+
+Routine agents should start from `docs/shared/implementation_plan.md` and
+`docs/shared/current_roadmap.md`; load the dated archive only when reviewing or
+debugging Phase 27B history.
+
 # Implementation Plan
 
 This plan controls incremental implementation for `portfolio-options-agent`.

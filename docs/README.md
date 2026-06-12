@@ -12,12 +12,14 @@ Unless a task gives a narrower read list:
 
 1. `AGENTS.md` for safety and task discipline.
 2. `docs/shared/current_roadmap.md` for current direction.
-3. `docs/shared/AI_TEAM.md` for agent ownership.
-4. `docs/shared/TASKS.md` for current task routing.
-5. The role-specific folder for the active agent.
-6. `docs/shared/implementation_plan.md` for the active work index and next handoff.
-7. `docs/codex-b-architecture/architecture.md` only when full architecture context is needed.
-8. `docs/shared/completed_phases_log.md` only when historical verification details are directly needed.
+3. `docs/shared/implementation_plan.md` for active work and next handoff.
+4. `docs/shared/agent_workflows.md` for repo-specific workflow rules such as
+   CodeGraph-first reviews and full-stack preview.
+5. `docs/shared/AGENT_REPORT_FORMAT.md` for copyable prompt/report format.
+6. `docs/shared/AI_TEAM.md` for agent ownership when ownership is unclear.
+7. The role-specific folder for the active agent.
+8. `docs/codex-b-architecture/architecture.md` only when full architecture context is needed.
+9. `docs/shared/completed_phases_log.md` or dated archives only when historical verification details are directly needed.
 
 ## Folder Layout
 
@@ -43,7 +45,7 @@ The previous generic agent-context folder was removed because it became a vague 
 ## Large Files
 
 - `docs/codex-b-architecture/architecture.md` is the full architecture reference. Load it only when necessary.
-- `docs/shared/implementation_plan.md` is the short active work index. Historical task detail is archived in `docs/shared/implementation_plan_archive_2026-06-03.md` and `docs/shared/completed_phases_log.md`.
+- `docs/shared/implementation_plan.md` is the short active work index. Historical task detail is archived in `docs/shared/implementation_plan_archive_2026-06-03.md`, `docs/shared/implementation_plan_archive_2026-06-12.md`, and `docs/shared/completed_phases_log.md`.
 - `docs/shared/completed_phases_log.md` is historical verification archive. Avoid loading it by default.
 - `docs/shared/frontend_design_change_playbook.md` is the reference for future redesigns, prototype adoption, Figma/Claude Design integration, and frontend design-system migrations.
 

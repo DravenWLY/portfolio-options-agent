@@ -6,10 +6,20 @@ import pytest
 
 from app.schemas.actionability import BrokerSnapshotMetadata, MarketQuotesMetadata, PortfolioActionabilityInput, UserConfirmationMetadata
 from app.schemas.trade_review_workspace import (
+    PortfolioScopeRead,
+    ReportScopeMetadataRead,
+    ReviewAccountRead,
+    ReviewAccountSelectionRequest,
     TradeReviewPortfolioPreviewRequest,
     TradeReviewWorkspaceRead,
     validate_trade_review_workspace_payload,
 )
+from app.models.broker_account import BrokerAccount
+from app.models.broker_connection import BrokerConnection
+from app.models.broker_sync_run import BrokerSyncRun
+from app.models.option_contract import OptionContract
+from app.models.option_position import OptionPosition
+from app.models.stock_position import StockPosition
 from app.services.agents import PortfolioAgentTeamOrchestrator
 from app.services.privacy import FORBIDDEN_PRIVATE_CONTEXT_KEYS, FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.risk.violations import RiskRuleViolation
@@ -18,8 +28,21 @@ from app.services.trade_review.actionability import evaluate_portfolio_snapshot_
 from app.services.trade_review.frontend_read import (
     build_trade_review_workspace_portfolio_preview,
     build_trade_review_workspace_read,
+    get_account_details_for_user,
     get_dashboard_account_summary_for_user,
+    _account_details_from_broker_rows,
+    _BrokerAccountDetailsRow,
+    _NormalizedAccountMetrics,
+    _latest_option_positions_by_contract,
+    _latest_stock_positions_by_symbol,
+    _opaque_account_reference,
+    _option_average_cost_display_value,
+    _option_cost_basis,
+    _option_position_market_value,
+    _option_tax_lot_rows,
+    _review_account_for_broker_rows,
     _resolve_portfolio_context,
+    _selected_account_details_from_broker_row,
 )
 from app.services.trade_review.payoff import PayoffReview, PayoffScenarioPoint
 from app.services.trade_review.report import TradeReviewAgentProjection
@@ -365,10 +388,186 @@ def test_portfolio_preview_service_returns_safe_context_summary() -> None:
     assert read.portfolio_context is not None
     assert read.portfolio_context.context_reference == "ctx_demo_latest"
     assert read.portfolio_context.cash_state == "available"
+    assert read.scope_metadata is not None
+    assert read.scope_metadata.portfolio_context_scope.context_reference == read.portfolio_context.context_reference
+    assert read.scope_metadata.review_account is None
+    assert read.scope_metadata.account_level_feasibility_evaluated is False
+    assert "review_account_not_selected" in read.scope_metadata.scope_caveat_codes
     assert read.actionability.review_actionability_status == "manual_confirmation_required"
     assert read.actionability.broker_snapshot.freshness_scope == "broker_snapshot"
     assert read.actionability.market_quotes.freshness_scope == "market_quote"
     assert not find_forbidden_keys(read.model_dump(mode="python"), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_portfolio_preview_service_resolves_selected_review_account_separately_from_context() -> None:
+    read = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="stock_buy",
+            symbol="XYZ",
+            quantity=Decimal("3"),
+            price_assumption=Decimal("50"),
+            review_account_selection={
+                "mode": "selected_account",
+                "account_reference": "acctref_demo_primary",
+            },
+        ),
+        generated_at=NOW,
+    )
+
+    assert read.portfolio_context is not None
+    assert read.scope_metadata is not None
+    assert read.scope_metadata.review_account is not None
+    assert read.scope_metadata.review_account.account_reference == "acctref_demo_primary"
+    assert read.scope_metadata.review_account.is_account_level_feasibility_source is True
+    assert read.scope_metadata.portfolio_context_scope.context_reference == "ctx_demo_latest"
+    assert read.scope_metadata.account_level_feasibility_evaluated is True
+    assert not find_forbidden_keys(read.model_dump(mode="python"), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_real_broker_covered_call_review_is_analysis_only_without_validated_position_truth() -> None:
+    read = build_trade_review_workspace_read(
+        projection=_projection(
+            intent_summary={
+                "intent_id": "covered-real-broker",
+                "asset_class": "option",
+                "intent_type": "option_strategy",
+                "strategy_type": "covered_call",
+                "status": "ready_for_review",
+                "underlying_symbol": "XYZ",
+                "legs": (_option_leg(option_type="call", leg_action="sell_to_open"),),
+            },
+            assignment_share_delta=Decimal("-100"),
+        ),
+        actionability=_normal_actionability(),
+        supported_flow="covered_call",
+        scope_metadata=_real_broker_scope_metadata(),
+        generated_at=NOW,
+    )
+
+    caveat_codes = {caveat.code for caveat in read.caveats}
+    warning_codes = {warning.code for warning in read.deterministic_review.missing_data_warnings}
+    assert read.actionability.review_actionability_status == "analysis_only"
+    assert read.actionability.broker_snapshot.freshness_scope == "broker_snapshot"
+    assert read.actionability.market_quotes.freshness_scope == "market_quote"
+    assert read.scope_metadata is not None
+    assert read.scope_metadata.review_account is not None
+    assert read.scope_metadata.review_account.is_account_level_feasibility_source is False
+    assert read.scope_metadata.account_level_feasibility_evaluated is False
+    assert "current_position_truth_unstable" in caveat_codes
+    assert "covered_call_coverage_unverified" in caveat_codes
+    assert "account_level_feasibility_not_evaluated" in caveat_codes
+    assert "current_position_truth_unstable" in warning_codes
+    assert "covered_call_coverage_unverified" in warning_codes
+    assert not find_forbidden_keys(read.model_dump(mode="python"), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_real_broker_csp_review_does_not_use_unreviewed_collateral_policy() -> None:
+    read = build_trade_review_workspace_read(
+        projection=_projection(
+            intent_summary={
+                "intent_id": "csp-real-broker",
+                "asset_class": "option",
+                "intent_type": "option_strategy",
+                "strategy_type": "cash_secured_put",
+                "status": "ready_for_review",
+                "underlying_symbol": "XYZ",
+                "legs": (_option_leg(option_type="put", leg_action="sell_to_open"),),
+            },
+            assignment_share_delta=Decimal("100"),
+        ),
+        actionability=_normal_actionability(),
+        supported_flow="cash_secured_put",
+        scope_metadata=_real_broker_scope_metadata(),
+        generated_at=NOW,
+    )
+
+    caveat_codes = {caveat.code for caveat in read.caveats}
+    warning_codes = {warning.code for warning in read.deterministic_review.missing_data_warnings}
+    assert read.actionability.review_actionability_status == "analysis_only"
+    assert read.deterministic_review.options_exposure.cash_secured_put_collateral_model == "generic_rule_only"
+    assert read.scope_metadata is not None
+    assert read.scope_metadata.account_level_feasibility_evaluated is False
+    assert "buying_power_display_only" in read.scope_metadata.scope_caveat_codes
+    assert "cash_collateral_policy_not_reviewed" in read.scope_metadata.scope_caveat_codes
+    assert "cash_collateral_policy_not_reviewed" in caveat_codes
+    assert "buying_power_display_only" in caveat_codes
+    assert "csp_collateral_unverified" in caveat_codes
+    assert "current_position_truth_unstable" in caveat_codes
+    assert "cash_collateral_policy_not_reviewed" in warning_codes
+    assert "buying_power_display_only" in warning_codes
+    assert "csp_collateral_unverified" in warning_codes
+    assert "current_position_truth_unstable" in warning_codes
+    assert not find_forbidden_keys(read.model_dump(mode="python"), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+    rendered = repr(read.model_dump(mode="python")).lower()
+    assert "sufficient collateral" not in rendered
+    assert "ready to trade" not in rendered
+    assert "safe to trade" not in rendered
+
+
+def test_real_review_account_selection_resolves_from_app_owned_broker_rows_only() -> None:
+    user_id = uuid4()
+    connection = BrokerConnection(
+        id=uuid4(),
+        user_id=user_id,
+        provider="snaptrade",
+        broker_name="Fidelity account 1234 should not render",
+        provider_connection_id="provider_connection_id_secret_123",
+        connection_status="connected",
+        sync_status="idle",
+        data_freshness_status="fresh",
+    )
+    broker_account = BrokerAccount(
+        id=uuid4(),
+        broker_connection_id=connection.id,
+        provider_account_id="provider_account_id_secret_456",
+        display_name="Raw taxable account ending 1234 should not render",
+        account_type="taxable_individual",
+        sync_status="idle",
+        data_freshness_status="fresh",
+        raw_payload={"holdings": [{"symbol": "XYZ", "quantity": "999"}]},
+    )
+    selection = ReviewAccountSelectionRequest(
+        mode="selected_account",
+        account_reference=_opaque_account_reference(broker_account.id),
+    )
+
+    review_account = _review_account_for_broker_rows(
+        review_account_selection=selection,
+        rows=(
+            _BrokerAccountDetailsRow(
+                broker_account=broker_account,
+                broker_connection=connection,
+                latest_sync_run=None,
+                metrics=_NormalizedAccountMetrics(),
+            ),
+        ),
+    )
+
+    assert review_account is not None
+    payload = review_account.model_dump(mode="python")
+    assert review_account.account_reference == selection.account_reference
+    assert review_account.display_label == "Fidelity taxable"
+    assert review_account.is_review_account is True
+    assert review_account.is_included_in_portfolio_scope is False
+    assert review_account.is_account_level_feasibility_source is False
+    rendered = repr(payload).lower()
+    assert "provider_account_id_secret_456" not in rendered
+    assert "provider_connection_id_secret_123" not in rendered
+    assert "raw taxable account ending" not in rendered
+    assert "1234" not in rendered
+    assert "quantity" not in rendered
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_unknown_real_review_account_selection_does_not_resolve() -> None:
+    selection = ReviewAccountSelectionRequest(
+        mode="selected_account",
+        account_reference="acctref_demo_missing",
+    )
+
+    review_account = _review_account_for_broker_rows(review_account_selection=selection, rows=())
+
+    assert review_account is None
 
 
 def test_portfolio_preview_resolved_context_matches_safe_summary_counts_and_cash_state() -> None:
@@ -461,6 +660,10 @@ def test_portfolio_preview_service_preserves_no_context_available_state() -> Non
     )
 
     assert read.portfolio_context is None
+    assert read.scope_metadata is not None
+    assert read.scope_metadata.review_account is None
+    assert read.scope_metadata.portfolio_context_scope.scope_mode == "unavailable"
+    assert read.scope_metadata.account_level_feasibility_evaluated is False
     assert read.actionability.review_actionability_status == "blocked_unknown_freshness"
     assert any(warning.code == "unknown_freshness" for warning in read.deterministic_review.missing_data_warnings)
     assert not find_forbidden_keys(read.model_dump(mode="python"), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
@@ -510,6 +713,692 @@ def test_dashboard_account_summary_empty_state_stays_unavailable_and_hidden() ->
     assert read.portfolio_shape_label == "Portfolio shape unavailable"
     assert read.position_count_label == "No portfolio context available"
     assert "market_data_unavailable" in read.caveat_codes
+
+
+def test_account_details_contract_separates_scope_from_account_feasibility() -> None:
+    read = get_account_details_for_user(
+        "11111111-1111-1111-1111-111111111111",
+        generated_at=NOW,
+    )
+    payload = read.model_dump(mode="python")
+
+    assert read.data_mode == "synthetic_demo"
+    assert read.privacy_display_mode == "amounts_hidden"
+    assert read.portfolio_scope.scope_mode == "all_connected_accounts"
+    assert read.portfolio_scope.display_label == "Portfolio scope: All connected accounts"
+    assert read.portfolio_scope.account_level_feasibility_evaluated is False
+    assert read.review_account is not None
+    assert read.review_account.is_review_account is True
+    assert read.review_account.is_account_level_feasibility_source is False
+    assert len(read.accounts) == 2
+    assert read.accounts[0].scope_roles == ("review_account", "included_in_scope")
+    assert read.accounts[0].source_kind == "synthetic_demo"
+    assert read.accounts[0].source_label == "Synthetic demo"
+    assert read.accounts[0].connection_status_label == "Demo connection not active"
+    assert read.accounts[0].last_successful_sync_label is None
+    assert {caveat.code for caveat in read.readiness_caveats} >= {
+        "cash_broker_reported",
+        "cash_collateral_not_fully_modeled",
+        "position_details_limited",
+        "current_position_review_caveated",
+    }
+    assert {caveat.code for caveat in read.accounts[0].readiness_caveats} >= {
+        "cash_broker_reported",
+        "cash_collateral_not_fully_modeled",
+        "position_details_limited",
+    }
+    assert any(caveat.title == "Cash is broker-reported" for caveat in read.readiness_caveats)
+    assert read.accounts[0].broker_snapshot_freshness.freshness_scope == "broker_snapshot"
+    assert read.accounts[0].market_quote_freshness is not None
+    assert read.accounts[0].market_quote_freshness.freshness_scope == "market_quote"
+    assert read.accounts[0].total_value_label == "Total value hidden · demo not connected"
+    assert read.accounts[0].account_level_feasibility_evaluated is False
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_account_details_projection_uses_real_broker_rows_without_raw_private_values() -> None:
+    synced_at = datetime(2026, 5, 28, 14, 45, tzinfo=UTC)
+    connection = BrokerConnection(
+        id=uuid4(),
+        user_id=uuid4(),
+        provider="snaptrade",
+        broker_name="Fidelity raw name should not render",
+        provider_connection_id="provider_connection_id_secret_123",
+        connection_status="connected",
+        sync_status="idle",
+        data_freshness_status="fresh",
+        last_successful_sync_at=synced_at,
+        raw_metadata={"raw_payload": "raw_metadata_should_not_render"},
+    )
+    broker_account = BrokerAccount(
+        id=uuid4(),
+        broker_connection_id=connection.id,
+        provider_account_id="provider_account_id_secret_456",
+        display_name="Taxable account ending 1234 should not render",
+        account_type="taxable_individual",
+        sync_status="idle",
+        data_freshness_status="fresh",
+        last_successful_sync_at=synced_at,
+        raw_payload={"positions": [{"symbol": "XYZ", "quantity": "999"}], "cash_balance": "777777"},
+    )
+    sync_run = BrokerSyncRun(
+        id=uuid4(),
+        broker_connection_id=connection.id,
+        broker_account_id=broker_account.id,
+        trigger="manual",
+        status="succeeded",
+        started_at=synced_at,
+        completed_at=synced_at,
+        provider_request_id="provider_request_id_secret_789",
+        accounts_count=1,
+        positions_count=6,
+        transactions_count=0,
+        summary={"stock_positions_count": 4, "option_positions_count": 2},
+    )
+
+    read = _account_details_from_broker_rows(
+        user_id=connection.user_id,
+        generated_at=NOW,
+        rows=(
+            _BrokerAccountDetailsRow(
+                broker_account=broker_account,
+                broker_connection=connection,
+                latest_sync_run=sync_run,
+                metrics=_NormalizedAccountMetrics(
+                    cash_total=Decimal("5000.00"),
+                    reserved_collateral_cash=Decimal("1500.00"),
+                    stock_etf_market_value=Decimal("10000.00"),
+                    options_market_value=Decimal("3250.00"),
+                    stock_position_count=4,
+                    option_position_count=2,
+                ),
+            ),
+        ),
+    )
+
+    assert read is not None
+    payload = read.model_dump(mode="python")
+    assert read.data_mode == "private_real_source"
+    assert read.privacy_display_mode == "amounts_visible"
+    assert "amounts_hidden" not in read.caveat_codes
+    assert "some_amounts_hidden" in read.caveat_codes
+    assert read.portfolio_scope.scope_mode == "all_connected_accounts"
+    assert read.portfolio_scope.account_level_feasibility_evaluated is False
+    assert read.accounts[0].display_label == "Fidelity taxable"
+    assert read.portfolio_scope.included_account_labels == ("Fidelity taxable",)
+    assert read.accounts[0].source_kind == "snaptrade"
+    assert read.accounts[0].source_label == "SnapTrade"
+    assert read.accounts[0].connection_status_label == "Connected"
+    assert read.accounts[0].last_successful_sync_label == "Last successful sync 2026-05-28 14:45 UTC"
+    assert read.accounts[0].privacy_display_mode == "amounts_visible"
+    assert read.accounts[0].total_value_label == "Total value hidden in overview"
+    assert read.accounts[0].cash_label == "Cash $5,000.00"
+    assert read.accounts[0].stock_etf_exposure_label == "Stock/ETF exposure shown as count only"
+    assert read.accounts[0].options_exposure_label == "Options exposure shown as count only"
+    assert read.accounts[0].collateral_usage_label == "Collateral usage not fully modeled"
+    assert "$18,250.00" not in repr(payload)
+    assert "$10,000.00" not in repr(payload)
+    assert "$3,250.00" not in repr(payload)
+    assert "$1,500.00" not in repr(payload)
+    assert {caveat.code for caveat in read.readiness_caveats} >= {
+        "cash_broker_reported",
+        "cash_collateral_not_fully_modeled",
+        "position_details_limited",
+        "stale_local_rows_possible",
+        "current_position_review_caveated",
+    }
+    assert {caveat.code for caveat in read.accounts[0].readiness_caveats} >= {
+        "broker_snapshot_fresh",
+        "market_quote_unavailable",
+        "some_amounts_hidden",
+        "cash_broker_reported",
+        "cash_collateral_not_fully_modeled",
+        "position_details_limited",
+        "stale_local_rows_possible",
+        "current_position_review_caveated",
+    }
+    assert any(
+        caveat.message == "Buying power, free cash, and option collateral treatment are not fully modeled yet."
+        for caveat in read.accounts[0].readiness_caveats
+    )
+    assert read.accounts[0].broker_snapshot_freshness.as_of_label == "Last successful sync 2026-05-28 14:45 UTC"
+    assert read.accounts[0].market_quote_freshness is not None
+    assert read.accounts[0].market_quote_freshness.as_of_label == "Market quotes unavailable"
+    assert read.accounts[0].market_quote_freshness.display_label == "Market quotes unavailable"
+    assert read.accounts[0].portfolio_shape.stock_position_count == 4
+    assert read.accounts[0].portfolio_shape.option_position_count == 2
+    assert read.accounts[0].cash_state == "available"
+    rendered = repr(payload).lower()
+    rendered_values = " ".join(_collect_string_values(payload)).lower()
+    assert "demo" not in rendered_values
+    assert "not connected" not in rendered_values
+    assert "provider_account_id_secret_456" not in rendered
+    assert "provider_connection_id_secret_123" not in rendered
+    assert "provider_request_id_secret_789" not in rendered
+    assert "taxable account ending 1234" not in rendered
+    assert "raw_metadata_should_not_render" not in rendered
+    assert "777777" not in rendered
+    assert "quantity" not in rendered
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_account_details_projection_keeps_private_real_source_amounts_hidden_without_metrics() -> None:
+    connection = BrokerConnection(
+        id=uuid4(),
+        user_id=uuid4(),
+        provider="snaptrade",
+        broker_name="Webull account 9999 should not render",
+        provider_connection_id="provider_connection_id_secret_123",
+        connection_status="connected",
+        sync_status="idle",
+        data_freshness_status="unknown",
+    )
+    broker_account = BrokerAccount(
+        id=uuid4(),
+        broker_connection_id=connection.id,
+        provider_account_id="provider_account_id_secret_456",
+        display_name="Margin account 9999 should not render",
+        account_type="margin",
+        sync_status="idle",
+        data_freshness_status="unknown",
+        raw_payload={"cash_balance": "777777"},
+    )
+
+    read = _account_details_from_broker_rows(
+        user_id=connection.user_id,
+        generated_at=NOW,
+        rows=(
+            _BrokerAccountDetailsRow(
+                broker_account=broker_account,
+                broker_connection=connection,
+                latest_sync_run=None,
+                metrics=_NormalizedAccountMetrics(),
+            ),
+        ),
+    )
+
+    assert read is not None
+    payload = read.model_dump(mode="python")
+    assert read.data_mode == "private_real_source"
+    assert read.privacy_display_mode == "amounts_hidden"
+    assert "amounts_hidden" in read.caveat_codes
+    assert "some_amounts_hidden" not in read.caveat_codes
+    assert read.accounts[0].display_label == "Webull margin"
+    assert read.accounts[0].privacy_display_mode == "amounts_hidden"
+    assert read.accounts[0].total_value_label == "Total value hidden"
+    assert read.accounts[0].cash_label == "Cash amount hidden"
+    assert {caveat.code for caveat in read.readiness_caveats} >= {
+        "amounts_hidden",
+        "cash_broker_reported",
+        "cash_collateral_not_fully_modeled",
+        "position_details_limited",
+    }
+    assert {caveat.code for caveat in read.accounts[0].readiness_caveats} >= {
+        "amounts_hidden",
+        "broker_snapshot_unknown",
+        "market_quote_unavailable",
+        "cash_broker_reported",
+        "cash_collateral_not_fully_modeled",
+        "position_details_limited",
+    }
+    assert read.accounts[0].broker_snapshot_freshness.as_of_label == "Broker snapshot sync time unavailable"
+    assert read.accounts[0].broker_snapshot_freshness.display_label == "Broker snapshot freshness unknown"
+    assert read.accounts[0].cash_state == "not_exposed"
+    rendered_values = " ".join(_collect_string_values(payload)).lower()
+    assert "demo" not in rendered_values
+    assert "not connected" not in rendered_values
+    assert "9999" not in repr(payload)
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_selected_account_detail_without_normalized_session_returns_empty_display_rows() -> None:
+    connection = BrokerConnection(
+        id=uuid4(),
+        user_id=uuid4(),
+        provider="snaptrade",
+        broker_name="Fidelity raw name should not render",
+        provider_connection_id="provider_connection_id_secret_123",
+        connection_status="connected",
+        sync_status="idle",
+        data_freshness_status="fresh",
+    )
+    broker_account = BrokerAccount(
+        id=uuid4(),
+        account_id=uuid4(),
+        broker_connection_id=connection.id,
+        provider_account_id="provider_account_id_secret_456",
+        display_name="Raw taxable account ending 1234 should not render",
+        account_type="taxable_individual",
+        sync_status="idle",
+        data_freshness_status="fresh",
+        raw_payload={"positions": [{"symbol": "XYZ", "quantity": "999"}]},
+    )
+    read = _selected_account_details_from_broker_row(
+        generated_at=NOW,
+        account_reference=_opaque_account_reference(broker_account.id),
+        row=_BrokerAccountDetailsRow(
+            broker_account=broker_account,
+            broker_connection=connection,
+            latest_sync_run=None,
+            metrics=_NormalizedAccountMetrics(),
+        ),
+    )
+
+    payload = read.model_dump(mode="python")
+    assert read.data_mode == "private_real_source"
+    assert read.display_label == "Fidelity taxable"
+    assert read.cash_rows == ()
+    assert read.equity_position_rows == ()
+    assert read.option_position_rows == ()
+    assert "normalized_account_session_unavailable" in read.caveat_codes
+    assert "purchase_history_unavailable" in read.caveat_codes
+    assert "Purchase history unavailable from broker snapshot." in read.limitations
+    rendered = repr(payload).lower()
+    assert "provider_account_id_secret_456" not in rendered
+    assert "provider_connection_id_secret_123" not in rendered
+    assert "raw taxable account ending" not in rendered
+    assert "quantity" not in rendered
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_latest_stock_positions_by_symbol_keeps_only_first_latest_snapshot() -> None:
+    account_id = uuid4()
+    newer = StockPosition(
+        id=uuid4(),
+        account_id=account_id,
+        symbol="XYZ",
+        asset_type="stock",
+        quantity=Decimal("10"),
+        market_value=Decimal("500.00"),
+        as_of=datetime(2026, 5, 28, 14, 45, tzinfo=UTC),
+    )
+    older = StockPosition(
+        id=uuid4(),
+        account_id=account_id,
+        symbol="xyz",
+        asset_type="stock",
+        quantity=Decimal("99"),
+        market_value=Decimal("4851.00"),
+        as_of=datetime(2026, 5, 27, 14, 45, tzinfo=UTC),
+    )
+
+    latest = _latest_stock_positions_by_symbol([newer, older])
+
+    assert latest == [newer]
+    assert latest[0].quantity == Decimal("10")
+    assert latest[0].market_value == Decimal("500.00")
+
+
+def test_latest_option_positions_by_contract_keeps_only_first_latest_snapshot() -> None:
+    account_id = uuid4()
+    contract_id = uuid4()
+    newer = OptionPosition(
+        id=uuid4(),
+        account_id=account_id,
+        option_contract_id=contract_id,
+        position_side="short",
+        quantity=Decimal("1"),
+        market_value=Decimal("-210.00"),
+        status="open",
+        as_of=datetime(2026, 5, 28, 14, 45, tzinfo=UTC),
+    )
+    older = OptionPosition(
+        id=uuid4(),
+        account_id=account_id,
+        option_contract_id=contract_id,
+        position_side="short",
+        quantity=Decimal("5"),
+        market_value=Decimal("-850.00"),
+        status="open",
+        as_of=datetime(2026, 5, 27, 14, 45, tzinfo=UTC),
+    )
+
+    latest = _latest_option_positions_by_contract([newer, older])
+
+    assert latest == [newer]
+    assert latest[0].quantity == Decimal("1")
+    assert latest[0].market_value == Decimal("-210.00")
+
+
+def test_option_position_market_value_uses_multiplier_and_short_sign() -> None:
+    contract = OptionContract(
+        id=uuid4(),
+        occ_symbol="XYZ260619C00050000",
+        underlying_symbol="XYZ",
+        expiration_date=date(2026, 6, 19),
+        strike=Decimal("50.00"),
+        option_type="call",
+        multiplier=Decimal("100"),
+    )
+    position = OptionPosition(
+        id=uuid4(),
+        account_id=uuid4(),
+        option_contract_id=contract.id,
+        position_side="short",
+        quantity=Decimal("1"),
+        market_price=Decimal("3.47"),
+        market_value=Decimal("-3.47"),
+        status="open",
+    )
+
+    assert _option_position_market_value(position, contract) == Decimal("-347.00")
+
+
+def test_option_cost_basis_uses_snaptrade_contract_total_without_double_multiplier() -> None:
+    standard_contract = OptionContract(
+        id=uuid4(),
+        occ_symbol="XYZ260619C00050000",
+        underlying_symbol="XYZ",
+        expiration_date=date(2026, 6, 19),
+        strike=Decimal("50.00"),
+        option_type="call",
+        multiplier=Decimal("100"),
+    )
+    position = OptionPosition(
+        id=uuid4(),
+        account_id=uuid4(),
+        option_contract_id=standard_contract.id,
+        position_side="long",
+        quantity=Decimal("1"),
+        average_price=Decimal("200.00"),
+        source="snaptrade",
+        status="open",
+    )
+
+    assert _option_cost_basis(position, standard_contract) == Decimal("200.00")
+
+
+def test_snaptrade_option_average_cost_displays_per_unit_premium() -> None:
+    standard_contract = OptionContract(
+        id=uuid4(),
+        occ_symbol="XYZ260619C00050000",
+        underlying_symbol="XYZ",
+        expiration_date=date(2026, 6, 19),
+        strike=Decimal("50.00"),
+        option_type="call",
+        multiplier=Decimal("100"),
+    )
+    mini_contract = OptionContract(
+        id=uuid4(),
+        occ_symbol="XYZ260619C00050000",
+        underlying_symbol="XYZ",
+        expiration_date=date(2026, 6, 19),
+        strike=Decimal("50.00"),
+        option_type="call",
+        multiplier=Decimal("10"),
+    )
+    standard_position = OptionPosition(
+        id=uuid4(),
+        account_id=uuid4(),
+        option_contract_id=standard_contract.id,
+        position_side="long",
+        quantity=Decimal("1"),
+        average_price=Decimal("279.33"),
+        source="snaptrade",
+        status="open",
+    )
+    mini_position = OptionPosition(
+        id=uuid4(),
+        account_id=uuid4(),
+        option_contract_id=mini_contract.id,
+        position_side="long",
+        quantity=Decimal("1"),
+        average_price=Decimal("27.90"),
+        source="snaptrade",
+        status="open",
+    )
+
+    assert _option_average_cost_display_value(standard_position, standard_contract) == Decimal("2.7933")
+    assert _option_cost_basis(standard_position, standard_contract) == Decimal("279.33")
+    assert _option_average_cost_display_value(mini_position, mini_contract) == Decimal("2.79")
+    assert _option_cost_basis(mini_position, mini_contract) == Decimal("27.90")
+
+
+def test_option_cost_basis_uses_multiplier_for_app_owned_per_share_basis() -> None:
+    standard_contract = OptionContract(
+        id=uuid4(),
+        occ_symbol="XYZ260619C00050000",
+        underlying_symbol="XYZ",
+        expiration_date=date(2026, 6, 19),
+        strike=Decimal("50.00"),
+        option_type="call",
+        multiplier=Decimal("100"),
+    )
+    mini_contract = OptionContract(
+        id=uuid4(),
+        occ_symbol="XYZ260619C00050000",
+        underlying_symbol="XYZ",
+        expiration_date=date(2026, 6, 19),
+        strike=Decimal("50.00"),
+        option_type="call",
+        multiplier=Decimal("10"),
+    )
+    position = OptionPosition(
+        id=uuid4(),
+        account_id=uuid4(),
+        option_contract_id=standard_contract.id,
+        position_side="long",
+        quantity=Decimal("1"),
+        average_price=Decimal("2.00"),
+        source="manual",
+        status="open",
+    )
+
+    assert _option_cost_basis(position, standard_contract) == Decimal("200.00")
+    assert _option_cost_basis(position, mini_contract) == Decimal("20.00")
+    assert _option_average_cost_display_value(position, standard_contract) == Decimal("2.00")
+
+
+def test_option_tax_lot_rows_use_snaptrade_contract_total_purchase_price_units() -> None:
+    standard_contract = OptionContract(
+        id=uuid4(),
+        occ_symbol="XYZ260619C00050000",
+        underlying_symbol="XYZ",
+        expiration_date=date(2026, 6, 19),
+        strike=Decimal("50.00"),
+        option_type="call",
+        multiplier=Decimal("100"),
+    )
+    mini_contract = OptionContract(
+        id=uuid4(),
+        occ_symbol="XYZ260619C00050000",
+        underlying_symbol="XYZ",
+        expiration_date=date(2026, 6, 19),
+        strike=Decimal("50.00"),
+        option_type="call",
+        multiplier=Decimal("10"),
+    )
+    standard_position = OptionPosition(
+        id=uuid4(),
+        account_id=uuid4(),
+        option_contract_id=standard_contract.id,
+        position_side="long",
+        quantity=Decimal("1"),
+        average_price=Decimal("279.33"),
+        source="snaptrade",
+        status="open",
+        as_of=datetime(2026, 5, 28, 14, 45, tzinfo=UTC),
+        tax_lots=(
+            {
+                "acquired_date": "2026-01-15",
+                "quantity": "1",
+                "purchase_price": "279.33",
+                "cost_basis": "279.33",
+                "current_value": "347.00",
+            },
+        ),
+    )
+    mini_position = OptionPosition(
+        id=uuid4(),
+        account_id=uuid4(),
+        option_contract_id=mini_contract.id,
+        position_side="long",
+        quantity=Decimal("1"),
+        average_price=Decimal("27.90"),
+        source="snaptrade",
+        status="open",
+        as_of=datetime(2026, 5, 28, 14, 45, tzinfo=UTC),
+        tax_lots=(
+            {
+                "acquired_date": "2026-01-15",
+                "quantity": "1",
+                "purchase_price": "27.90",
+                "cost_basis": "27.90",
+                "current_value": "34.70",
+            },
+        ),
+    )
+
+    standard_row = _option_tax_lot_rows(standard_position, standard_contract)[0]
+    mini_row = _option_tax_lot_rows(mini_position, mini_contract)[0]
+
+    assert standard_row.purchase_price_label == "$2.79"
+    assert standard_row.average_cost_label == "$2.79"
+    assert standard_row.cost_basis_label == "$279.33"
+    assert standard_row.total_gain_loss_label == "$67.67"
+    assert standard_row.gain_loss_percent_label == "24.23%"
+    assert mini_row.purchase_price_label == "$2.79"
+    assert mini_row.average_cost_label == "$2.79"
+    assert mini_row.cost_basis_label == "$27.90"
+
+
+def test_option_tax_lot_rows_use_multiplier_for_manual_per_share_purchase_price() -> None:
+    contract = OptionContract(
+        id=uuid4(),
+        occ_symbol="XYZ260619C00050000",
+        underlying_symbol="XYZ",
+        expiration_date=date(2026, 6, 19),
+        strike=Decimal("50.00"),
+        option_type="call",
+        multiplier=Decimal("100"),
+    )
+    position = OptionPosition(
+        id=uuid4(),
+        account_id=uuid4(),
+        option_contract_id=contract.id,
+        position_side="long",
+        quantity=Decimal("1"),
+        average_price=Decimal("2.79"),
+        source="manual",
+        status="open",
+        as_of=datetime(2026, 5, 28, 14, 45, tzinfo=UTC),
+        tax_lots=(
+            {
+                "acquired_date": "2026-01-15",
+                "quantity": "1",
+                "purchase_price": "2.79",
+                "current_value": "347.00",
+            },
+        ),
+    )
+
+    row = _option_tax_lot_rows(position, contract)[0]
+
+    assert row.purchase_price_label == "$2.79"
+    assert row.average_cost_label == "$2.79"
+    assert row.cost_basis_label == "$279.00"
+    assert row.total_gain_loss_label == "$68.00"
+    assert row.gain_loss_percent_label == "24.37%"
+
+
+def test_account_details_projection_marks_mixed_visibility_without_claiming_all_amounts_hidden() -> None:
+    user_id = uuid4()
+    connection = BrokerConnection(
+        id=uuid4(),
+        user_id=user_id,
+        provider="snaptrade",
+        broker_name="Fidelity",
+        provider_connection_id="provider_connection_id_secret_123",
+        connection_status="connected",
+        sync_status="idle",
+        data_freshness_status="fresh",
+    )
+    visible_account = BrokerAccount(
+        id=uuid4(),
+        broker_connection_id=connection.id,
+        provider_account_id="provider_account_id_visible",
+        display_name="Visible account 1234 should not render",
+        account_type="taxable_individual",
+        sync_status="idle",
+        data_freshness_status="fresh",
+    )
+    hidden_account = BrokerAccount(
+        id=uuid4(),
+        broker_connection_id=connection.id,
+        provider_account_id="provider_account_id_hidden",
+        display_name="Hidden account 9999 should not render",
+        account_type="margin",
+        sync_status="idle",
+        data_freshness_status="fresh",
+    )
+
+    read = _account_details_from_broker_rows(
+        user_id=user_id,
+        generated_at=NOW,
+        rows=(
+            _BrokerAccountDetailsRow(
+                broker_account=visible_account,
+                broker_connection=connection,
+                latest_sync_run=None,
+                metrics=_NormalizedAccountMetrics(
+                    cash_total=Decimal("1000.00"),
+                    reserved_collateral_cash=Decimal("0.00"),
+                    stock_etf_market_value=Decimal("2000.00"),
+                    options_market_value=Decimal("0.00"),
+                    stock_position_count=1,
+                    option_position_count=0,
+                ),
+            ),
+            _BrokerAccountDetailsRow(
+                broker_account=hidden_account,
+                broker_connection=connection,
+                latest_sync_run=None,
+                metrics=_NormalizedAccountMetrics(),
+            ),
+        ),
+    )
+
+    assert read is not None
+    assert read.privacy_display_mode == "amounts_visible"
+    assert "amounts_hidden" not in read.caveat_codes
+    assert "some_amounts_hidden" in read.caveat_codes
+    assert read.accounts[0].privacy_display_mode == "amounts_visible"
+    assert read.accounts[1].privacy_display_mode == "amounts_hidden"
+    assert read.accounts[0].display_label == "Fidelity taxable"
+    assert read.accounts[1].display_label == "Fidelity margin"
+    assert "1234" not in repr(read.model_dump(mode="python"))
+    assert "9999" not in repr(read.model_dump(mode="python"))
+
+
+def test_account_details_empty_state_uses_unavailable_scope() -> None:
+    read = get_account_details_for_user(
+        "00000000-0000-0000-0000-000000000000",
+        generated_at=NOW,
+    )
+
+    assert read.data_mode == "synthetic_demo"
+    assert read.portfolio_scope.scope_mode == "unavailable"
+    assert read.portfolio_scope.account_level_feasibility_evaluated is False
+    assert read.review_account is None
+    assert read.accounts == ()
+    assert "portfolio_scope_unavailable" in read.caveat_codes
+
+
+def test_selected_account_group_scope_mode_is_reserved_by_schema() -> None:
+    scope = PortfolioScopeRead(
+        scope_reference="scope_demo_group",
+        scope_mode="selected_account_group",
+        display_label="Portfolio scope: Selected account group",
+        selection_mode=None,
+        context_reference=None,
+        included_account_labels=("Primary demo account",),
+        excluded_account_labels=("Long-term demo account",),
+        account_level_feasibility_evaluated=False,
+        account_level_feasibility_label="Account-level feasibility not evaluated",
+        caveat_codes=("account_group_scope_reserved",),
+    )
+
+    assert scope.scope_mode == "selected_account_group"
 
 
 def _projection(
@@ -684,3 +1573,63 @@ def _collect_keys(value: object) -> set[str]:
             found.update(_collect_keys(item))
         return found
     return set()
+
+
+def _real_broker_scope_metadata() -> ReportScopeMetadataRead:
+    review_account = ReviewAccountRead(
+        account_reference="acctref_realfid01",
+        display_label="Fidelity taxable",
+        account_kind_label="Taxable brokerage",
+        is_review_account=True,
+        is_included_in_portfolio_scope=False,
+        is_account_level_feasibility_source=False,
+    )
+    scope = PortfolioScopeRead(
+        scope_reference="scope_realbroker1",
+        scope_mode="selected_context",
+        display_label="Selected portfolio context",
+        selection_mode="latest_available",
+        context_reference="ctx_demo_latest",
+        included_account_labels=(),
+        excluded_account_labels=(),
+        account_level_feasibility_evaluated=False,
+        account_level_feasibility_label="Account-level feasibility not evaluated",
+        caveat_codes=(
+            "selected_context_scope",
+            "account_level_feasibility_not_evaluated",
+            "current_position_truth_unstable",
+            "buying_power_display_only",
+            "cash_collateral_policy_not_reviewed",
+            "cash_collateral_not_fully_modeled",
+        ),
+    )
+    return ReportScopeMetadataRead(
+        review_account=review_account,
+        portfolio_context_scope=scope,
+        scope_summary_label="Review account: Fidelity taxable · Context scope: Selected portfolio context.",
+        account_level_feasibility_evaluated=False,
+        scope_caveat_codes=(
+            "selected_context_scope",
+            "account_level_feasibility_not_evaluated",
+            "current_position_truth_unstable",
+            "buying_power_display_only",
+            "cash_collateral_policy_not_reviewed",
+            "cash_collateral_not_fully_modeled",
+        ),
+    )
+
+
+def _collect_string_values(value: object) -> tuple[str, ...]:
+    if isinstance(value, dict):
+        found: tuple[str, ...] = ()
+        for item in value.values():
+            found += _collect_string_values(item)
+        return found
+    if isinstance(value, (list, tuple)):
+        found: tuple[str, ...] = ()
+        for item in value:
+            found += _collect_string_values(item)
+        return found
+    if isinstance(value, str):
+        return (value,)
+    return ()

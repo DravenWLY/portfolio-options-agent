@@ -69,6 +69,16 @@ class ProviderBalanceSnapshot:
 
 
 @dataclass(frozen=True)
+class ProviderTaxLotSnapshot:
+    acquired_date: date | None
+    quantity: Decimal | None
+    purchase_price: Decimal | None
+    cost_basis: Decimal | None
+    current_value: Decimal | None
+    position_type: str | None = None
+
+
+@dataclass(frozen=True)
 class ProviderPositionSnapshot:
     provider: str
     provider_account_id: str
@@ -81,6 +91,11 @@ class ProviderPositionSnapshot:
     received_at: datetime
     sync_status: str
     data_freshness_status: str
+    instrument_name: str | None = None
+    market_price: Decimal | None = None
+    average_purchase_price: Decimal | None = None
+    open_pnl: Decimal | None = None
+    tax_lots: tuple[ProviderTaxLotSnapshot, ...] = ()
     raw_payload: dict | None = None
 
     def __post_init__(self) -> None:
@@ -102,6 +117,11 @@ class ProviderOptionPositionSnapshot:
     received_at: datetime
     sync_status: str
     data_freshness_status: str
+    market_price: Decimal | None = None
+    average_purchase_price: Decimal | None = None
+    open_pnl: Decimal | None = None
+    multiplier: Decimal = Decimal("100")
+    tax_lots: tuple[ProviderTaxLotSnapshot, ...] = ()
     raw_payload: dict | None = None
 
     def __post_init__(self) -> None:

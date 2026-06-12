@@ -58,6 +58,7 @@ def normalize_option_position(
     db: Session,
     account_id: UUID,
     position: ProviderOptionPositionSnapshot,
+    sync_run_id: UUID | None = None,
 ) -> OptionPosition:
     parsed = parse_occ_symbol(position.occ_symbol)
     contract = get_or_create_option_contract(
@@ -68,6 +69,7 @@ def normalize_option_position(
             expiration_date=parsed.expiration_date,
             strike=parsed.strike,
             option_type=parsed.option_type,
+            multiplier=position.multiplier,
         ),
     )
     ref = reconciliation.source_ref(position.provider_account_id, parsed.occ_symbol)
@@ -91,11 +93,15 @@ def normalize_option_position(
         db.add(existing)
 
     existing.position_side = position.position_side
+    existing.sync_run_id = sync_run_id
     existing.quantity = position.quantity
-    existing.average_price = None
-    existing.market_price = None
+    existing.average_price = position.average_purchase_price
+    existing.market_price = position.market_price
     existing.market_value = position.market_value
-    existing.status = "open"
+    existing.open_pnl = position.open_pnl
+    existing.currency = position.currency.strip().upper()
+    existing.status = option_position_status(parsed, position)
+    existing.tax_lots = _serialized_option_tax_lots(position.tax_lots)
     existing.data_freshness_status = position.data_freshness_status
     existing.raw_provider_payload = sanitize_provider_payload(position.raw_payload)
     db.flush()
@@ -106,14 +112,16 @@ def normalize_option_positions(
     db: Session,
     account_id: UUID,
     positions: list[ProviderOptionPositionSnapshot],
+    sync_run_id: UUID | None = None,
 ) -> list[OptionPosition]:
-    return [normalize_option_position(db, account_id, position) for position in positions]
+    return [normalize_option_position(db, account_id, position, sync_run_id=sync_run_id) for position in positions]
 
 
 def normalize_option_positions_safely(
     db: Session,
     account_id: UUID,
     positions: list[ProviderOptionPositionSnapshot],
+    sync_run_id: UUID | None = None,
 ) -> OptionNormalizationResult:
     normalized: list[OptionPosition] = []
     failures: list[dict[str, str]] = []
@@ -127,7 +135,7 @@ def normalize_option_positions_safely(
                         "reason": "underlying_mismatch",
                     }
                 )
-            normalized.append(normalize_option_position(db, account_id, position))
+            normalized.append(normalize_option_position(db, account_id, position, sync_run_id=sync_run_id))
         except ValueError:
             failures.append(
                 {
@@ -136,3 +144,33 @@ def normalize_option_positions_safely(
                 }
             )
     return OptionNormalizationResult(positions=normalized, partial_failures=failures)
+
+
+def option_position_status(
+    parsed: ParsedOccSymbol,
+    position: ProviderOptionPositionSnapshot,
+    *,
+    current_date: date | None = None,
+) -> str:
+    today = current_date or date.today()
+    if parsed.expiration_date < today:
+        return "expired"
+    if position.quantity <= 0:
+        return "closed"
+    return "open"
+
+
+def _serialized_option_tax_lots(tax_lots) -> list[dict] | None:
+    serialized = []
+    for lot in tax_lots:
+        serialized.append(
+            {
+                "acquired_date": lot.acquired_date.isoformat() if lot.acquired_date else None,
+                "quantity": str(lot.quantity) if lot.quantity is not None else None,
+                "purchase_price": str(lot.purchase_price) if lot.purchase_price is not None else None,
+                "cost_basis": str(lot.cost_basis) if lot.cost_basis is not None else None,
+                "current_value": str(lot.current_value) if lot.current_value is not None else None,
+                "position_type": lot.position_type,
+            }
+        )
+    return serialized or None

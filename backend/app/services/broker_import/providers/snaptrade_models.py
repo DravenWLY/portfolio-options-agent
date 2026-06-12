@@ -11,6 +11,7 @@ from app.services.broker_import.providers.models import (
     ProviderOptionPositionSnapshot,
     ProviderPositionSnapshot,
     ProviderRefreshResult,
+    ProviderTaxLotSnapshot,
     ProviderTransactionSnapshot,
 )
 
@@ -178,6 +179,25 @@ class SnapTradeBalanceResponse(SnapTradeBaseModel):
         )
 
 
+class SnapTradeTaxLotResponse(SnapTradeBaseModel):
+    acquired_date: date | None = None
+    quantity: Decimal | None = None
+    purchase_price: Decimal | None = None
+    cost_basis: Decimal | None = None
+    current_value: Decimal | None = None
+    position_type: str | None = None
+
+    def to_provider_snapshot(self) -> ProviderTaxLotSnapshot:
+        return ProviderTaxLotSnapshot(
+            acquired_date=self.acquired_date,
+            quantity=self.quantity,
+            purchase_price=self.purchase_price,
+            cost_basis=self.cost_basis,
+            current_value=self.current_value,
+            position_type=self.position_type,
+        )
+
+
 class SnapTradePositionResponse(SnapTradeBaseModel):
     provider: str = "snaptrade"
     provider_account_id: str = Field(min_length=1)
@@ -186,6 +206,11 @@ class SnapTradePositionResponse(SnapTradeBaseModel):
     quantity: Decimal
     market_value: Decimal | None = None
     currency: str = Field(default="USD", min_length=3, max_length=3)
+    instrument_name: str | None = None
+    market_price: Decimal | None = None
+    average_purchase_price: Decimal | None = None
+    open_pnl: Decimal | None = None
+    tax_lots: tuple[SnapTradeTaxLotResponse, ...] = ()
     sync_timestamp: datetime
     received_at: datetime
     sync_status: str
@@ -220,6 +245,11 @@ class SnapTradePositionResponse(SnapTradeBaseModel):
             quantity=self.quantity,
             market_value=self.market_value,
             currency=self.currency,
+            instrument_name=self.instrument_name,
+            market_price=self.market_price,
+            average_purchase_price=self.average_purchase_price,
+            open_pnl=self.open_pnl,
+            tax_lots=tuple(lot.to_provider_snapshot() for lot in self.tax_lots),
             sync_timestamp=self.sync_timestamp,
             received_at=self.received_at,
             sync_status=self.sync_status,
@@ -237,6 +267,11 @@ class SnapTradeOptionPositionResponse(SnapTradeBaseModel):
     quantity: Decimal
     market_value: Decimal | None = None
     currency: str = Field(default="USD", min_length=3, max_length=3)
+    market_price: Decimal | None = None
+    average_purchase_price: Decimal | None = None
+    open_pnl: Decimal | None = None
+    multiplier: Decimal = Decimal("100")
+    tax_lots: tuple[SnapTradeTaxLotResponse, ...] = ()
     sync_timestamp: datetime
     received_at: datetime
     sync_status: str
@@ -280,6 +315,11 @@ class SnapTradeOptionPositionResponse(SnapTradeBaseModel):
             quantity=self.quantity,
             market_value=self.market_value,
             currency=self.currency,
+            market_price=self.market_price,
+            average_purchase_price=self.average_purchase_price,
+            open_pnl=self.open_pnl,
+            multiplier=self.multiplier,
+            tax_lots=tuple(lot.to_provider_snapshot() for lot in self.tax_lots),
             sync_timestamp=self.sync_timestamp,
             received_at=self.received_at,
             sync_status=self.sync_status,

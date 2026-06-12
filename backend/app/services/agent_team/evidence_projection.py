@@ -23,6 +23,18 @@ SAFE_FLOW_LABELS = {
     "cash_secured_put": "short_put_collateral_review",
 }
 
+AGENT_EVIDENCE_FORBIDDEN_KEYS = FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS | frozenset(
+    {
+        "account_reference",
+        "account_label",
+        "account_kind_label",
+        "display_label",
+        "cash_amount_label",
+        "available_cash_label",
+        "buying_power_label",
+    }
+)
+
 
 @dataclass(frozen=True)
 class AgentSafeDeterministicEvidenceProjection:
@@ -38,6 +50,7 @@ class AgentSafeDeterministicEvidenceProjection:
     market_quote_freshness: dict[str, object]
     deterministic_risk_summary: dict[str, object]
     portfolio_shape_summary: dict[str, object]
+    scope_metadata: dict[str, object]
     caveat_codes: tuple[str, ...] = ()
     missing_stale_data_warnings: tuple[dict[str, object], ...] = ()
     calculation_notes: tuple[str, ...] = field(
@@ -77,7 +90,7 @@ def build_agent_safe_deterministic_evidence(
             "review_actionability_status": workspace.actionability.review_actionability_status,
             "language_tier": workspace.actionability.language_tier,
             "reason_count": len(workspace.actionability.reasons),
-            "reason_codes": tuple(reason.code for reason in workspace.actionability.reasons),
+            "reason_codes": tuple(_safe_caveat_code(reason.code) for reason in workspace.actionability.reasons),
         },
         broker_snapshot_freshness={
             "freshness_scope": workspace.actionability.broker_snapshot.freshness_scope,
@@ -105,10 +118,11 @@ def build_agent_safe_deterministic_evidence(
             "option_position_count": context.option_position_count if context is not None else 0,
             "liquidity_state": _liquidity_state(context.cash_state) if context is not None else "not_available",
         },
+        scope_metadata=_safe_scope_metadata(workspace),
         caveat_codes=tuple(_safe_caveat_code(caveat.code) for caveat in workspace.caveats),
         missing_stale_data_warnings=tuple(
             {
-                "code": warning.code,
+                "code": _safe_caveat_code(warning.code),
                 "scope": warning.scope,
                 "severity": warning.severity,
             }
@@ -120,7 +134,7 @@ def build_agent_safe_deterministic_evidence(
 def validate_agent_safe_evidence(payload: object, *, label: str) -> None:
     """Reject private fields and prompt-unsafe values in agent evidence."""
 
-    forbidden = find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+    forbidden = find_forbidden_keys(payload, forbidden_keys=AGENT_EVIDENCE_FORBIDDEN_KEYS)
     if forbidden:
         blocked = ", ".join(sorted(forbidden))
         raise ValueError(f"{label} contains forbidden private field(s): {blocked}")
@@ -152,4 +166,38 @@ def _liquidity_state(value: str) -> str:
 
 
 def _safe_caveat_code(code: str) -> str:
-    return code.replace("cash_secured_put", "short_put").replace("cash_", "liquidity_")
+    return (
+        code.replace("cash_secured_put", "short_put")
+        .replace("buying_power", "broker_capacity")
+        .replace("cash_collateral", "liquidity_collateral")
+        .replace("cash_", "liquidity_")
+    )
+
+
+def _safe_scope_metadata(workspace: TradeReviewWorkspaceRead) -> dict[str, object]:
+    scope_metadata = workspace.scope_metadata
+    if scope_metadata is None:
+        return {
+            "scope_present": False,
+            "portfolio_scope_mode": "unavailable",
+            "portfolio_context_selection_mode": None,
+            "selected_context_present": False,
+            "included_account_count": 0,
+            "excluded_account_count": 0,
+            "review_account_present": False,
+            "account_level_feasibility_evaluated": False,
+            "scope_caveat_codes": (),
+        }
+
+    scope = scope_metadata.portfolio_context_scope
+    return {
+        "scope_present": True,
+        "portfolio_scope_mode": scope.scope_mode,
+        "portfolio_context_selection_mode": scope.selection_mode,
+        "selected_context_present": scope.context_reference is not None,
+        "included_account_count": len(scope.included_account_labels),
+        "excluded_account_count": len(scope.excluded_account_labels),
+        "review_account_present": scope_metadata.review_account is not None,
+        "account_level_feasibility_evaluated": scope_metadata.account_level_feasibility_evaluated,
+        "scope_caveat_codes": tuple(_safe_caveat_code(code) for code in scope_metadata.scope_caveat_codes),
+    }

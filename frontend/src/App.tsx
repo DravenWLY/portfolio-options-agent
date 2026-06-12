@@ -16,6 +16,7 @@ import LandingPage from "./pages/LandingPage";
 import PricingPage from "./pages/PricingPage";
 import AuthPage from "./pages/AuthPage";
 import MarketMoodPage from "./pages/MarketMoodPage";
+import AccountDetailsPage from "./pages/AccountDetailsPage";
 
 /**
  * App root.
@@ -43,6 +44,7 @@ export default function App() {
               <Route path="/reports" element={<ReportsPage />} />
               <Route path="/portfolio-context" element={<PortfolioContextPage />} />
               <Route path="/market-context/market-mood" element={<MarketMoodPage />} />
+              <Route path="/account-details" element={<AccountDetailsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/landing" element={<LandingPage />} />
               <Route path="/pricing" element={<PricingPage />} />

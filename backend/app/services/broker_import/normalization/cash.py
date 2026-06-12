@@ -12,6 +12,7 @@ def normalize_cash_balance(
     db: Session,
     account_id: UUID,
     balance: ProviderBalanceSnapshot,
+    sync_run_id: UUID | None = None,
 ) -> CashBalance:
     ref = reconciliation.source_ref(balance.provider_account_id)
     free_cash = balance.available_cash if balance.available_cash is not None else balance.total_cash
@@ -27,6 +28,10 @@ def normalize_cash_balance(
         db.add(existing)
 
     existing.total_cash = balance.total_cash
+    existing.available_cash = balance.available_cash
+    existing.buying_power = balance.buying_power
+    existing.currency = balance.currency.strip().upper()
+    existing.sync_run_id = sync_run_id
     existing.reserved_collateral_cash = Decimal("0.00")
     existing.free_cash = free_cash
     existing.premium_income_cash = Decimal("0.00")

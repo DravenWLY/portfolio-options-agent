@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useUIPreference } from "../../context/useUIPreference";
 import AppearanceControl from "./AppearanceControl";
 import { Badge, MpIcon, type MpIconName } from "../shared/mp";
@@ -19,12 +20,15 @@ import { Badge, MpIcon, type MpIconName } from "../shared/mp";
  *
  * Icons: monochrome stroke-based SVGs via MpIcon. No emoji.
  *
- * Safety: no trade-execution, market screener, or TradingAgents links.
- * The Private-alpha / read-only / analysis-only / no-order-placement copy
+ * Safety: no broker-action, market screener, or TradingAgents links.
+ * The Private-alpha / read-only / analysis-only workspace copy
  * remains visible in both expanded and collapsed states (via the footer).
  */
 
 const SHOW_PRODUCT_GROUP = true as boolean;
+const SIDEBAR_MIN_WIDTH = 188;
+const SIDEBAR_DEFAULT_WIDTH = 220;
+const SIDEBAR_MAX_WIDTH = 340;
 
 interface NavEntry { label: string; icon: MpIconName; to: string; end?: boolean; tag?: string }
 interface NavGroup { label: string; items: NavEntry[]; secondary?: boolean }
@@ -54,14 +58,45 @@ const DATA_NAV: NavGroup = {
   label: "Data sources",
   secondary: true,
   items: [
-    { label: "Broker",      icon: "broker", to: "/broker" },
-    { label: "Market Data", icon: "spark",  to: "/market-data" },
-    { label: "Risk Review", icon: "alert",  to: "/risk" },
+    { label: "Broker",          icon: "broker",    to: "/broker" },
+    { label: "Account Details", icon: "portfolio", to: "/account-details" },
+    { label: "Market Data",     icon: "spark",     to: "/market-data" },
+    { label: "Risk Review",     icon: "alert",     to: "/risk" },
   ],
 };
 
 export default function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUIPreference();
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
+    return () => {
+      document.documentElement.style.removeProperty("--sidebar-width");
+    };
+  }, [sidebarWidth]);
+
+  const onResizePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const next = Math.min(
+        SIDEBAR_MAX_WIDTH,
+        Math.max(SIDEBAR_MIN_WIDTH, startWidth + moveEvent.clientX - startX),
+      );
+      setSidebarWidth(next);
+    };
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+  };
 
   return (
     <nav
@@ -118,18 +153,28 @@ export default function Sidebar() {
           <span
             style={styles.footerBadgeMini}
             role="note"
-            aria-label="Private alpha. Read-only. Analysis-only. No order placement."
-            title="Private alpha · read-only · analysis-only · no order placement"
+            aria-label="Private alpha. Read-only. Analysis-only workspace."
+            title="Private alpha · read-only · analysis-only workspace"
           >α</span>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <Badge tone="info" dot>Private alpha</Badge>
             <span style={styles.footerNote} role="note">
-              Read-only · analysis-only · no order placement
+              Read-only · analysis-only workspace
             </span>
           </div>
         )}
       </footer>
+
+      {!sidebarCollapsed && (
+        <button
+          type="button"
+          aria-label="Resize sidebar"
+          title="Drag to resize sidebar"
+          onPointerDown={onResizePointerDown}
+          style={styles.resizeHandle}
+        />
+      )}
     </nav>
   );
 }
@@ -203,6 +248,7 @@ const styles: Record<string, React.CSSProperties> = {
     position: "sticky",
     top: 0,
     height: "100vh",
+    width: "100%",
     backgroundColor: "var(--mp-card)",
     borderRight: "1px solid var(--mp-rule)",
     color: "var(--mp-ink-2)",
@@ -211,6 +257,18 @@ const styles: Record<string, React.CSSProperties> = {
     paddingBlock: "var(--space-4)",
     overflowX: "hidden",
     transition: "width 160ms ease",
+  },
+  resizeHandle: {
+    position: "absolute",
+    top: 0,
+    right: -4,
+    width: 8,
+    height: "100%",
+    border: "none",
+    padding: 0,
+    cursor: "col-resize",
+    background: "transparent",
+    zIndex: 2,
   },
   brandHead: {
     display: "flex",

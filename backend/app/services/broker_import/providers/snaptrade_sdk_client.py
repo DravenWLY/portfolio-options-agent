@@ -68,6 +68,11 @@ def _to_decimal(val: Any) -> Decimal | None:
         return None
 
 
+def _to_decimal_text(val: Any) -> str | None:
+    dec = _to_decimal(val)
+    return str(dec) if dec is not None else None
+
+
 def _to_date(val: Any) -> date | None:
     if isinstance(val, date) and not isinstance(val, datetime):
         return val
@@ -435,6 +440,7 @@ class SnapTradeSDKClient:
         # UniversalSymbol.type is a SecurityType with code/description (no "name").
         type_desc = str(_nested(universal, "type", "description") or "").lower()
         asset_type = type_desc if type_desc else "stock"
+        instrument_name = str(_g(universal, "description") or "").strip() or None
 
         units = _g(item, "units")
         quantity = _to_decimal(units) or Decimal("0")
@@ -458,6 +464,11 @@ class SnapTradeSDKClient:
             "quantity": str(quantity),
             "market_value": str(market_value) if market_value is not None else None,
             "currency": curr_code,
+            "instrument_name": instrument_name,
+            "market_price": _to_decimal_text(price),
+            "average_purchase_price": _to_decimal_text(_g(item, "average_purchase_price")),
+            "open_pnl": _to_decimal_text(_g(item, "open_pnl")),
+            "tax_lots": self._map_tax_lots(_g(item, "tax_lots") or []),
             "sync_timestamp": iso_now,
             "received_at": iso_now,
             "sync_status": "succeeded",
@@ -491,7 +502,9 @@ class SnapTradeSDKClient:
 
         units = _to_decimal(_g(item, "units")) or Decimal("0")
         price = _to_decimal(_g(item, "price"))
-        market_value = abs(price * units) if price is not None else None
+        is_mini_option = bool(_g(option_symbol, "is_mini_option", False))
+        multiplier = Decimal("10") if is_mini_option else Decimal("100")
+        market_value = price * units * multiplier if price is not None else None
         position_side = "short" if units < 0 else "long"
         curr_code = _str_upper(_nested(item, "currency", "code"), "USD")
 
@@ -505,12 +518,33 @@ class SnapTradeSDKClient:
             "quantity": str(abs(units)),
             "market_value": str(market_value) if market_value is not None else None,
             "currency": curr_code,
+            "market_price": str(price) if price is not None else None,
+            "average_purchase_price": _to_decimal_text(_g(item, "average_purchase_price")),
+            "open_pnl": _to_decimal_text(_g(item, "open_pnl")),
+            "multiplier": str(multiplier),
+            "tax_lots": self._map_tax_lots(_g(item, "tax_lots") or []),
             "sync_timestamp": iso_now,
             "received_at": iso_now,
             "sync_status": "succeeded",
             "data_freshness_status": "cached",
             "raw_payload": None,
         }
+
+    @staticmethod
+    def _map_tax_lots(tax_lots: list[Any]) -> list[dict[str, Any]]:
+        mapped: list[dict[str, Any]] = []
+        for lot in tax_lots:
+            mapped.append(
+                {
+                    "acquired_date": _to_date(_g(lot, "original_purchase_date") or _g(lot, "acquired_date")),
+                    "quantity": _to_decimal_text(_g(lot, "quantity")),
+                    "purchase_price": _to_decimal_text(_g(lot, "purchased_price") or _g(lot, "purchase_price")),
+                    "cost_basis": _to_decimal_text(_g(lot, "cost_basis")),
+                    "current_value": _to_decimal_text(_g(lot, "current_value")),
+                    "position_type": str(_g(lot, "position_type") or "").strip().lower() or None,
+                }
+            )
+        return mapped
 
     @staticmethod
     def _extract_option_symbol(item: Any) -> Any:

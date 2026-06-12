@@ -1,5 +1,9 @@
-from fastapi import APIRouter
+from uuid import UUID
 
+from fastapi import APIRouter, Depends, Header
+from sqlalchemy.orm import Session
+
+from app.db.session import get_db
 from app.schemas.trade_review_workspace import (
     TradeReviewPortfolioPreviewRequest,
     TradeReviewWorkspacePreviewRequest,
@@ -21,7 +25,11 @@ def preview_trade_review(payload: TradeReviewWorkspacePreviewRequest) -> TradeRe
 
 
 @router.post("/portfolio-preview", response_model=TradeReviewWorkspaceRead)
-def preview_portfolio_trade_review(payload: TradeReviewPortfolioPreviewRequest) -> TradeReviewWorkspaceRead:
+def preview_portfolio_trade_review(
+    payload: TradeReviewPortfolioPreviewRequest,
+    db: Session = Depends(get_db),
+    current_user_id: UUID | None = Header(default=None, alias="X-User-Id"),
+) -> TradeReviewWorkspaceRead:
     """Return a deterministic portfolio-backed trade-review workspace preview."""
 
-    return build_trade_review_workspace_portfolio_preview(payload)
+    return build_trade_review_workspace_portfolio_preview(payload, db=db, current_user_id=current_user_id)

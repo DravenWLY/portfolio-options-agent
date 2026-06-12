@@ -16,6 +16,7 @@ class OptionPosition(Base):
         Index("ix_option_positions_account_id", "account_id"),
         Index("ix_option_positions_account_status", "account_id", "status"),
         Index("ix_option_positions_contract_id", "option_contract_id"),
+        Index("ix_option_positions_sync_run_id", "sync_run_id"),
     )
 
     id: Mapped[UUID] = mapped_column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -23,6 +24,11 @@ class OptionPosition(Base):
         PostgresUUID(as_uuid=True),
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    sync_run_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("broker_sync_runs.id", ondelete="SET NULL"),
+        nullable=True,
     )
     option_contract_id: Mapped[UUID] = mapped_column(
         PostgresUUID(as_uuid=True),
@@ -34,6 +40,8 @@ class OptionPosition(Base):
     average_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     market_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     market_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    open_pnl: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD", server_default="USD")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="open", server_default="open")
     source: Mapped[str] = mapped_column(String(40), nullable=False, default="manual", server_default="manual")
     source_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -43,6 +51,7 @@ class OptionPosition(Base):
         default="unknown",
         server_default="unknown",
     )
+    tax_lots: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
     raw_provider_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

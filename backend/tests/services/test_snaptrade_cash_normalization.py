@@ -49,6 +49,9 @@ def test_snaptrade_balance_normalizes_to_cash_snapshot(db_session: Session) -> N
 
     assert cash.account_id == account.id
     assert cash.total_cash == Decimal("10000.00")
+    assert cash.available_cash == Decimal("7500.00")
+    assert cash.buying_power == Decimal("12000.00")
+    assert cash.currency == "USD"
     assert cash.free_cash == Decimal("7500.00")
     assert cash.reserved_collateral_cash == Decimal("0.00")
     assert cash.source == "snaptrade"

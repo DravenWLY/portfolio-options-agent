@@ -24,9 +24,20 @@ SupportedTradeReviewFlow: TypeAlias = Literal[
 ]
 WorkspaceCaveatSeverity: TypeAlias = Literal["info", "warning", "blocker"]
 PortfolioContextSelectionMode: TypeAlias = Literal["latest_available", "selected_context"]
+ReviewAccountSelectionMode: TypeAlias = Literal["unselected", "selected_account"]
 PortfolioContextSource: TypeAlias = Literal["snaptrade", "manual", "csv", "synthetic_mock"]
 PortfolioContextSourceKind: TypeAlias = Literal["broker_snapshot", "manual", "csv", "synthetic_demo"]
 PortfolioCashState: TypeAlias = Literal["available", "unavailable", "not_exposed"]
+PortfolioScopeMode: TypeAlias = Literal[
+    "all_connected_accounts",
+    "single_account",
+    "selected_account_group",
+    "selected_context",
+    "unavailable",
+]
+AccountDetailsDataMode: TypeAlias = Literal["synthetic_demo", "private_real_source", "unavailable"]
+AccountDetailSourceKind: TypeAlias = Literal["snaptrade", "manual", "csv", "synthetic_demo", "unknown"]
+AccountScopeRole: TypeAlias = Literal["review_account", "included_in_scope", "excluded_from_scope"]
 TradeReviewReportStatus: TypeAlias = Literal["preview_only", "saved", "generated", "unavailable"]
 TradeReviewListSourceMode: TypeAlias = Literal["synthetic_preview", "portfolio_preview", "saved_review"]
 Phase20BDataMode: TypeAlias = Literal["synthetic_demo", "persisted"]
@@ -65,6 +76,8 @@ ReadinessAgentProviderStatus: TypeAlias = Literal["available", "unavailable", "e
 DashboardDisplaySectionKind: TypeAlias = Literal["summary", "freshness", "shape", "caveats"]
 
 _OPAQUE_CONTEXT_REFERENCE_RE = re.compile(r"^ctx_[a-z0-9][a-z0-9_-]{5,79}$")
+_OPAQUE_ACCOUNT_REFERENCE_RE = re.compile(r"^acctref_[a-z0-9][a-z0-9_-]{5,79}$")
+_OPAQUE_SCOPE_REFERENCE_RE = re.compile(r"^scope_[a-z0-9][a-z0-9_-]{5,79}$")
 _FORBIDDEN_CONTEXT_REFERENCE_TOKENS = (
     "account",
     "acct",
@@ -77,6 +90,20 @@ _FORBIDDEN_CONTEXT_REFERENCE_TOKENS = (
     "holding",
     "position",
     "portfolio",
+)
+_FORBIDDEN_ACCOUNT_REFERENCE_TOKENS = (
+    "account",
+    "broker",
+    "provider",
+    "snaptrade",
+    "secret",
+    "token",
+    "cash",
+    "holding",
+    "position",
+    "raw",
+    "payload",
+    "number",
 )
 
 PROHIBITED_TRADE_REVIEW_WORKSPACE_PHRASES = (
@@ -100,6 +127,27 @@ def validate_portfolio_context_reference(context_reference: str) -> str:
     lowered = ref.lower()
     if any(token in lowered for token in _FORBIDDEN_CONTEXT_REFERENCE_TOKENS):
         raise ValueError("context_reference must not contain broker, account, provider, or private-data hints")
+    return ref
+
+
+def validate_account_reference(account_reference: str) -> str:
+    """Validate opaque app-owned account references."""
+
+    ref = account_reference.strip()
+    if ref != account_reference or _OPAQUE_ACCOUNT_REFERENCE_RE.fullmatch(ref) is None:
+        raise ValueError("account_reference must be an opaque app-generated account reference")
+    suffix = ref.removeprefix("acctref_").lower()
+    if any(token in suffix for token in _FORBIDDEN_ACCOUNT_REFERENCE_TOKENS):
+        raise ValueError("account_reference must not contain broker, provider, account, or private-data hints")
+    return ref
+
+
+def validate_scope_reference(scope_reference: str) -> str:
+    """Validate opaque app-owned portfolio-scope references."""
+
+    ref = scope_reference.strip()
+    if ref != scope_reference or _OPAQUE_SCOPE_REFERENCE_RE.fullmatch(ref) is None:
+        raise ValueError("scope_reference must be an opaque app-generated scope reference")
     return ref
 
 
@@ -184,10 +232,29 @@ class PortfolioContextSelectionRequest(BaseModel):
         return self
 
 
+class ReviewAccountSelectionRequest(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    mode: ReviewAccountSelectionMode = "unselected"
+    account_reference: str | None = Field(default=None, min_length=14, max_length=90)
+
+    @model_validator(mode="after")
+    def account_reference_must_be_opaque(self) -> "ReviewAccountSelectionRequest":
+        if self.mode == "unselected":
+            if self.account_reference is not None:
+                raise ValueError("unselected review account must not include account_reference")
+            return self
+        if self.account_reference is None:
+            raise ValueError("selected_account requires account_reference")
+        validate_account_reference(self.account_reference)
+        return self
+
+
 class TradeReviewPortfolioPreviewRequest(TradeReviewWorkspacePreviewRequest):
     portfolio_context_selection: PortfolioContextSelectionRequest = Field(
         default_factory=PortfolioContextSelectionRequest
     )
+    review_account_selection: ReviewAccountSelectionRequest = Field(default_factory=ReviewAccountSelectionRequest)
 
 
 class PortfolioContextSummaryRead(BaseModel):
@@ -203,6 +270,61 @@ class PortfolioContextSummaryRead(BaseModel):
     option_position_count: int = Field(ge=0)
     cash_state: PortfolioCashState
     label: str | None = None
+
+
+class ReviewAccountRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    account_reference: str
+    display_label: str
+    account_kind_label: str | None = None
+    is_review_account: bool
+    is_included_in_portfolio_scope: bool
+    is_account_level_feasibility_source: bool
+
+    @model_validator(mode="after")
+    def review_account_payload_must_be_safe(self) -> "ReviewAccountRead":
+        validate_account_reference(self.account_reference)
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class PortfolioScopeRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    scope_reference: str
+    scope_mode: PortfolioScopeMode
+    display_label: str
+    selection_mode: PortfolioContextSelectionMode | None = None
+    context_reference: str | None = None
+    included_account_labels: tuple[str, ...]
+    excluded_account_labels: tuple[str, ...]
+    account_level_feasibility_evaluated: bool
+    account_level_feasibility_label: str
+    caveat_codes: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def portfolio_scope_payload_must_be_safe(self) -> "PortfolioScopeRead":
+        validate_scope_reference(self.scope_reference)
+        if self.context_reference is not None:
+            validate_portfolio_context_reference(self.context_reference)
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class ReportScopeMetadataRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    review_account: ReviewAccountRead | None = None
+    portfolio_context_scope: PortfolioScopeRead
+    scope_summary_label: str
+    account_level_feasibility_evaluated: bool
+    scope_caveat_codes: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def report_scope_payload_must_be_safe(self) -> "ReportScopeMetadataRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
 
 
 class TradeIntentSummaryRead(BaseModel):
@@ -358,6 +480,7 @@ class TradeReviewWorkspaceRead(BaseModel):
     supported_flow: SupportedTradeReviewFlow
     trade_intent_summary: TradeIntentSummaryRead
     portfolio_context: PortfolioContextSummaryRead | None = None
+    scope_metadata: ReportScopeMetadataRead | None = None
     actionability: PortfolioActionabilityDecision
     deterministic_review: DeterministicTradeReviewRead
     agent_orchestration: AgentOrchestrationSummaryRead | None = None
@@ -471,6 +594,248 @@ class PortfolioContextDetailRead(BaseModel):
 
     @model_validator(mode="after")
     def context_detail_payload_must_be_safe(self) -> "PortfolioContextDetailRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class AccountDetailsReadinessCaveatRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    code: str
+    severity: WorkspaceCaveatSeverity
+    title: str
+    message: str
+
+    @model_validator(mode="after")
+    def account_readiness_caveat_payload_must_be_safe(self) -> "AccountDetailsReadinessCaveatRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class AccountDetailAccountRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    account_reference: str
+    display_label: str
+    account_kind_label: str
+    source_kind: AccountDetailSourceKind
+    source_label: str
+    connection_status_label: str
+    last_successful_sync_label: str | None = None
+    privacy_display_mode: DashboardPrivacyDisplayMode
+    broker_snapshot_freshness: PortfolioContextFreshnessRead
+    market_quote_freshness: PortfolioContextFreshnessRead | None = None
+    portfolio_shape: PortfolioContextShapeRead
+    cash_state: PortfolioCashState
+    cash_state_label: str
+    total_value_label: str | None = None
+    cash_label: str | None = None
+    stock_etf_exposure_label: str | None = None
+    options_exposure_label: str | None = None
+    collateral_usage_label: str | None = None
+    scope_roles: tuple[AccountScopeRole, ...]
+    account_level_feasibility_evaluated: bool
+    readiness_caveats: tuple[AccountDetailsReadinessCaveatRead, ...] = ()
+    caveat_codes: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def account_detail_payload_must_be_safe(self) -> "AccountDetailAccountRead":
+        validate_account_reference(self.account_reference)
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class AccountDetailsRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    data_mode: AccountDetailsDataMode
+    demo_notice: str | None = None
+    generated_at: datetime
+    details_reference: str = Field(pattern=r"^ad_[a-z0-9][a-z0-9_-]{5,79}$")
+    source_label: str
+    privacy_display_mode: DashboardPrivacyDisplayMode
+    portfolio_scope: PortfolioScopeRead
+    review_account: ReviewAccountRead | None = None
+    accounts: tuple[AccountDetailAccountRead, ...]
+    readiness_caveats: tuple[AccountDetailsReadinessCaveatRead, ...] = ()
+    caveat_codes: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def account_details_payload_must_be_safe(self) -> "AccountDetailsRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class AccountDetailsSyncRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    account_reference: str
+    status: Literal["succeeded", "partially_succeeded", "failed", "running"]
+    message: str
+    generated_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def account_details_sync_payload_must_be_safe(self) -> "AccountDetailsSyncRead":
+        validate_account_reference(self.account_reference)
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class SelectedAccountSummaryLabelsRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    total_value_label: str | None = None
+    cash_label: str | None = None
+    cash_state_label: str
+    stock_etf_exposure_label: str | None = None
+    options_exposure_label: str | None = None
+    collateral_usage_label: str | None = None
+
+    @model_validator(mode="after")
+    def selected_account_summary_payload_must_be_safe(self) -> "SelectedAccountSummaryLabelsRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class AccountCashDisplayRowRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    row_reference: str = Field(pattern=r"^row_[a-z0-9][a-z0-9_-]{5,79}$")
+    currency_label: str
+    cash_amount_label: str
+    available_cash_label: str | None = None
+    buying_power_label: str | None = None
+    balance_source_label: str | None = None
+    cash_state_label: str
+    freshness_label: str
+    as_of_label: str | None = None
+    caveat_codes: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def cash_row_payload_must_be_safe(self) -> "AccountCashDisplayRowRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class AccountTaxLotPaginationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    total_count: int = Field(ge=0)
+    displayed_count: int = Field(ge=0)
+    has_more: bool = False
+
+    @model_validator(mode="after")
+    def tax_lot_pagination_payload_must_be_safe(self) -> "AccountTaxLotPaginationRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class AccountTaxLotDisplayRowRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    lot_reference: str = Field(pattern=r"^lotref_[a-z0-9][a-z0-9_-]{5,79}$")
+    acquired_date_label: str | None = None
+    term_label: Literal["short", "long", "unknown"] = "unknown"
+    quantity_label: str | None = None
+    purchase_price_label: str | None = None
+    average_cost_label: str | None = None
+    cost_basis_label: str | None = None
+    current_value_label: str | None = None
+    total_gain_loss_label: str | None = None
+    gain_loss_percent_label: str | None = None
+    source_label: str = "Broker-reported tax lot"
+
+    @model_validator(mode="after")
+    def tax_lot_payload_must_be_safe(self) -> "AccountTaxLotDisplayRowRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class AccountEquityPositionDisplayRowRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    row_reference: str = Field(pattern=r"^row_[a-z0-9][a-z0-9_-]{5,79}$")
+    symbol_label: str
+    instrument_name_label: str | None = None
+    asset_class_label: str
+    quantity_label: str
+    last_price_label: str | None = None
+    market_value_label: str | None = None
+    average_cost_label: str | None = None
+    cost_basis_label: str | None = None
+    total_gain_loss_label: str | None = None
+    gain_loss_percent_label: str | None = None
+    valuation_source_label: str | None = None
+    tax_lot_rows: tuple[AccountTaxLotDisplayRowRead, ...] = ()
+    tax_lot_pagination: AccountTaxLotPaginationRead | None = None
+    freshness_label: str
+    as_of_label: str | None = None
+    caveat_codes: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def equity_row_payload_must_be_safe(self) -> "AccountEquityPositionDisplayRowRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class AccountOptionPositionDisplayRowRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    row_reference: str = Field(pattern=r"^row_[a-z0-9][a-z0-9_-]{5,79}$")
+    underlying_symbol_label: str
+    contract_label: str
+    option_type_label: str
+    strike_label: str
+    expiration_label: str
+    side_label: str
+    quantity_label: str
+    last_price_label: str | None = None
+    market_value_label: str | None = None
+    average_cost_label: str | None = None
+    cost_basis_label: str | None = None
+    total_gain_loss_label: str | None = None
+    gain_loss_percent_label: str | None = None
+    multiplier_label: str | None = None
+    valuation_source_label: str | None = None
+    tax_lot_rows: tuple[AccountTaxLotDisplayRowRead, ...] = ()
+    tax_lot_pagination: AccountTaxLotPaginationRead | None = None
+    freshness_label: str
+    as_of_label: str | None = None
+    caveat_codes: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def option_row_payload_must_be_safe(self) -> "AccountOptionPositionDisplayRowRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class SelectedAccountDetailsRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    data_mode: Literal["private_real_source", "unavailable"]
+    generated_at: datetime
+    account_reference: str
+    display_label: str
+    account_kind_label: str
+    source_kind: AccountDetailSourceKind
+    source_label: str
+    connection_status_label: str
+    last_successful_sync_label: str | None = None
+    privacy_display_mode: DashboardPrivacyDisplayMode
+    broker_snapshot_freshness: PortfolioContextFreshnessRead
+    market_quote_freshness: PortfolioContextFreshnessRead | None = None
+    summary_labels: SelectedAccountSummaryLabelsRead
+    cash_rows: tuple[AccountCashDisplayRowRead, ...]
+    equity_position_rows: tuple[AccountEquityPositionDisplayRowRead, ...]
+    option_position_rows: tuple[AccountOptionPositionDisplayRowRead, ...]
+    caveat_codes: tuple[str, ...]
+    limitations: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def selected_account_details_payload_must_be_safe(self) -> "SelectedAccountDetailsRead":
+        validate_account_reference(self.account_reference)
         validate_trade_review_workspace_payload(self.model_dump(mode="python"))
         return self
 

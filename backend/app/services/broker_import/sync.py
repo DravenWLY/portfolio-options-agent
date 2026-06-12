@@ -75,9 +75,14 @@ def sync_broker_account(
     db.flush()
 
     completed_at = refresh.completed_at or datetime.now(UTC)
-    normalize_cash_balance(db, broker_account.account_id, balance)
-    normalized_stock_positions = normalize_stock_positions(db, broker_account.account_id, positions)
-    option_result = normalize_option_positions_safely(db, broker_account.account_id, option_positions)
+    normalize_cash_balance(db, broker_account.account_id, balance, sync_run_id=sync_run.id)
+    normalized_stock_positions = normalize_stock_positions(db, broker_account.account_id, positions, sync_run_id=sync_run.id)
+    option_result = normalize_option_positions_safely(
+        db,
+        broker_account.account_id,
+        option_positions,
+        sync_run_id=sync_run.id,
+    )
     partial_failures = option_result.partial_failures
 
     status = refresh.status

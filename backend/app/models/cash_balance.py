@@ -14,6 +14,7 @@ class CashBalance(Base):
     __table_args__ = (
         Index("ix_cash_balances_account_id", "account_id"),
         Index("ix_cash_balances_account_id_as_of", "account_id", "as_of"),
+        Index("ix_cash_balances_sync_run_id", "sync_run_id"),
     )
 
     id: Mapped[UUID] = mapped_column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -22,7 +23,15 @@ class CashBalance(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
+    sync_run_id: Mapped[UUID | None] = mapped_column(
+        PostgresUUID(as_uuid=True),
+        ForeignKey("broker_sync_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     total_cash: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    available_cash: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    buying_power: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD", server_default="USD")
     reserved_collateral_cash: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     free_cash: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     premium_income_cash: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)

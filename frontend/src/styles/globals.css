@@ -185,6 +185,9 @@
   --mp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.20);
   --mp-shadow-md: 0 4px 12px -3px rgba(0, 0, 0, 0.30),
                   0 1px 2px rgba(0, 0, 0, 0.15);
+
+  /* Soft elevation edge cast by a frozen table column (no hard rule). */
+  --mp-sticky-edge: rgba(0, 0, 0, 0.28);
 }
 
 /* ==========================================================================
@@ -256,6 +259,9 @@
   --mp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --mp-shadow-md: 0 4px 12px -3px rgba(0, 0, 0, 0.10),
                   0 1px 2px rgba(0, 0, 0, 0.04);
+
+  /* Soft elevation edge cast by a frozen table column (no hard rule). */
+  --mp-sticky-edge: rgba(15, 23, 42, 0.10);
 }
 
 /* Smooth, non-jumpy theme + layout transitions (respects reduced-motion). */
@@ -469,6 +475,78 @@ a:hover {
   transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
 }
 
+.account-details-selector-button {
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.account-details-selector-button:hover {
+  border-color: var(--mp-rule-strong) !important;
+  background-color: var(--mp-card-2) !important;
+}
+
+.account-details-selector-button[aria-pressed="true"]:hover {
+  border-color: var(--mp-accent-line) !important;
+  background-color: var(--mp-accent-soft) !important;
+}
+
+.account-details-selector-button:focus-visible {
+  outline: 2px solid var(--mp-accent);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px var(--mp-accent-soft);
+}
+
+.account-details-selector-button:focus:not(:focus-visible),
+.account-details-selector-button:active:not(:focus-visible) {
+  outline: 0;
+}
+
+@media (max-width: 900px) {
+  .account-details-workspace {
+    flex-direction: column;
+  }
+}
+
+/* Frozen first column in Account Details position / tax-lot tables.
+   The sticky cell anchors to a surface tint that matches the surrounding
+   table row. At rest the soft edge sits over same-colored cells and stays
+   nearly invisible; once content scrolls beneath it, the narrow gradient
+   reads as a gentle elevation — no hard border, no heavy band — in both
+   themes. */
+.account-details-workspace .mp-sticky-col {
+  position: sticky;
+  left: 0;
+  background-color: var(--mp-card-2);
+  background-clip: padding-box;
+  z-index: 1;
+}
+
+.account-details-workspace .mp-sticky-col::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 7px;
+  height: 100%;
+  transform: translateX(100%);
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    var(--mp-sticky-edge),
+    transparent 85%
+  );
+}
+
+/* Clickable position rows: a subtle accent-tinted hover. The sticky cell
+   carries an inset overlay so it picks up the same tint without breaking the
+   gradient-edge underneath. */
+.account-details-workspace tr.mp-row-expandable:hover > td {
+  background-color: color-mix(in srgb, var(--mp-accent) 7%, var(--mp-card-2));
+}
+.account-details-workspace tr.mp-row-expandable:hover > td.mp-sticky-col {
+  box-shadow: inset 0 0 0 9999px color-mix(in srgb, var(--mp-accent) 7%, transparent);
+}
+
 .market-mood-info-wrap:hover .market-mood-info-popover,
 .market-mood-info-wrap:focus-within .market-mood-info-popover,
 .market-mood-info-summary:hover + .market-mood-info-popover,
@@ -482,6 +560,11 @@ a:hover {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.4; }
+}
+
+/* Refresh-snapshot spin (Account Details selected-account refresh control) */
+@keyframes mp-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Scrollbar */

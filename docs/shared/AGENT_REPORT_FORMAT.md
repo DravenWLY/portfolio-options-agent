@@ -76,6 +76,9 @@ Verification:
 Safety/contract:
 - <only task-relevant confirmations>
 
+Docs closeout:
+- <plan/changelog/completed-log updated | exact update text handed to reviewer | not needed>
+
 Blockers:
 - None
 
@@ -103,6 +106,9 @@ Deferred polish:
 Verification:
 - <commands run or "not run">
 
+Docs closeout:
+- <exact status/update line to apply, or "not needed">
+
 Next step:
 - <what should happen next>
 ```
@@ -113,7 +119,8 @@ Implementation agents may request a review-only sub-agent after their assigned
 work is complete and local verification has run. The review sub-agent must not
 implement, broaden scope, inspect private data, or mark the task done. It returns
 `PASS` or `BLOCKED`; if blocked, the original implementation owner fixes the
-blocker and requests a narrow re-review.
+blocker and requests a narrow re-review. The implementation owner is also
+responsible for doc closeout after review passes.
 
 ### Who May Request Which Review
 
@@ -136,6 +143,31 @@ blocker and requests a narrow re-review.
 
 Review agents should not chain more reviewers unless they hit a clear blocker.
 Review-only agents should not spawn implementation agents.
+
+### Documentation Closeout Rule
+
+After a review sub-agent returns `PASS`, the implementation agent must make sure
+the corresponding docs are updated before reporting final completion.
+
+Default behavior:
+
+- the review sub-agent stays review-only and does not edit files;
+- the review sub-agent includes a `Docs closeout` line in its report with the
+  exact task status/update text that should be applied, or `not needed`;
+- the implementation agent applies the doc update after PASS.
+
+Allowed exception:
+
+- if the prompt explicitly says `Mode: review-and-docs-closeout`, the review
+  sub-agent may edit docs only, such as `docs/shared/implementation_plan.md`,
+  `docs/shared/CHANGELOG.md`, or `docs/shared/completed_phases_log.md`;
+- a review-and-docs-closeout sub-agent must not edit product code, tests,
+  schemas, routes, frontend components, or provider logic;
+- the sub-agent must report exactly which docs it changed.
+
+Implementation agents should ask for doc closeout in the review prompt whenever
+the task is tracked in `docs/shared/implementation_plan.md` or needs changelog /
+completed-log history.
 
 ### Review Agent Types
 
@@ -201,6 +233,30 @@ Return:
 - Important issues, if any
 - Deferred polish, max 3
 - Verification, including anything not run
+- Docs closeout: exact status/update text to apply, or "not needed"
+- Next step
+```
+
+If the implementation owner wants the reviewer to update docs directly, change
+the mode and scope explicitly:
+
+```text
+Mode: review-and-docs-closeout
+
+Scope:
+- Review only <scope>.
+- If PASS, update only the relevant planning/status docs:
+  - docs/shared/implementation_plan.md
+  - docs/shared/CHANGELOG.md if useful
+  - docs/shared/completed_phases_log.md if detailed history is needed
+
+Out of scope:
+- Do not edit product code, tests, schemas, routes, frontend components, provider logic, secrets, DB contents, logs, or generated artifacts.
+
+Return:
+- Verdict: PASS or BLOCKED
+- Docs changed, if any
+- Exact status now recorded
 - Next step
 ```
 
@@ -212,6 +268,8 @@ Return:
 - Do not ask review sub-agents to rerun broad verification unless the review
   requires it.
 - Do not mark a task `done` until the required review gate returns `PASS`.
+- After review `PASS`, make sure task status and review outcome are captured in
+  the appropriate docs before final completion.
 - Close the review sub-agent after it returns the report.
 - A review sub-agent never receives broader data access than the original task.
 

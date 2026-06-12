@@ -45,7 +45,10 @@ Use the smallest workflow that fits the task:
 When an implementation agent needs a scoped review-only sub-agent, use the
 `Review-Only Sub-Agent Pattern` in `docs/shared/AGENT_REPORT_FORMAT.md`.
 Review sub-agents must not edit files, must return `PASS` or `BLOCKED`, and the
-task must not be marked done until the required review gate passes.
+task must not be marked done until the required review gate passes. After PASS,
+the implementation agent must ensure the active plan/changelog/completed log is
+updated, either by applying the reviewer's `Docs closeout` text or by explicitly
+using a `review-and-docs-closeout` prompt that permits docs-only edits.
 
 Deferred workflow candidates are listed at the end of this file. Do not apply
 or implement them yet.

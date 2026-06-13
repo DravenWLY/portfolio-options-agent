@@ -13,6 +13,11 @@ import type {
   DataMode,
   FreshnessStatus,
 } from "./marketData";
+// Phase 27C scope metadata reuses the existing Account Details mirrors so the
+// review-account and portfolio-scope shapes stay identical across surfaces.
+// This is a type-only import (erased at build), so the cyclic reference with
+// accountDetails.ts carries no runtime cost.
+import type { ReviewAccountRead, PortfolioScopeRead } from "./accountDetails";
 
 /* ── Enum literals (backend TypeAliases) ─────────────────────────────────── */
 
@@ -99,9 +104,24 @@ export interface PortfolioContextSelectionRequest {
   context_reference?: string | null;
 }
 
+/* ── Phase 27C review-account selection (request side) ─────────────────────
+ * Mirrors backend `ReviewAccountSelectionRequest`. The frontend submits only
+ * the opaque `account_reference` from Account Details; it never sends broker
+ * IDs, provider IDs, balances, or holdings. "unselected" must carry no
+ * account_reference (the backend rejects it otherwise). */
+export type ReviewAccountSelectionMode = "unselected" | "selected_account";
+
+export interface ReviewAccountSelectionRequest {
+  mode: ReviewAccountSelectionMode;
+  account_reference?: string | null;
+}
+
 export interface TradeReviewPortfolioPreviewRequest
   extends TradeReviewWorkspacePreviewRequest {
   portfolio_context_selection: PortfolioContextSelectionRequest;
+  /** Phase 27C: the account where the user would manually place the trade.
+   *  Separate from the broader `portfolio_context_selection` exposure scope. */
+  review_account_selection: ReviewAccountSelectionRequest;
 }
 
 /** Discriminated submission shape used between form and page. */
@@ -313,6 +333,18 @@ export interface WorkspaceCaveatRead {
   message: string;
 }
 
+/* ── Phase 27C report scope metadata (read side) ───────────────────────────
+ * Mirrors backend `ReportScopeMetadataRead`. Renders only backend-owned
+ * display labels: `review_account` / `portfolio_context_scope` carry opaque
+ * references that the UI must NOT display — only their display labels. */
+export interface ReportScopeMetadataRead {
+  review_account: ReviewAccountRead | null;
+  portfolio_context_scope: PortfolioScopeRead;
+  scope_summary_label: string;
+  account_level_feasibility_evaluated: boolean;
+  scope_caveat_codes: string[];
+}
+
 export interface TradeReviewWorkspaceRead {
   review_reference: string;
   generated_at: string;
@@ -327,4 +359,7 @@ export interface TradeReviewWorkspaceRead {
   /** Phase 18C: present on responses from /trade-reviews/portfolio-preview;
    *  null on the synthetic /trade-reviews/preview path. */
   portfolio_context?: PortfolioContextSummaryRead | null;
+  /** Phase 27C: scope used to generate this review (review account +
+   *  broader portfolio context). Present on portfolio-preview responses. */
+  scope_metadata?: ReportScopeMetadataRead | null;
 }

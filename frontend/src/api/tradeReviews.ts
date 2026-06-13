@@ -25,7 +25,16 @@ export const tradeReviewsApi = {
    * Phase 18C portfolio-backed review. The backend owns the portfolio context
    * and freshness; the frontend never sends broker/market freshness, provider
    * status, cash, holdings, or thresholds. Context selection is opaque.
+   *
+   * Phase 27C: pass the selected app `userId` so the backend can resolve a
+   * selected `review_account_selection` against that user's accounts (the
+   * route reads the existing `X-User-Id` header). The header carries only the
+   * app's own user id — never a broker/provider id, balance, or holding.
    */
-  portfolioPreview: (body: TradeReviewPortfolioPreviewRequest) =>
-    apiClient.post<TradeReviewWorkspaceRead>("/trade-reviews/portfolio-preview", body),
+  portfolioPreview: (body: TradeReviewPortfolioPreviewRequest, userId?: string | null) =>
+    apiClient.post<TradeReviewWorkspaceRead>(
+      "/trade-reviews/portfolio-preview",
+      body,
+      userId ? { "X-User-Id": userId } : undefined,
+    ),
 };

@@ -143,7 +143,7 @@ Tasks:
 
 ### Phase 27C - Trade Review And Agent Team Scope Integration
 
-Status: architecture ready; implementation not started.
+Status: P27C-T1 done (Codex B PASS); P27C-T2/T3/T4 not started.
 
 Goal:
 
@@ -156,17 +156,34 @@ Reference doc:
 
 Recommended first task:
 
-- `P27C-T1` - Trade Review review-account selector frontend wiring.
-  - Owner: Claude A or Codex F.
-  - Reviewer: Codex B for contract/safety; Claude B for UI if visual changes are
-    substantial.
-  - Architecture: follow
-    `docs/codex-b-architecture/PHASE_27C_TRADE_REVIEW_AGENT_SCOPE_INTEGRATION_CONTRACT.md`.
-  - Scope: consume existing backend scope metadata and selected review account
-    contract; no new backend fields unless Codex B opens a separate backend task.
-  - Acceptance: Trade Review clearly separates `Review account` from broader
-    `Portfolio context scope`; no frontend financial computation; no raw account
-    IDs/provider IDs; no advice/execution wording.
+- `P27C-T1` - Trade Review review-account selector frontend wiring: done; Codex B PASS 2026-06-12.
+  - Owner: Claude A. Reviewer: Codex B (contract/privacy/safety) PASS.
+  - Files: `frontend/src/types/tradeReview.ts` (added `ReviewAccountSelectionMode`,
+    `ReviewAccountSelectionRequest`, `review_account_selection` on the portfolio
+    request, `ReportScopeMetadataRead`, `scope_metadata` on `TradeReviewWorkspaceRead`,
+    reusing the existing `ReviewAccountRead`/`PortfolioScopeRead` mirrors via a
+    type-only import), `frontend/src/components/trade-review/TradeReviewForm.tsx`
+    (Account Details fetch + `Review account` selector separate from the relabeled
+    `Broader portfolio context`), `frontend/src/components/trade-review/TradeReviewResults.tsx`
+    (`ScopeMetadataPanel`), `frontend/src/api/tradeReviews.ts` + `frontend/src/api/client.ts`
+    (forward the existing `X-User-Id` route header), `frontend/src/pages/TradeReviewPage.tsx`
+    (pass `selectedUser?.id`).
+  - Consumes the existing reviewed backend contract only; no new backend route,
+    field, migration, provider call, or storage write. Submits only the opaque
+    `account_reference`; renders backend display labels only (no `*_reference`,
+    broker/provider IDs, balances, holdings, quantities, payloads, prompts, or
+    traces); no frontend financial math; no advice/order/execution/safe-to-trade
+    wording.
+  - Verified: `npm run typecheck`, `npm run lint -- --max-warnings 0`, `npm run build`,
+    `git diff --check` clean. Full-stack smoke (`docker compose up -d postgres backend
+    frontend`): `/health` 200; backend `/users` and proxy `/api/users` return the dev
+    user; a portfolio-preview with a selected review account resolves `scope_metadata`
+    to display labels (e.g. review account label + kind) through the Vite proxy with
+    the `X-User-Id` header; `unselected` returns `review_account: null` and
+    `account_level_feasibility_evaluated: false`.
+  - Deferred (non-blocking): forward the user id on the Agent Team analysis-preview
+    path for review-account parity (fold into P27C-T3); add an aria-live announcement
+    for the account-list loading→ready/error transition.
 
 Follow-up candidates:
 

@@ -5,6 +5,7 @@ import TradeReviewForm from "../components/trade-review/TradeReviewForm";
 import TradeReviewResults from "../components/trade-review/TradeReviewResults";
 import { LoadingSkeleton, ErrorState, EmptyState } from "../components/shared/StateViews";
 import { Badge, PageHeader, SafetyStrip } from "../components/shared/mp";
+import { useAccountContext } from "../context/useAccountContext";
 import type { TradeReviewSubmission, TradeReviewWorkspaceRead } from "../types/tradeReview";
 
 /**
@@ -28,6 +29,7 @@ import type { TradeReviewSubmission, TradeReviewWorkspaceRead } from "../types/t
 type Status = "idle" | "loading" | "success" | "empty" | "error";
 
 export default function TradeReviewPage() {
+  const { selectedUser } = useAccountContext();
   const [status, setStatus] = useState<Status>("idle");
   const [data, setData] = useState<TradeReviewWorkspaceRead | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +40,7 @@ export default function TradeReviewPage() {
     try {
       const result =
         submission.kind === "portfolio"
-          ? await tradeReviewsApi.portfolioPreview(submission.payload)
+          ? await tradeReviewsApi.portfolioPreview(submission.payload, selectedUser?.id ?? null)
           : await tradeReviewsApi.preview(submission.payload);
       if (!result) {
         setData(null);

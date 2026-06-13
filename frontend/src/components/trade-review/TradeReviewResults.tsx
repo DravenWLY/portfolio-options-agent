@@ -3,6 +3,7 @@ import type {
   ReviewActionabilityStatus,
   PortfolioActionabilityDecision,
   PortfolioContextSummaryRead,
+  ReportScopeMetadataRead,
   TradeIntentSummaryRead,
   DeterministicTradeReviewRead,
   RiskRuleViolationSummaryRead,
@@ -103,6 +104,8 @@ export default function TradeReviewResults({ data }: { data: TradeReviewWorkspac
         <span style={styles.mono}>{data.calculation_version}</span> · generated{" "}
         <span style={styles.mono}>{data.generated_at}</span>.
       </p>
+
+      {data.scope_metadata && <ScopeMetadataPanel scope={data.scope_metadata} />}
 
       <IntentSummary intent={data.trade_intent_summary} />
       <FreshnessPanel actionability={data.actionability} />
@@ -251,6 +254,91 @@ function cssColorForReason(sev: "info" | "warning" | "blocker"): string {
   if (sev === "blocker") return "var(--mp-block)";
   if (sev === "warning") return "var(--mp-stale)";
   return "var(--mp-mute)";
+}
+
+/* ── Scope metadata (Phase 27C — always-visible scan path) ──────────────────
+ * Separates the Review account (account-specific feasibility context) from the
+ * Broader portfolio context scope (exposure awareness). Renders backend-owned
+ * display labels only: never account_reference, scope_reference,
+ * context_reference, broker/provider IDs, balances, holdings, or quantities.
+ * "Account-level feasibility" is reported as an evaluated/not-evaluated state
+ * only — it never asserts that a trade is feasible, safe, or ready. */
+function ScopeMetadataPanel({ scope }: { scope: ReportScopeMetadataRead }) {
+  const reviewAccount = scope.review_account;
+  const ctx = scope.portfolio_context_scope;
+  const feasibilityEvaluated = scope.account_level_feasibility_evaluated;
+  return (
+    <section style={styles.card} aria-label="Scope used for this review">
+      <div style={styles.cardHead}>
+        <span style={styles.cardTitle}>Scope used</span>
+        <span style={styles.detTag}>review scope</span>
+      </div>
+      <p style={styles.scopeSummary}>{scope.scope_summary_label}</p>
+      <ul style={styles.facts}>
+        <li style={styles.factRow}>
+          <span style={styles.factKey}>Review account</span>
+          <span style={styles.scopeValue}>
+            {reviewAccount
+              ? reviewAccount.account_kind_label
+                ? `${reviewAccount.display_label} · ${reviewAccount.account_kind_label}`
+                : reviewAccount.display_label
+              : "No review account selected"}
+          </span>
+        </li>
+        <li style={styles.factRow}>
+          <span style={styles.factKey}>Account-level feasibility</span>
+          <span style={styles.scopeFeasibility}>
+            <MpIcon
+              name={feasibilityEvaluated ? "check" : "info"}
+              size={11}
+              style={{ color: "var(--mp-mute)", verticalAlign: "middle", marginRight: 4 }}
+            />
+            {feasibilityEvaluated ? "Evaluated" : "Not evaluated"}
+          </span>
+        </li>
+        <li style={styles.factRow}>
+          <span style={styles.factKey}>Portfolio context scope</span>
+          <span style={styles.scopeValue}>{ctx.display_label}</span>
+        </li>
+      </ul>
+      {ctx.included_account_labels.length > 0 && (
+        <ScopeChips label="Included" items={ctx.included_account_labels} />
+      )}
+      {ctx.excluded_account_labels.length > 0 && (
+        <ScopeChips label="Excluded" items={ctx.excluded_account_labels} />
+      )}
+      {scope.scope_caveat_codes.length > 0 && (
+        <div style={styles.scopeChipBlock}>
+          <span style={styles.scopeChipBlockLabel}>Scope notes</span>
+          <ul style={styles.scopeChipList}>
+            {scope.scope_caveat_codes.map((c) => (
+              <li key={c} style={styles.scopeCaveatCode}>{c}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {!feasibilityEvaluated && (
+        <p style={styles.cardFoot}>
+          {reviewAccount
+            ? "Account-level feasibility is not evaluated for this review account yet — the scope above is exposure awareness only."
+            : "No review account is selected, so account-level feasibility was not evaluated — the scope above is exposure awareness only."}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function ScopeChips({ label, items }: { label: string; items: string[] }) {
+  return (
+    <div style={styles.scopeChipBlock}>
+      <span style={styles.scopeChipBlockLabel}>{label}</span>
+      <ul style={styles.scopeChipList}>
+        {items.map((item) => (
+          <li key={item} style={styles.scopeChip}>{item}</li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 /* ── Trade intent summary ───────────────────────────────────────────────── */
@@ -932,6 +1020,21 @@ const styles: Record<string, React.CSSProperties> = {
     marginLeft: "auto",
   },
   cardFoot: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", margin: 0, lineHeight: 1.6 },
+
+  /* Scope metadata panel (Phase 27C) */
+  scopeSummary: { fontSize: "var(--font-size-sm)", fontWeight: 600, color: "var(--mp-ink)", margin: 0, lineHeight: 1.4 },
+  scopeValue: { color: "var(--mp-ink-2)", overflowWrap: "anywhere", minWidth: 0 },
+  scopeFeasibility: { color: "var(--mp-ink-2)", display: "inline-flex", alignItems: "center" },
+  scopeChipBlock: { display: "flex", alignItems: "baseline", gap: "var(--space-3)", flexWrap: "wrap" },
+  scopeChipBlockLabel: {
+    fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", textTransform: "uppercase",
+    letterSpacing: "0.06em", fontWeight: 700, minWidth: 64,
+  },
+  scopeChipList: { margin: 0, padding: 0, listStyle: "none", display: "flex", flexWrap: "wrap", gap: "var(--space-1)" },
+  scopeCaveatCode: {
+    fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", fontFamily: "var(--mp-font-mono, monospace)",
+    border: "1px solid var(--mp-rule)", borderRadius: "var(--radius-sm)", padding: "1px 6px",
+  },
 
   /* Disclosure section */
   disclosureSummary: {

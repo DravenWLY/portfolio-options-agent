@@ -20,12 +20,16 @@ export class ApiRequestError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // Destructure headers out of init so the spread below cannot clobber the
+  // merged headers object (which must always carry Content-Type: application/json
+  // so the backend parses the JSON body rather than treating it as raw text).
+  const { headers: initHeaders, ...restInit } = init ?? {};
   const response = await fetch(`${API_BASE}${path}`, {
+    ...restInit,
     headers: {
       "Content-Type": "application/json",
-      ...init?.headers,
+      ...initHeaders,
     },
-    ...init,
   });
 
   if (!response.ok) {
@@ -45,9 +49,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const apiClient = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) =>
+  post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
     request<T>(path, {
       method: "POST",
       body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers,
     }),
 };

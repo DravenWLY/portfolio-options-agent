@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type {
   SupportedTradeReviewFlow,
   TradeReviewWorkspacePreviewRequest,
@@ -7,8 +7,11 @@ import type {
   TradeReviewSubmission,
   PortfolioContextSelectionMode,
 } from "../../types/tradeReview";
+import type { AccountDetailAccountRead } from "../../types/accountDetails";
 import SymbolAutocomplete from "./SymbolAutocomplete";
 import { promoteSymbolRecent } from "../../lib/symbolRecents";
+import { useAccountContext } from "../../context/useAccountContext";
+import { accountDetailsApi } from "../../api/accountDetails";
 
 /**
  * TradeReviewForm — collects manual inputs for the four Phase 18A flows.
@@ -66,10 +69,51 @@ export default function TradeReviewForm({
   busy,
   hideSyntheticMode = false,
 }: TradeReviewFormProps) {
+  const { selectedUser } = useAccountContext();
+  const userId = selectedUser?.id ?? null;
+
   const [reviewMode, setReviewMode] = useState<ReviewMode>("portfolio");
   const [contextMode, setContextMode] =
     useState<PortfolioContextSelectionMode>("latest_available");
   const [contextRef, setContextRef] = useState<string>(DEMO_CONTEXT_REFS[0].value);
+
+  // Phase 27C: review-account selection. "" = no review account selected
+  // (submits review_account_selection.mode="unselected"). Accounts come from
+  // the reviewed Account Details overview; only the opaque account_reference is
+  // ever submitted, and only display labels are shown.
+  const [reviewAccountRef, setReviewAccountRef] = useState<string>("");
+  const [accounts, setAccounts] = useState<AccountDetailAccountRead[]>([]);
+  const [accountsStatus, setAccountsStatus] =
+    useState<"idle" | "loading" | "ready" | "error">("idle");
+
+  useEffect(() => {
+    if (reviewMode !== "portfolio" || !userId) {
+      setAccounts([]);
+      setAccountsStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setAccountsStatus("loading");
+    accountDetailsApi
+      .get(userId)
+      .then((res) => {
+        if (cancelled) return;
+        setAccounts(res.accounts);
+        setAccountsStatus("ready");
+        // Drop a stale selection if the account is no longer present.
+        setReviewAccountRef((prev) =>
+          res.accounts.some((a) => a.account_reference === prev) ? prev : "",
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAccounts([]);
+        setAccountsStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reviewMode, userId]);
   const [flowGroup, setFlowGroup] = useState<FlowGroup>("stock_etf_buy");
   const [assetClass, setAssetClass] = useState<"stock" | "etf">("stock");
 
@@ -164,6 +208,10 @@ export default function TradeReviewForm({
 
     const portfolio: TradeReviewPortfolioPreviewRequest = {
       ...intent,
+      review_account_selection:
+        reviewAccountRef === ""
+          ? { mode: "unselected" }
+          : { mode: "selected_account", account_reference: reviewAccountRef },
       portfolio_context_selection:
         contextMode === "latest_available"
           ? { mode: "latest_available" }
@@ -211,8 +259,59 @@ export default function TradeReviewForm({
       )}
 
       {reviewMode === "portfolio" && (
-        <fieldset style={styles.fieldset} aria-label="Portfolio context selection">
-          <legend style={styles.legend}>Portfolio context</legend>
+        <fieldset style={styles.fieldset} aria-label="Review account selection">
+          <legend style={styles.legend}>Review account</legend>
+          <p style={styles.scopeLead}>
+            The account where you would manually place this trade. Account-level
+            feasibility context is only considered when a review account is selected.
+          </p>
+          {!userId ? (
+            <p style={styles.contextNote}>
+              Select a user in the account selector to load connected accounts.
+            </p>
+          ) : accountsStatus === "loading" ? (
+            <p style={styles.contextNote}>Loading connected accounts…</p>
+          ) : accountsStatus === "error" ? (
+            <p style={styles.contextNote}>
+              Connected accounts are unavailable right now. You can still run a review
+              with no review account selected.
+            </p>
+          ) : (
+            <>
+              <label style={styles.fieldFull}>
+                <span style={styles.labelText}>Review account</span>
+                <select
+                  style={{ ...styles.input, ...styles.selectFull }}
+                  value={reviewAccountRef}
+                  onChange={(e) => setReviewAccountRef(e.target.value)}
+                  disabled={busy}
+                >
+                  <option value="">No review account selected</option>
+                  {accounts.map((a) => (
+                    <option key={a.account_reference} value={a.account_reference}>
+                      {a.account_kind_label
+                        ? `${a.display_label} · ${a.account_kind_label}`
+                        : a.display_label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {accountsStatus === "ready" && accounts.length === 0 && (
+                <p style={styles.contextNote}>No connected accounts found for this user.</p>
+              )}
+            </>
+          )}
+        </fieldset>
+      )}
+
+      {reviewMode === "portfolio" && (
+        <fieldset style={styles.fieldset} aria-label="Broader portfolio context selection">
+          <legend style={styles.legend}>Broader portfolio context</legend>
+          <p style={styles.scopeLead}>
+            The wider exposure context used for awareness — concentration, exposure,
+            and data freshness. This is separate from the review account above and
+            may cover more than one account.
+          </p>
           <div style={styles.radioRow}>
             <label style={styles.radioOption}>
               <input
@@ -238,10 +337,10 @@ export default function TradeReviewForm({
             </label>
           </div>
           {contextMode === "selected_context" && (
-            <label style={styles.label}>
+            <label style={styles.fieldFull}>
               <span style={styles.labelText}>Demo context reference (opaque)</span>
               <select
-                style={styles.input}
+                style={{ ...styles.input, ...styles.selectFull }}
                 value={contextRef}
                 onChange={(e) => setContextRef(e.target.value)}
                 disabled={busy}
@@ -414,6 +513,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid var(--mp-rule)",
     borderRadius: "var(--radius-md)",
     padding: "var(--space-4) var(--space-6)",
+    minWidth: 0,
   },
   row: { display: "flex", gap: "var(--space-3)", flexWrap: "wrap" },
   label: { display: "flex", flexDirection: "column", gap: "var(--space-1)", minWidth: 180, flex: "1 1 180px" },
@@ -431,6 +531,9 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-sm)",
     backgroundColor: "var(--mp-paper-2)",
     color: "var(--mp-ink)",
+    boxSizing: "border-box",
+    minWidth: 0,
+    maxWidth: "100%",
   },
   inputMono: { fontFamily: "var(--font-mono, monospace)" },
   optionNote: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", margin: 0 },
@@ -460,7 +563,19 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: "column",
     gap: "var(--space-2)",
     margin: 0,
+    minWidth: 0,
   },
+  /* Full-width single-select field placed directly in a column fieldset.
+     Unlike `label` (tuned for side-by-side rows with flex-basis 180px), this
+     never grows on the vertical main axis and shrinks safely in the rail. */
+  fieldFull: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "var(--space-1)",
+    width: "100%",
+    minWidth: 0,
+  },
+  selectFull: { width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" },
   legend: {
     fontSize: "var(--font-size-xs)",
     color: "var(--mp-mute)",
@@ -480,6 +595,12 @@ const styles: Record<string, React.CSSProperties> = {
   contextNote: {
     fontSize: "var(--font-size-xs)",
     color: "var(--mp-mute)",
+    margin: 0,
+    lineHeight: 1.6,
+  },
+  scopeLead: {
+    fontSize: "var(--font-size-xs)",
+    color: "var(--mp-ink-2)",
     margin: 0,
     lineHeight: 1.6,
   },

@@ -1,5 +1,98 @@
 # Changelog
 
+- 2026-06-15: Added P29B-T1 backend public evidence contract foundation.
+  `SavedEvidencePackageRead` now has an additive `public_evidence` block with
+  stable public section keys for company profile, fundamentals, news, events,
+  technical context, and market context. Current saved reports default every
+  public section to `not_reviewed`; the new offline provider boundary returns
+  no reviewed public evidence and makes no external calls. Public evidence
+  validators reject private fields, raw source fields, URLs/article bodies, raw
+  payload hints, prompts/traces/secrets, and unsafe trading wording. Agent Team
+  report-output validation now recognizes the public evidence keys and enforces
+  role-specific allowlists plus recursive availability checks before public roles
+  can cite nested public sections.
+- 2026-06-15: Added P29A-T6 backend report-generation timing semantics. Saved
+  Agent Team summaries now carry nullable `report_generated_at`, surfaced on
+  `AgentTeamReportRead` separately from saved-source `generated_at` and
+  read-projection `report_built_at`. Explicit regeneration remains manual via
+  `POST /users/{uid}/reports/{thread_id}/agent-team-report` and replaces only
+  `saved_artifact_json.agent_summary`, preserving immutable saved source/scope/
+  deterministic evidence. Source-only and legacy reports read with
+  `report_generated_at=null`; no auto-generation, queue, frontend, provider, or
+  TradingAgents behavior was added.
+- 2026-06-15: Closed the remaining Phase 29A foundation loop. P29A-T3 Agent
+  Team report generation backend is now complete and PASSed after Codex B's
+  blocker fix for persisted-summary evidence-reference validation
+  (`role_summaries` and top-level `evidence_references` now obey the same role
+  boundary and availability rules as the read-model report shape). P29A-T4
+  Reports Library / Report Detail redesign and P29A-T4A visual closeout polish
+  are also fully accepted: Reports now centers saved Agent Team analysis with
+  deterministic evidence and provenance as supporting context, and the narrow
+  closeout fixed the mute-state banner icon contrast plus the border
+  shorthand/longhand React warning without changing contracts, endpoints, or
+  rendered backend values.
+- 2026-06-14: Completed P29A-T1 saved evidence package backend contract after
+  Codex B blocker fixes. `SavedEvidencePackageRead` now carries an immutable,
+  agent-safe source snapshot from `SavedReviewArtifactRead`, preserves
+  `source_kind` / `source_reference`, projects lossy scope/freshness/actionability
+  and deterministic evidence sections, excludes account labels/refs/context refs
+  and raw private data, and expands prohibited wording checks for broad
+  advice/recommendation phrases. P29A-T2 should reuse or tighten this validation
+  for generated Agent Team output.
+- 2026-06-14: Added the Phase 29A Agent Team Report Architecture direction.
+  Saved deterministic/source artifacts are now framed as the evidence and audit
+  foundation, not the final product endpoint. The next workstream should generate
+  Agent Team reports from immutable backend evidence packages, while allowing
+  high-fidelity deterministic portfolio-impact views (before/after exposure
+  changes, risk-pattern alerts, scope/freshness/caveat drilldowns) as supporting
+  analysis surfaces. Runtime private agent tools remain deferred/prohibited by
+  default.
+- 2026-06-13: Implemented the P28A-T3 frontend "Save review snapshot" action
+  (Claude A); Codex B contract/privacy/safety review PASS. A compact
+  `SaveReviewSnapshot` control appears on completed Trade Review results only
+  when the backend exposes a non-null `saved_review_source_reference` and a
+  user-id route context exists, and calls
+  `POST /users/{uid}/reports/from-trade-review` with only `source_kind`,
+  `source_reference` (verbatim backend value, never displayed or invented),
+  `title`, and `report_type`. It sends no scope metadata, deterministic summary,
+  Agent Team output, Account Details, selector state, cached state, or raw
+  account/provider/broker/holdings data; success is quiet with a Reports link,
+  failure is retryable, and no advice/order/execution wording was added. Static
+  checks (typecheck, lint, build, git diff --check) pass. P28A-T3A fixed the
+  alembic `0020` migration `down_revision` typo that initially blocked
+  data-backed browser smoke; full-stack save-flow smoke remains the P28A-T4
+  closeout gate.
+- 2026-06-13: Added the P28A-T3 backend unblock for saved review snapshots:
+  `TradeReviewWorkspaceRead` now exposes nullable
+  `saved_review_source_reference` values, with `trrev_...` references populated
+  only after the authenticated portfolio-preview backend path materializes a
+  matching server-owned `saved_review_sources` row. Synthetic/stateless previews
+  remain null, the save endpoint still resolves sources server-side, and no raw
+  account/provider/broker data or frontend implementation was added. Codex B
+  PASS; frontend save action is unblocked.
+- 2026-06-13: P28A-T3 frontend "Save review snapshot" is BLOCKED pending a
+  backend contract field. Codex B confirmed `POST /reports/from-trade-review`
+  requires an app-owned `source_reference` (`trrev_`/`workspace_`/`agentrun_`)
+  that resolves to a `saved_review_sources` row, but the Trade Review read
+  contract exposes only `review_reference` (a `trv_`/intent value that fails the
+  source regex) and no production path persists a source row
+  (`record_saved_review_source` has no production caller). Next: backend (Codex C)
+  adds an opaque `saved_review_source_reference` to `TradeReviewWorkspaceRead`
+  plus production materialization of the matching source row, then re-review and
+  unblock the frontend action.
+- 2026-06-13: Closed Phase 27C scope integration after the P27C-T7 blocker fix:
+  Trade Review results no longer render the visible opaque context reference,
+  while safe context labels/status/counts remain. Added the Phase 28A Saved
+  Review Artifact architecture contract as the next recommended workstream:
+  durable saved reports must persist generation-time scope, caveats, freshness,
+  deterministic summary, and optional sanitized Agent Team output without
+  reconstructing from current account state or exposing raw private data.
+- 2026-06-13: Completed P27C-T5 Reports saved scope metadata backend
+  contract. Report create/list/detail reads now include nullable
+  `scope_metadata` using the reviewed `ReportScopeMetadataRead` shape; current
+  legacy/unknown report rows return explicit `null` and do not infer scope from
+  current account state, route params, selectors, or mutable context. Codex B
+  review PASS.
 - 2026-06-12: Closed the Market Mood source-update follow-up: backend refresh
   now reports refreshed/unchanged/failed source checks with separate
   `last_checked_at` metadata, while the detail page refreshes from backend state
@@ -21,6 +114,34 @@ This changelog is for human-readable project changes. It should summarize meanin
 
 ## Unreleased
 
+- Completed P27C-T6 Report detail saved-scope display: opening a saved report
+  now fetches `GET /users/{uid}/reports/{thread_id}` and renders only
+  `ReportThreadDetailRead.scope_metadata` for the detail view. Null detail scope
+  shows "Scope metadata unavailable for this report.", stale detail responses
+  are gated by selected report id, and the UI does not infer saved scope from
+  current account/portfolio state. Codex B re-review PASS; browser smoke was
+  intentionally not run to avoid inspecting private saved report content.
+- Completed P27C-T2 Reports scope metadata display and history-scope honesty:
+  `/reports` now renders data-backed saved report snapshots and shows each
+  report's saved `scope_metadata` only. If scope metadata is null, the UI shows
+  honest unavailable copy and explicitly does not reinterpret the report through
+  the current account selector. The older report-history surface also uses the
+  same saved-scope component and no longer filters or labels reports from
+  mutable account-selector state. No raw refs/IDs, balances, holdings,
+  quantities, provider payloads, prompts, storage writes, new endpoints,
+  provider calls, frontend financial math, or action/advice wording was added.
+  Codex B contract/privacy/safety re-review PASS; visual re-review PASS.
+- Completed the Agent Console compact scope banner (tracked in the plan as
+  P27C-T3; implemented under user task label P27C-T4): the console now renders
+  a compact `Review scope` band from the backend-owned lossy `scope_summary`
+  contract only — scope modes, selected-context presence, included/excluded
+  counts, review-account presence, account-feasibility evaluated flag, and
+  sanitized scope caveat codes. The banner uses generic copy when account labels
+  are unavailable, stacks responsively at the Agent Console breakpoint, and adds
+  no raw refs/IDs, balances, holdings, quantities, provider payloads, prompt
+  exposure, storage writes, new endpoints, provider calls, frontend financial
+  math, or advice/order/execution wording. Codex B contract/privacy/safety PASS;
+  visual re-review PASS.
 - Completed P27C-T1 Trade Review review-account selector frontend wiring (Codex B contract/privacy/safety review PASS). Trade Review now separates the **Review account** (where the user would manually place the trade) from the **Broader portfolio context** (exposure awareness), consuming the existing reviewed backend contract. The form populates a review-account selector from the Account Details overview and submits only the opaque `account_reference` via `review_account_selection` (`unselected` vs `selected_account`); the result panel renders `scope_metadata` using backend-owned display labels only — review-account label/kind, account-level-feasibility evaluated/not-evaluated, portfolio-context scope label, included/excluded account labels, and scope caveat codes — never `account_reference`, `scope_reference`, `context_reference`, broker/provider IDs, balances, holdings, quantities, payloads, prompts, or traces. The portfolio-preview call now forwards the existing `X-User-Id` route header (the app's own user UUID, already used in `/users/{uid}/...` paths) so a selected real account resolves server-side; no backend route/field/migration/provider/storage change. No frontend financial computation and no advice/order/execution/safe-to-trade wording. Deferred follow-ups (non-blocking): forward the user id on the Agent Team analysis-preview path for review-account parity (P27C-T3), and add an aria-live announcement for the account-list loading→ready/error transition.
 - Added a CodeGraph-first context rule for all agent workflows: future implementation and review prompts should start code understanding with focused CodeGraph exploration, avoid broad grep/read loops and giant read lists, and keep direct file reads to changed files, directly related contracts/tests, or recently edited files. This is intended to reduce Claude/Codex session usage and prevent narrow tasks from becoming repo-wide audits.
 - Completed P27B-T14 Account Details selected-detail visual polish and backend-label contract confirmation: the selected-account panel can rely on backend gain/loss labels where losses are signed and gains are unsigned, backend freshness display labels for broker snapshot and market quotes are distinct self-describing phrases, and selected-account summary labels remain self-prefixed display strings with only opaque refs plus display labels exposed. Recommended non-blocking frontend cleanup: remove or narrow the `cached` -> `Available` compact freshness remap so future bare cached labels remain honest.

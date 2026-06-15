@@ -3,8 +3,10 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.api.routes import broker_sync as broker_sync_routes
+from app.api.routes.trade_reviews import _saved_review_safe_caveat_code
 from app.models.account import Account
 from app.models.broker_account import BrokerAccount
 from app.models.broker_connection import BrokerConnection
@@ -12,6 +14,7 @@ from app.models.broker_sync_run import BrokerSyncRun
 from app.models.cash_balance import CashBalance
 from app.models.option_contract import OptionContract
 from app.models.option_position import OptionPosition
+from app.models.saved_review_source import SavedReviewSource
 from app.models.stock_position import StockPosition
 from app.models.user import User
 from app.services.broker_import.providers.exceptions import BrokerProviderReauthRequiredError
@@ -22,9 +25,32 @@ from app.services.broker_import.providers.models import (
     ProviderRefreshResult,
 )
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
+from app.schemas.trade_review_workspace import validate_trade_review_saved_source_reference
 
 
 pytestmark = [pytest.mark.api, pytest.mark.unit]
+
+
+@pytest.mark.parametrize(
+    ("raw_code", "safe_code"),
+    (
+        ("buying_power_display_only", "liquidity_model_unverified"),
+        ("cash_collateral_policy_not_reviewed", "liquidity_model_unverified"),
+        ("cash_collateral_not_fully_modeled", "liquidity_model_unverified"),
+        ("csp_collateral_unverified", "account_feasibility_not_evaluated"),
+        ("covered_call_coverage_unverified", "account_feasibility_not_evaluated"),
+    ),
+)
+def test_saved_review_source_caveat_codes_sanitize_private_liquidity_tokens(
+    raw_code: str,
+    safe_code: str,
+) -> None:
+    rendered = _saved_review_safe_caveat_code(raw_code)
+
+    assert rendered == safe_code
+    assert "buying_power" not in rendered
+    assert "cash" not in rendered
+    assert "collateral" not in rendered
 
 
 class FakeAccountDetailsSyncAdapter:
@@ -119,6 +145,7 @@ def test_trade_review_preview_returns_sanitized_workspace_contract(client: TestC
     assert response.status_code == 200
     payload = response.json()
     assert payload["supported_flow"] == "stock_buy"
+    assert payload["saved_review_source_reference"] is None
     assert payload["trade_intent_summary"]["symbol"] == "XYZ"
     assert payload["actionability"]["review_actionability_status"] == "manual_confirmation_required"
     assert payload["actionability"]["broker_snapshot"]["freshness_scope"] == "broker_snapshot"
@@ -354,6 +381,7 @@ def test_trade_review_portfolio_preview_supports_allowed_flows(
     assert response.status_code == 200
     payload = response.json()
     assert payload["supported_flow"] == expected_flow
+    assert payload["saved_review_source_reference"] is None
     assert payload["portfolio_context"]["context_reference"] == "ctx_demo_latest"
     assert payload["portfolio_context"]["context_source"] == "manual"
     assert payload["portfolio_context"]["stock_position_count"] == 2
@@ -391,6 +419,7 @@ def test_trade_review_portfolio_preview_echoes_selected_review_account_separatel
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["saved_review_source_reference"] is None
     scope_metadata = payload["scope_metadata"]
     assert scope_metadata["review_account"]["account_reference"] == "acctref_demo_primary"
     assert scope_metadata["review_account"]["is_account_level_feasibility_source"] is True
@@ -451,6 +480,31 @@ def test_trade_review_portfolio_preview_resolves_current_user_account_details_re
 
     assert response.status_code == 200
     payload = response.json()
+    saved_review_source_reference = payload["saved_review_source_reference"]
+    assert saved_review_source_reference is not None
+    assert validate_trade_review_saved_source_reference(saved_review_source_reference) == saved_review_source_reference
+    saved_source = db_session.scalar(
+        select(SavedReviewSource).where(
+            SavedReviewSource.user_id == user.id,
+            SavedReviewSource.source_reference == saved_review_source_reference,
+            SavedReviewSource.deleted_at.is_(None),
+        )
+    )
+    assert saved_source is not None
+    save_response = client.post(
+        f"/users/{user.id}/reports/from-trade-review",
+        json={
+            "source_kind": "trade_review_workspace",
+            "source_reference": saved_review_source_reference,
+            "title": "Saved stock-buy review",
+            "report_type": "trade_review",
+        },
+    )
+    assert save_response.status_code == 201
+    saved_artifact = save_response.json()
+    assert saved_artifact["status"] == "saved"
+    assert saved_artifact["scope_metadata"]["scope_summary_label"] == payload["scope_metadata"]["scope_summary_label"]
+    assert saved_artifact["deterministic_summary"]["symbol_or_underlying"] == "XYZ"
     review_account = payload["scope_metadata"]["review_account"]
     assert review_account["account_reference"] == account_reference
     assert review_account["display_label"] == "Fidelity taxable"
@@ -468,6 +522,7 @@ def test_trade_review_portfolio_preview_resolves_current_user_account_details_re
     assert "provider_connection_id_secret_123" not in rendered
     assert "taxable account ending 1234" not in rendered
     assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+    assert not find_forbidden_keys(saved_artifact, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
 
 
 def test_trade_review_portfolio_preview_does_not_resolve_cross_user_account_reference(

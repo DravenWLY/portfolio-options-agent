@@ -9,6 +9,8 @@
  */
 import type { TradeReviewPortfolioPreviewRequest } from "./tradeReview";
 import type { ReviewActionabilityStatus } from "./tradeReview";
+import type { PortfolioContextSelectionMode } from "./tradeReview";
+import type { PortfolioScopeMode } from "./accountDetails";
 
 /* ── Enums (mirror llm_provider.py + agent_team.py) ─────────────────────── */
 
@@ -77,6 +79,18 @@ export interface AgentTeamProviderWarningRead {
   message: string;
 }
 
+export interface AgentTeamScopeSummaryRead {
+  scope_present: boolean;
+  portfolio_scope_mode: PortfolioScopeMode;
+  portfolio_context_selection_mode: PortfolioContextSelectionMode | null;
+  selected_context_present: boolean;
+  included_account_count: number;
+  excluded_account_count: number;
+  review_account_present: boolean;
+  account_level_feasibility_evaluated: boolean;
+  scope_caveat_codes: string[];
+}
+
 export interface AgentTeamAnalysisConsoleRead {
   run_reference: string;
   workflow_version: string;
@@ -92,6 +106,9 @@ export interface AgentTeamAnalysisConsoleRead {
   /** Loose-typed per backend `dict[str, object]` — counts/categories only;
    *  the backend never includes values, holdings, or identifiers here. */
   deterministic_evidence_summary: Record<string, unknown>;
+  /** Lossy reviewed scope summary only. It intentionally carries no account
+   *  labels, refs, balances, holdings, quantities, provider IDs, or payloads. */
+  scope_summary: AgentTeamScopeSummaryRead;
   role_outputs: AgentTeamRoleOutputRead[];
   final_synthesis: string | null;
   provider_warnings: AgentTeamProviderWarningRead[];

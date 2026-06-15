@@ -1,6 +1,6 @@
 # Phase 27C Trade Review And Agent Team Scope Integration Contract
 
-Status: active architecture reference
+Status: accepted / implemented through P27C-T7; P27C-T4 account groups deferred
 Owner: Codex B
 Related plan: `docs/shared/implementation_plan.md` Phase 27C
 

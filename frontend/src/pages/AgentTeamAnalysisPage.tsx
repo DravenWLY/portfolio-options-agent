@@ -6,6 +6,7 @@ import AgentTeamPipelineRail from "../components/agent-team/AgentTeamPipelineRai
 import AgentTeamTranscript from "../components/agent-team/AgentTeamTranscript";
 import AgentTeamEvidenceRail from "../components/agent-team/AgentTeamEvidenceRail";
 import AgentTeamRunSummary from "../components/agent-team/AgentTeamRunSummary";
+import AgentTeamScopeBanner from "../components/agent-team/AgentTeamScopeBanner";
 import AgentTeamComposerPlaceholder from "../components/agent-team/AgentTeamComposerPlaceholder";
 import { LoadingSkeleton, ErrorState, EmptyState } from "../components/shared/StateViews";
 import { Badge, PageHeader, SafetyStrip } from "../components/shared/mp";
@@ -88,6 +89,7 @@ export default function AgentTeamAnalysisPage() {
         <div style={styles.consoleWrap}>
           {/* 1. Top run summary band */}
           <AgentTeamRunSummary data={data} />
+          <AgentTeamScopeBanner scope={data.scope_summary} />
           {data.run_status === "partially_completed" && <PartialBanner />}
 
           {/* 2–4. Three-column body: rail | transcript+composer | evidence.

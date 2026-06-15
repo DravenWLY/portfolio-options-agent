@@ -2,7 +2,7 @@
 
 Active coordination index for Portfolio Copilot. Keep this file short: current
 work, next handoff, review gates, and status only. Historical task detail belongs
-in the archives listed below.
+in the archives and logs listed below.
 
 ## Source Of Truth
 
@@ -10,9 +10,11 @@ in the archives listed below.
 - Agent workflow rules: `docs/shared/agent_workflows.md`
 - Report format: `docs/shared/AGENT_REPORT_FORMAT.md`
 - Completed phase history: `docs/shared/completed_phases_log.md`
+- Human-readable recent changes: `docs/shared/CHANGELOG.md`
 - Archived active-plan snapshots:
   - `docs/shared/implementation_plan_archive_2026-06-03.md`
   - `docs/shared/implementation_plan_archive_2026-06-12.md`
+  - `docs/shared/implementation_plan_archive_2026-06-15.md`
 
 ## Standing Rules
 
@@ -44,153 +46,122 @@ in the archives listed below.
 
 ## Current Status
 
-### Phase 27B - Account Details Stability And Broker Snapshot Semantics
+### Completed Foundation
 
-Status: implementation complete through P27B-T22; archived.
+- Phase 27B Account Details stability is complete enough for UI use.
+- Phase 27C Trade Review / Agent Team / Reports scope integration is complete
+  for the scoped work; account group/scope management remains deferred.
+- Phase 28A saved review artifact foundation is complete.
+- Phase 29A Agent Team report experience is complete through P29A-T7:
+  evidence-package-first report generation, saved report output contract,
+  backend generation/persistence, Reports redesign, guided-manual generation
+  policy, honest report timestamps, and frontend generation UX.
+- Phase 29B public evidence architecture is active. P29B-T0, P29B-T1, and
+  P29B-T2 are complete and reviewed PASS.
 
 Reference docs:
 
-- `docs/codex-b-architecture/PHASE_27A_ACCOUNT_DETAILS_SELECTED_ACCOUNT_CONTRACT.md`
 - `docs/codex-b-architecture/PHASE_27B_ACCOUNT_DETAILS_STABILITY_CONTRACT.md`
+- `docs/codex-b-architecture/PHASE_28A_SAVED_REVIEW_ARTIFACT_CONTRACT.md`
+- `docs/codex-b-architecture/PHASE_29A_AGENT_TEAM_REPORT_ARCHITECTURE.md`
+- `docs/codex-b-architecture/PHASE_29B_PUBLIC_AGENT_EVIDENCE_CONTRACT.md`
+- `docs/claude-e-agentic/PHASE_29A_T2_AGENT_TEAM_REPORT_OUTPUT_CONTRACT.md`
+- `docs/claude-e-agentic/PHASE_29A_T5_REPORT_GENERATION_UX_POLICY.md`
+- `docs/claude-e-agentic/PHASE_29B_T2_PUBLIC_ROLE_AGENTIC_DESIGN.md`
 
-Delivered:
+Detailed verification history is archived in:
 
-- Latest-sync membership and current/expired/closed option semantics.
-- Account Details v1 broker-readiness overview plus selected-account detail.
-- Opaque account refs and selected-account sync bridge.
-- Display-only cash/buying-power/collateral policy.
-- Enriched selected-account labels, option unit fixes, optional tax-lot display
-  contract, purchase-history hiding when lots are absent, and frontend visual
-  polish.
-- Agent Team evidence boundary remains lossy and excludes account refs, labels,
-  cash values, holdings, option rows, tax lots, provider IDs, and raw payloads.
-- Frontend follow-up polish: collapsed sidebar controls no longer clip, Account
-  Details selected-account refresh preserves the current scroll/detail context,
-  and Market Mood has a Data Sources sidebar shortcut.
+- `docs/shared/implementation_plan_archive_2026-06-15.md`
+- `docs/shared/CHANGELOG.md`
+- `docs/shared/completed_phases_log.md`
 
-Review state:
+## Active Work
 
-- Codex B contract/privacy reviews: PASS through P27B-T22.
-- Claude B visual/safety smoke for Account Details: PASS after full-stack preview
-  dev-token fix.
-- Remaining caveat: DB-backed destructive tests are skipped unless a disposable
-  safe test DB is explicitly enabled.
-
-## Next Recommended Work
-
-### Phase 26A Follow-Up - Market Mood Source-Update Detection
-
-Status: complete through P26A-T12; ready to archive on the next docs pass.
+### Phase 29B - Reviewed Public Evidence For Public Analyst Roles
 
 Goal:
 
-- Keep Market Mood honest when a page refresh triggers a backend refresh:
-  `updated_at_label` remains provider/source update time, while backend refresh
-  attempts and unchanged-source states are represented separately.
+- Enable currently skipped public analyst roles (`fundamentals_analyst`,
+  `news_analyst`, `technical_analyst`) to contribute to saved Agent Team reports
+  from reviewed public evidence without widening private brokerage/account data
+  exposure.
+- Keep reports reproducible from generation-time evidence.
+- Preserve evidence-package-first architecture and defer runtime agent tools by
+  default.
 
-Reference doc:
+Completed:
 
-- `docs/codex-b-architecture/PHASE_26A_MARKET_MOOD_CONTRACT.md`
+- `P29B-T0` - Public agent evidence architecture contract: accepted.
+- `P29B-T1` - Backend public evidence contract and projection design: done by
+  Codex C; Codex B review PASS.
+- `P29B-T2` - Public role agentic design: done by Claude E; Codex B review PASS.
 
-Tasks:
+Current next task:
 
-- `P26A-T11` - Backend source-change detection and refresh-status metadata.
+- `P29B-T3A` - Backend public evidence persistence and projection seam.
   - Owner: Codex C.
   - Reviewer: Codex B.
-  - Scope: detect source changes from provider `updated_at_utc` or normalized
-    snapshot equivalence; preserve last-good snapshot; optionally expose safe
-    `last_checked_at_utc` / `last_checked_at_label` style metadata; no raw
-    provider payloads, URLs, headers, cookies, provider IDs, exception bodies,
-    prompts, traces, broker/account data, or secrets.
-  - Acceptance: unchanged provider source does not imply a new source update;
-    refresh failures preserve last-good; source update time and backend checked
-    time are separate; tests use fake/injected provider responses only.
-  - Verification 2026-06-12 by Codex C: implemented backend refresh result
-    metadata with `status="refreshed" | "unchanged" | "failed"`,
-    `source_changed`, `last_checked_at_utc`, and `last_checked_at_label`;
-    `updated_at_utc` remains provider/source update time. Refresh compares
-    provider `updated_at_utc` plus normalized snapshot equivalence, preserves
-    and reuses last-good snapshots on unchanged checks, and records sanitized
-    failed checks without replacing last-good data. Files changed:
-    `backend/app/services/market_mood.py`,
-    `backend/app/schemas/market_mood.py`,
-    `backend/app/api/routes/market_context.py`,
-    `backend/tests/services/test_market_mood.py`,
-    `backend/tests/api/test_market_context.py`. Tests:
-    `cd backend && ./.venv/bin/python -m pytest tests/services/test_market_mood.py tests/api/test_market_context.py -q`
-    -> 30 passed. Codex B review 2026-06-12: PASS. Source update time and
-    backend checked time remain separate, last-good snapshot preservation is
-    intact, default tests are fake/offline, and no raw provider payloads or
-    provider-private metadata are exposed.
-- `P26A-T12` - Frontend Market Mood backend-state auto-update.
-  - Owner: Codex F.
-  - Dependency: P26A-T11 reviewed and passed.
-  - Reviewer: Codex B for contract/safety; Claude B for visual review if UI copy
-    or status display changes.
-  - Scope: on Market Mood page mount/page refresh, use backend refresh/status and
-    detail reads only; optionally poll backend state with tab-visibility pause;
-    update page from backend detail only; preserve honest provider timestamp
-    display; no frontend CNN/provider calls.
-  - Acceptance: `updated_at_label` is never treated as page-refresh time;
-    backend checked/status metadata, if shown, is compact and clearly separate;
-    no `live`/`real-time`, advice, recommendation, buy/sell, risk-on/risk-off,
-    order, execution, safe-to-trade, or ready-to-trade wording.
-  - Verification 2026-06-12 by Codex B: PASS. Frontend calls only backend
-    Market Mood endpoints, refreshes/reads backend state on mount, polls backend
-    on a visibility-aware interval, keeps provider `updated_at_label` distinct
-    from backend `Checked` metadata, and adds no frontend provider call,
-    storage write, advice/execution wording, or CNN branding.
+  - Scope: implement the backend-owned generation-time `public_evidence`
+    persistence/readback seam and role-scoped public-evidence projection
+    contract. This comes first because Claude E needs a stable backend evidence
+    shape and reproducibility path before wiring public-role behavior.
+  - Acceptance:
+    - generation-time `public_evidence` can be persisted in the saved artifact /
+      readback path;
+    - `SavedEvidencePackageRead.from_saved_review_artifact` reads saved public
+      sections when present and defaults to `not_reviewed` only when absent;
+    - role-scoped public evidence projections are backend-built from the same
+      `SavedEvidencePackageRead` instance used for validation and persistence;
+    - no real provider/source, frontend, LLM, TradingAgents, runtime tool, or
+      external call is added;
+    - default tests are offline, deterministic, and synthetic.
+  - Verification:
+    - `cd backend && ./.venv/bin/python -m pytest tests/unit/test_report_agent_schemas.py -q`
+    - `cd backend && ./.venv/bin/python -m pytest tests/unit/test_report_agent_schemas.py tests/api/test_reports.py tests/api/test_trade_review_workspace.py tests/services/agent_team/ tests/services/agent_eval -q`
+    - `git diff --check`
+  - Review rule: after implementation and verification, request one Codex B
+    review-only sub-agent. Do not mark done until Codex B PASS.
 
-### Phase 27C - Trade Review And Agent Team Scope Integration
+Follow-up tasks:
 
-Status: P27C-T1 done (Codex B PASS); P27C-T2/T3/T4 not started.
+- `P29B-T3B` - Public role generation wiring and validation behavior.
+  - Owner: Claude E.
+  - Dependency: P29B-T3A reviewed and PASSed.
+  - Reviewer: Codex B; Codex C cross-review if backend seams are touched.
+  - Scope: wire public-role behavior from P29B-T2 onto the backend projection
+    seam: role-scoped prompt/public-context inputs, skipped/unavailable/
+    validation-failed role handling, PM synthesis use of validated public
+    summaries, and synthetic positive/negative eval cases.
+  - Critical seam: preserve
+    `validate_agent_team_report_output(..., evidence_package=evidence)` before
+    persistence; this is the package-aware validator call that enforces nested
+    public-section availability.
+- `P29B-T3C` - Integrated closeout and docs checkpoint.
+  - Owner: original implementer of the final T3B fix, with Codex B review.
+  - Scope: close P29B-T3 after T3A/T3B PASS, then update only this active plan,
+    changelog, and any required architecture note.
+- `P29B-T4` - Frontend rich report optimization.
+  - Owner: Claude A or Codex F.
+  - Reviewers: Claude B and Codex B.
+  - Dependency: P29B-T3 reviewed and accepted, with stable sample payloads.
+  - Scope: optimize Reports UI for richer public + portfolio-aware role output.
+    This is where Claude Design or Stitch may be introduced under the timing
+    rules in the Phase 29B contract.
 
-Goal:
+## Coordination Checkpoint
 
-- Use the stabilized Account Details scope/account model to make Trade Review,
-  saved reports, and Agent Team readouts state scope clearly and consistently.
+Checkpoint status: active cleanup in progress before P29B-T3A.
 
-Reference doc:
+Before Codex C starts P29B-T3A:
 
-- `docs/codex-b-architecture/PHASE_27C_TRADE_REVIEW_AGENT_SCOPE_INTEGRATION_CONTRACT.md`
+- archive the long active-plan snapshot;
+- keep this active plan short;
+- verify the dirty worktree contains only intentional recent phase changes;
+- commit and push the accepted P28A/P29A/P29B foundation.
 
-Recommended first task:
-
-- `P27C-T1` - Trade Review review-account selector frontend wiring: done; Codex B PASS 2026-06-12.
-  - Owner: Claude A. Reviewer: Codex B (contract/privacy/safety) PASS.
-  - Files: `frontend/src/types/tradeReview.ts` (added `ReviewAccountSelectionMode`,
-    `ReviewAccountSelectionRequest`, `review_account_selection` on the portfolio
-    request, `ReportScopeMetadataRead`, `scope_metadata` on `TradeReviewWorkspaceRead`,
-    reusing the existing `ReviewAccountRead`/`PortfolioScopeRead` mirrors via a
-    type-only import), `frontend/src/components/trade-review/TradeReviewForm.tsx`
-    (Account Details fetch + `Review account` selector separate from the relabeled
-    `Broader portfolio context`), `frontend/src/components/trade-review/TradeReviewResults.tsx`
-    (`ScopeMetadataPanel`), `frontend/src/api/tradeReviews.ts` + `frontend/src/api/client.ts`
-    (forward the existing `X-User-Id` route header), `frontend/src/pages/TradeReviewPage.tsx`
-    (pass `selectedUser?.id`).
-  - Consumes the existing reviewed backend contract only; no new backend route,
-    field, migration, provider call, or storage write. Submits only the opaque
-    `account_reference`; renders backend display labels only (no `*_reference`,
-    broker/provider IDs, balances, holdings, quantities, payloads, prompts, or
-    traces); no frontend financial math; no advice/order/execution/safe-to-trade
-    wording.
-  - Verified: `npm run typecheck`, `npm run lint -- --max-warnings 0`, `npm run build`,
-    `git diff --check` clean. Full-stack smoke (`docker compose up -d postgres backend
-    frontend`): `/health` 200; backend `/users` and proxy `/api/users` return the dev
-    user; a portfolio-preview with a selected review account resolves `scope_metadata`
-    to display labels (e.g. review account label + kind) through the Vite proxy with
-    the `X-User-Id` header; `unselected` returns `review_account: null` and
-    `account_level_feasibility_evaluated: false`.
-  - Deferred (non-blocking): forward the user id on the Agent Team analysis-preview
-    path for review-account parity (fold into P27C-T3); add an aria-live announcement
-    for the account-list loading→ready/error transition.
-
-Follow-up candidates:
-
-- `P27C-T2` - Report scope metadata display and history filtering.
-- `P27C-T3` - Agent Team scope banner and caveat rendering from sanitized
-  evidence only.
-- `P27C-T4` - Account group/scope management product decision.
+Rationale: P29B-T3A will modify saved-artifact/readback and report-generation
+seams that already carry many recent accepted changes. A checkpoint now reduces
+review risk and prevents future agents from rereading completed history.
 
 ## Paused Or Deferred
 
@@ -199,6 +170,10 @@ Follow-up candidates:
   planning.
 - Market Mood production/public display: blocked on source/rights review.
 - Economic Awareness frontend expansion: paused unless PM reactivates.
+- Account group/scope management: deferred until Codex A product decision.
+- Runtime public-data tools, private/public MCP, live public web search,
+  report export/share/version comparison, auto-generation after save, and any
+  broker action or execution workflow are deferred.
 - Full tax-lot/history reconstruction from transactions: deferred; do not infer
   tax lots from activity/order data without a new reviewed contract.
 

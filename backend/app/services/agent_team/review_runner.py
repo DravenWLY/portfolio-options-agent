@@ -415,6 +415,7 @@ class ReviewRunner:
             broker_snapshot_freshness=dict(evidence.broker_snapshot_freshness),
             market_quote_freshness=dict(evidence.market_quote_freshness),
             deterministic_evidence_summary=_deterministic_evidence_summary(evidence),
+            scope_summary=dict(evidence.scope_metadata),
             run_status=run_status,
             budget_summary=budget,
             timing_summary=timing,

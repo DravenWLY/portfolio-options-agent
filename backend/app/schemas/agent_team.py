@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.actionability import ReviewActionabilityStatus
 from app.schemas.trade_review_workspace import TradeReviewPortfolioPreviewRequest
@@ -69,6 +69,10 @@ class AgentTeamAnalysisConsoleRead(BaseModel):
     broker_snapshot_freshness: dict[str, object]
     market_quote_freshness: dict[str, object]
     deterministic_evidence_summary: dict[str, object]
+    # Lossy, sanitized scope categories for the analyzed scope (review account vs
+    # broader portfolio context). Display labels are NOT carried here; the
+    # frontend composes labeled copy from the reviewed Trade Review scope contract.
+    scope_summary: dict[str, object] = Field(default_factory=dict)
     role_outputs: tuple[AgentTeamRoleOutputRead, ...]
     final_synthesis: str | None
     provider_warnings: tuple[AgentTeamProviderWarningRead, ...]

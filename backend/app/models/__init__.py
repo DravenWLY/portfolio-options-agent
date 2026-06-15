@@ -10,6 +10,7 @@ from app.models.option_position import OptionPosition
 from app.models.provider_credentials_metadata import ProviderCredentialsMetadata
 from app.models.report_message import ReportMessage
 from app.models.report_thread import ReportThread
+from app.models.saved_review_source import SavedReviewSource
 from app.models.stock_position import StockPosition
 from app.models.user import User
 
@@ -26,6 +27,7 @@ __all__ = [
     "ProviderCredentialsMetadata",
     "ReportMessage",
     "ReportThread",
+    "SavedReviewSource",
     "StockPosition",
     "User",
 ]

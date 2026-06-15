@@ -99,6 +99,60 @@ def test_agent_team_preview_display_names_match_registry_and_drop_agent_suffix(c
     assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
 
 
+def test_agent_team_preview_surfaces_lossy_scope_summary(client: TestClient) -> None:
+    response = client.post(
+        "/agent-team/trade-review-analysis/preview",
+        json={
+            "supported_flow": "covered_call",
+            "option_leg": {
+                "underlying_symbol": "XYZ",
+                "option_type": "call",
+                "leg_action": "sell_to_open",
+                "expiration_date": str(date(2026, 6, 19)),
+                "strike": "55",
+                "quantity": "1",
+                "premium": "2",
+            },
+            "review_account_selection": {"mode": "selected_account", "account_reference": "acctref_demo_primary"},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    scope = payload["scope_summary"]
+
+    # Agent Console states the scope it ran under using lossy categories only:
+    # which broader portfolio scope, whether a review account was used, and
+    # whether account-level feasibility was evaluated.
+    assert scope["review_account_present"] is True
+    assert scope["account_level_feasibility_evaluated"] is True
+    assert scope["portfolio_scope_mode"] == "selected_context"
+    assert "scope_caveat_codes" in scope
+    # No account refs, labels, kinds, or other private values leak through.
+    rendered = repr(payload).lower()
+    assert "acctref_" not in rendered
+    assert "primary demo account" not in rendered
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_agent_team_preview_scope_summary_unselected_review_account(client: TestClient) -> None:
+    response = client.post(
+        "/agent-team/trade-review-analysis/preview",
+        json={
+            "supported_flow": "stock_buy",
+            "symbol": "XYZ",
+            "quantity": "3",
+            "price_assumption": "50",
+            "portfolio_context_selection": {"mode": "latest_available"},
+        },
+    )
+
+    assert response.status_code == 200
+    scope = response.json()["scope_summary"]
+    assert scope["review_account_present"] is False
+    assert scope["account_level_feasibility_evaluated"] is False
+
+
 def test_agent_team_preview_blocked_actionability_degrades_to_deterministic_only(client: TestClient) -> None:
     response = client.post(
         "/agent-team/trade-review-analysis/preview",

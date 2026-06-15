@@ -154,6 +154,10 @@ class AgentReviewRunState:
     run_status: str
     budget_summary: AgentReviewBudgetSummary
     timing_summary: AgentReviewTimingSummary
+    # Lossy, sanitized scope categories/booleans/codes for the analyzed scope
+    # (which review account / broader portfolio context the run was scoped to).
+    # Never carries account refs, labels, kinds, balances, or other private values.
+    scope_summary: dict[str, object] = field(default_factory=dict)
     stage_statuses: tuple[AgentReviewStageStatus, ...] = ()
     role_outputs: tuple[AgentReviewRoleOutput, ...] = ()
     provider_warnings: tuple[str, ...] = ()

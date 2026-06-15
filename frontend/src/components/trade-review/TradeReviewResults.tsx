@@ -15,6 +15,7 @@ import type {
 } from "../../types/tradeReview";
 import type { RiskSeverity } from "../../types/api";
 import { MpIcon, type MpIconName } from "../shared/mp";
+import SaveReviewSnapshot from "./SaveReviewSnapshot";
 
 /**
  * TradeReviewResults — renders the sanitized TradeReviewWorkspaceRead.
@@ -86,16 +87,51 @@ function actionabilityLabel(status: ReviewActionabilityStatus): string {
   return ACTIONABILITY_LABEL[status] ?? `Unexpected review status (${String(status)})`;
 }
 
-export default function TradeReviewResults({ data }: { data: TradeReviewWorkspaceRead }) {
+/**
+ * Build a quiet, report-like default title for a saved snapshot from already
+ * display-safe fields (flow + symbol/underlying). No advice/order/execution
+ * wording, no account/provider/broker/holdings data, no opaque references.
+ * The backend re-validates title safety and caps length; we keep it short.
+ */
+function buildSnapshotTitle(data: TradeReviewWorkspaceRead): string {
+  const intent = data.trade_intent_summary;
+  const symbol = intent.symbol ?? intent.underlying_symbol ?? null;
+  const flow = data.supported_flow.replace(/_/g, " ");
+  const base = symbol ? `Trade review · ${flow} · ${symbol}` : `Trade review · ${flow}`;
+  return base.slice(0, 200);
+}
+
+export default function TradeReviewResults({
+  data,
+  userId,
+}: {
+  data: TradeReviewWorkspaceRead;
+  userId?: string | null;
+}) {
   const optionsExposure = data.deterministic_review.options_exposure;
   const hasOptionsSafetyCaveat =
     optionsExposure.covered_call_coverage_model === "not_fully_modelled" ||
     optionsExposure.cash_secured_put_collateral_model === "generic_rule_only";
 
+  // Phase 28A: the save action appears only when the backend exposed an
+  // app-owned save-eligible source reference for this review AND we have a
+  // user-id route context. The reference is never derived from review_reference,
+  // route state, account id, selector, or cache — it must come from the backend.
+  const savedSourceReference = data.saved_review_source_reference;
+  const canSaveSnapshot = Boolean(savedSourceReference) && Boolean(userId);
+
   return (
     <div style={styles.wrap}>
       {/* ── Tier 1: always-visible scan path ──────────────────────────── */}
       <ActionabilityBanner actionability={data.actionability} />
+
+      {canSaveSnapshot && savedSourceReference && userId && (
+        <SaveReviewSnapshot
+          userId={userId}
+          sourceReference={savedSourceReference}
+          defaultTitle={buildSnapshotTitle(data)}
+        />
+      )}
 
       <p style={styles.deterministicBanner} role="note">
         <MpIcon name="info" size={11} style={{ color: "var(--mp-mute)", verticalAlign: "middle", marginRight: 4 }} />
@@ -485,7 +521,6 @@ function PortfolioContextContent({ context }: { context: PortfolioContextSummary
         </p>
       )}
       <ul style={styles.facts}>
-        <FactRow k="Context reference (opaque)" v={context.context_reference} mono />
         <FactRow k="Context source" v={context.context_source} mono />
         <FactRow k="Selection mode" v={context.selection_mode} mono />
         <FactRow k="Label" v={context.label ?? "—"} mono />

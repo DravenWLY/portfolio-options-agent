@@ -174,20 +174,30 @@ def _safe_caveat_code(code: str) -> str:
     )
 
 
+def unavailable_agent_scope_summary() -> dict[str, object]:
+    """Lossy, sanitized 'scope unavailable' summary (single source of truth).
+
+    Carries only scope categories, booleans, and counts. Never account refs,
+    labels, kinds, balances, or any other private value.
+    """
+
+    return {
+        "scope_present": False,
+        "portfolio_scope_mode": "unavailable",
+        "portfolio_context_selection_mode": None,
+        "selected_context_present": False,
+        "included_account_count": 0,
+        "excluded_account_count": 0,
+        "review_account_present": False,
+        "account_level_feasibility_evaluated": False,
+        "scope_caveat_codes": (),
+    }
+
+
 def _safe_scope_metadata(workspace: TradeReviewWorkspaceRead) -> dict[str, object]:
     scope_metadata = workspace.scope_metadata
     if scope_metadata is None:
-        return {
-            "scope_present": False,
-            "portfolio_scope_mode": "unavailable",
-            "portfolio_context_selection_mode": None,
-            "selected_context_present": False,
-            "included_account_count": 0,
-            "excluded_account_count": 0,
-            "review_account_present": False,
-            "account_level_feasibility_evaluated": False,
-            "scope_caveat_codes": (),
-        }
+        return unavailable_agent_scope_summary()
 
     scope = scope_metadata.portfolio_context_scope
     return {

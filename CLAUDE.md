@@ -41,6 +41,13 @@ Always inspect these first:
   acceptance criteria are met and verified.
 - Stop for review after each task.
 - Default backend test command: `cd backend && pytest`. Fallback: `cd backend && ./.venv/bin/python -m pytest`.
+- Always close the servers/ports you started before ending the session — the
+  Docker stack (`docker compose down`), any dev server, and Claude Preview
+  (`preview_stop`, plus remove a `frontend/.env.local` you created). Leave the
+  environment clean. The only exception is an active review handoff that
+  explicitly needs the stack left running; if so, say so in the handoff and tear
+  it down once review is complete. See `docs/shared/agent_workflows.md` ->
+  "Stable Claude Preview (MCP) workflow with Docker".
 
 ## Required output format
 

@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 import pytest
 
 from app.schemas.trade_review_workspace import TradeReviewPortfolioPreviewRequest
-from app.services.agent_team.llm_provider import AGENT_TEAM_ROLES
+from app.services.agent_team.llm_provider import AGENT_TEAM_ROLES, find_forbidden_string_values
 from app.services.agent_team.mock_provider import MockLLMProvider
 from app.services.agent_team.orchestrator import AgentTeamOrchestrator
 from app.services.agent_team.review_runner import ReviewRunner, dispatch_roles_sequentially
@@ -124,6 +124,37 @@ def test_review_runner_dispatch_seam_is_sequential() -> None:
     assert tuple(output.role_name for output in state.role_outputs) == AGENT_TEAM_ROLES
 
 
+def test_review_runner_carries_lossy_scope_summary_for_selected_review_account() -> None:
+    # A selected review account is carried as lossy scope categories only: the
+    # run state records that a review account was used and that account-level
+    # feasibility was evaluated, without any account ref, label, or kind.
+    state = ReviewRunner(provider=MockLLMProvider()).run(
+        workspace=_workspace("covered_call", review_account_reference="acctref_demo_primary")
+    )
+
+    scope = state.scope_summary
+    assert scope["review_account_present"] is True
+    assert scope["account_level_feasibility_evaluated"] is True
+    assert scope["portfolio_scope_mode"] == "selected_context"
+    assert "scope_caveat_codes" in scope
+    rendered = repr(asdict(state)).lower()
+    assert "acctref_" not in rendered
+    assert "primary demo account" not in rendered
+    assert find_forbidden_keys(asdict(state), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS) == set()
+    assert find_forbidden_string_values(asdict(state)) == set()
+
+
+def test_review_runner_scope_summary_marks_unselected_review_account() -> None:
+    # With no review account selected, account-level feasibility is not evaluated
+    # and that is recorded honestly (never silently expanded to account scope).
+    state = ReviewRunner(provider=MockLLMProvider()).run(workspace=_workspace("covered_call"))
+
+    scope = state.scope_summary
+    assert scope["review_account_present"] is False
+    assert scope["account_level_feasibility_evaluated"] is False
+    assert find_forbidden_string_values(asdict(state)) == set()
+
+
 def test_existing_orchestrator_preview_behavior_unchanged() -> None:
     workspace = _workspace("stock_buy")
     state = AgentTeamOrchestrator(provider=MockLLMProvider()).run(workspace=workspace)
@@ -151,12 +182,22 @@ def test_review_runner_records_budget_and_timing_scaffolding() -> None:
     assert eval_checks["failure_classification"] == "passed"
 
 
-def _workspace(flow: str, *, context_reference: str | None = None):
+def _workspace(
+    flow: str,
+    *,
+    context_reference: str | None = None,
+    review_account_reference: str | None = None,
+):
     payload = _payload(flow)
     if context_reference is not None:
         payload["portfolio_context_selection"] = {
             "mode": "selected_context",
             "context_reference": context_reference,
+        }
+    if review_account_reference is not None:
+        payload["review_account_selection"] = {
+            "mode": "selected_account",
+            "account_reference": review_account_reference,
         }
     return build_trade_review_workspace_portfolio_preview(
         TradeReviewPortfolioPreviewRequest(**payload),

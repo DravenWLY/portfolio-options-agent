@@ -78,6 +78,7 @@ DashboardDisplaySectionKind: TypeAlias = Literal["summary", "freshness", "shape"
 _OPAQUE_CONTEXT_REFERENCE_RE = re.compile(r"^ctx_[a-z0-9][a-z0-9_-]{5,79}$")
 _OPAQUE_ACCOUNT_REFERENCE_RE = re.compile(r"^acctref_[a-z0-9][a-z0-9_-]{5,79}$")
 _OPAQUE_SCOPE_REFERENCE_RE = re.compile(r"^scope_[a-z0-9][a-z0-9_-]{5,79}$")
+_OPAQUE_SAVED_REVIEW_SOURCE_REFERENCE_RE = re.compile(r"^trrev_[a-z0-9][a-z0-9_-]{5,79}$")
 _FORBIDDEN_CONTEXT_REFERENCE_TOKENS = (
     "account",
     "acct",
@@ -104,6 +105,27 @@ _FORBIDDEN_ACCOUNT_REFERENCE_TOKENS = (
     "raw",
     "payload",
     "number",
+)
+_FORBIDDEN_SAVED_REVIEW_SOURCE_REFERENCE_TOKENS = (
+    "account",
+    "acct",
+    "broker",
+    "provider",
+    "snaptrade",
+    "secret",
+    "token",
+    "cash",
+    "holding",
+    "position",
+    "raw",
+    "payload",
+    "number",
+    "taxlot",
+    "tax_lot",
+    "transaction",
+    "order",
+    "prompt",
+    "trace",
 )
 
 PROHIBITED_TRADE_REVIEW_WORKSPACE_PHRASES = (
@@ -148,6 +170,20 @@ def validate_scope_reference(scope_reference: str) -> str:
     ref = scope_reference.strip()
     if ref != scope_reference or _OPAQUE_SCOPE_REFERENCE_RE.fullmatch(ref) is None:
         raise ValueError("scope_reference must be an opaque app-generated scope reference")
+    return ref
+
+
+def validate_trade_review_saved_source_reference(source_reference: str) -> str:
+    """Validate opaque app-owned saved-review source references exposed to frontend."""
+
+    ref = source_reference.strip()
+    if ref != source_reference or _OPAQUE_SAVED_REVIEW_SOURCE_REFERENCE_RE.fullmatch(ref) is None:
+        raise ValueError("saved_review_source_reference must be an opaque trrev_ reference")
+    suffix = ref.removeprefix("trrev_").lower()
+    if any(token in suffix for token in _FORBIDDEN_SAVED_REVIEW_SOURCE_REFERENCE_TOKENS):
+        raise ValueError(
+            "saved_review_source_reference must not contain broker, account, provider, or private-data hints"
+        )
     return ref
 
 
@@ -475,6 +511,7 @@ class TradeReviewWorkspaceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
     review_reference: str
+    saved_review_source_reference: str | None = None
     generated_at: datetime
     calculation_version: str
     supported_flow: SupportedTradeReviewFlow
@@ -489,6 +526,8 @@ class TradeReviewWorkspaceRead(BaseModel):
 
     @model_validator(mode="after")
     def workspace_payload_must_be_safe(self) -> "TradeReviewWorkspaceRead":
+        if self.saved_review_source_reference is not None:
+            validate_trade_review_saved_source_reference(self.saved_review_source_reference)
         validate_trade_review_workspace_payload(self.model_dump(mode="python"))
         return self
 

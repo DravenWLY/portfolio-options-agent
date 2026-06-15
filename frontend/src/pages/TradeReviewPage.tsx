@@ -92,7 +92,9 @@ export default function TradeReviewPage() {
           {status === "empty" && (
             <EmptyState title="No content returned" body="The preview returned an empty payload. Adjust inputs and try again." />
           )}
-          {status === "success" && data && <TradeReviewResults data={data} />}
+          {status === "success" && data && (
+            <TradeReviewResults data={data} userId={selectedUser?.id ?? null} />
+          )}
         </section>
       </div>
 

@@ -25,6 +25,7 @@ from app.models.option_position import OptionPosition
 from app.models.provider_credentials_metadata import ProviderCredentialsMetadata
 from app.models.report_message import ReportMessage
 from app.models.report_thread import ReportThread
+from app.models.saved_review_source import SavedReviewSource
 from app.models.stock_position import StockPosition
 from app.models.user import User
 
@@ -77,6 +78,7 @@ def db_session() -> Generator[Session, None, None]:
         db.execute(delete(ProviderCredentialsMetadata))
         db.execute(delete(AgentStep))
         db.execute(delete(AgentRun))
+        db.execute(delete(SavedReviewSource))
         db.execute(delete(ReportMessage))
         db.execute(delete(ReportThread))
         db.execute(delete(BrokerSyncRun))
@@ -94,6 +96,7 @@ def db_session() -> Generator[Session, None, None]:
         db.execute(delete(ProviderCredentialsMetadata))
         db.execute(delete(AgentStep))
         db.execute(delete(AgentRun))
+        db.execute(delete(SavedReviewSource))
         db.execute(delete(ReportMessage))
         db.execute(delete(ReportThread))
         db.execute(delete(BrokerSyncRun))

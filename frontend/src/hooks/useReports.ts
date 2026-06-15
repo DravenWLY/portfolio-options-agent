@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { listReportThreads } from "../api/reports";
 import { type ReportThreadRead } from "../types/api";
 
@@ -8,12 +8,19 @@ export interface UseReportsResult {
   threads: ReportThreadRead[];
   status: Status;
   error: string | null;
+  /** Re-fetch the saved report list from the backend (e.g. after generating an
+   *  Agent Team report). Saved reports are always read from the backend, never
+   *  reconstructed from current frontend state. */
+  refetch: () => void;
 }
 
 export function useReports(userId: string | null): UseReportsResult {
   const [threads, setThreads] = useState<ReportThreadRead[]>([]);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const refetch = useCallback(() => setReloadKey((value) => value + 1), []);
 
   useEffect(() => {
     if (userId === null) {
@@ -42,7 +49,7 @@ export function useReports(userId: string | null): UseReportsResult {
       });
 
     return () => { cancelled = true; };
-  }, [userId]);
+  }, [userId, reloadKey]);
 
-  return { threads, status, error };
+  return { threads, status, error, refetch };
 }

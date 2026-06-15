@@ -89,24 +89,51 @@ Functional internal-demo context.
 
 ## Next Recommended Work
 
-### Phase 27C - Trade Review And Agent Team Scope Integration
+### Phase 29B - Public Agent Evidence
 
-Use the stabilized Account Details scope model throughout the review/report/agent
-surfaces.
+The Phase 29A saved-review foundation is now in place:
 
-Recommended first slice:
+`select scope -> run review -> save source snapshot -> generate Agent Team report -> revisit the exact historical scope and analysis`
 
-- Wire Trade Review UI to show and select a `Review account` separately from
-  broader `Portfolio context scope`.
-- Preserve backend-owned display labels and opaque refs.
-- Do not use Account Details values for deterministic feasibility unless the
-  backend contract explicitly marks that feasibility as evaluated.
+What is complete:
 
-Likely follow-ups:
+- Saved review snapshots persist immutable generation-time scope, caveats,
+  freshness, and deterministic summary data.
+- Agent Team report generation now runs on demand from a saved evidence package,
+  not from current account state.
+- Reports has been redesigned around saved analysis, with deterministic evidence
+  and provenance moved into supporting sections.
+- Guided-manual report generation is the accepted architecture recommendation:
+  generation is an explicit user action, `generating` is frontend-only, and
+  source snapshot time is distinct from Agent Team report-generation time.
+- Backend report-generation timestamp and replace-only regeneration semantics
+  are implemented; frontend P29A-T7 has passed visual/UX and
+  contract/privacy/safety closeout.
 
-- Saved report scope metadata display.
-- Agent Team scope/caveat banner from sanitized evidence only.
-- Account group/scope management product decision.
+What should happen next:
+
+- Execute Phase 29B: Codex C designs the backend public-evidence contract and
+  projection, while Claude E designs public-role evidence projections, degraded
+  states, and output/evaluation rules.
+- Keep Codex C and Claude E free to choose the backend/agentic design inside the
+  accepted rails: source/rights review, evidence-package-first, saved-report
+  reproducibility, no private brokerage data, no runtime private tools by
+  default, and no advice/order/execution wording.
+- After public evidence is implemented with stable reviewed sample payloads, do
+  a second-pass Reports / Agent Team UX refinement around richer analysis
+  content.
+
+Architecture references:
+
+- `docs/codex-b-architecture/PHASE_29A_AGENT_TEAM_REPORT_ARCHITECTURE.md`
+- `docs/claude-e-agentic/PHASE_29A_T2_AGENT_TEAM_REPORT_OUTPUT_CONTRACT.md`
+- `docs/codex-b-architecture/PHASE_29B_PUBLIC_AGENT_EVIDENCE_CONTRACT.md`
+
+### Deferred Scope Management
+
+Account group/scope management from Phase 27C remains deferred until Codex A
+makes a product decision. Do not build group CRUD or default review-account
+preferences as part of Phase 29A.
 
 ## Paused / Deferred
 

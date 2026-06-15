@@ -4,6 +4,7 @@
  *
  * All UUIDs are strings (JSON serialization). Dates are ISO 8601 strings.
  */
+import type { ReportScopeMetadataRead } from "./tradeReview";
 
 /* ── Users ─────────────────────────────────────────────────────────────── */
 
@@ -177,6 +178,68 @@ export type ReportThreadStatus =
   | "failed"
   | "cancelled";
 
+/* ── Phase 29A saved Agent Team report (read side) ──────────────────────────
+ * Mirrors backend `SavedAgentTeamSummaryRead` / `SavedAgentTeamRoleSummaryRead`
+ * attached to a saved review artifact. The frontend renders ONLY these
+ * sanitized, backend-owned fields: display labels, status codes, evidence
+ * `section_key`s (keys only, never values), provider-neutral warning codes, and
+ * pre-sanitized narrative markdown. It never derives report scope/status from
+ * the current account selector, Account Details, route, or cached state. */
+export type SavedReviewAgentRunStatus =
+  | "completed"
+  | "partially_completed"
+  | "failed";
+
+export type AgentTeamReportStatus =
+  | "source_snapshot"
+  | "deterministic_draft"
+  | "full_agent_report"
+  | "agent_unavailable"
+  | "validation_failed";
+
+export type AgentTeamReportRunCompleteness = "full" | "partial" | "none";
+
+export type AgentTeamReportRoleStatus =
+  | "completed"
+  | "unavailable"
+  | "skipped"
+  | "gated"
+  | "validation_failed";
+
+export type AgentTeamReportSynthesisAuthor =
+  | "portfolio_manager_agent"
+  | "deterministic_template";
+
+export interface SavedAgentTeamRoleSummaryRead {
+  role_name: string;
+  display_name: string;
+  role_status: AgentTeamReportRoleStatus;
+  /** Provider-neutral status label (e.g. ok, skipped, provider_unavailable). */
+  provider_status: string;
+  /** Pre-sanitized narrative; null unless the role completed. */
+  summary_markdown: string | null;
+  /** Evidence `section_key`s cited — keys only, never values. */
+  evidence_references: string[];
+  warning_codes: string[];
+  /** Sanitized code/label, never a raw provider error or trace. */
+  unavailable_reason: string | null;
+}
+
+export interface SavedAgentTeamSummaryRead {
+  run_status: SavedReviewAgentRunStatus;
+  provider_mode: string;
+  /** When the Agent Team run executed (ISO 8601). Null for source snapshots and
+   *  legacy artifacts. Distinct from the source snapshot's saved time. */
+  report_generated_at: string | null;
+  role_summaries: SavedAgentTeamRoleSummaryRead[];
+  warning_codes: string[];
+  report_status: AgentTeamReportStatus | null;
+  final_synthesis_markdown: string | null;
+  final_synthesis_authored_by: AgentTeamReportSynthesisAuthor | null;
+  evidence_schema_version: string | null;
+  evidence_references: string[];
+}
+
 export interface ReportThreadRead {
   id: string;
   user_id: string;
@@ -187,6 +250,70 @@ export interface ReportThreadRead {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  scope_metadata: ReportScopeMetadataRead | null;
+  /** Phase 29A: saved Agent Team analysis, or null for a deterministic-only
+   *  source snapshot that has not had a report generated yet. */
+  agent_summary: SavedAgentTeamSummaryRead | null;
+}
+
+export interface ReportMessageRead {
+  id: string;
+  thread_id: string;
+  sender_type: string;
+  message_type: string;
+  content_markdown: string | null;
+  content_json: Record<string, unknown> | null;
+  sequence: number;
+  visibility: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+}
+
+export interface ReportThreadDetailRead extends ReportThreadRead {
+  messages: ReportMessageRead[];
+}
+
+/* ── Phase 28A saved review artifact (save-from-trade-review) ────────────────
+ * Mirrors backend `SavedReviewArtifactCreateRequest` / `SavedReviewArtifactRead`.
+ * The frontend sends ONLY `source_kind`, `source_reference`, `title`, and
+ * `report_type`. It never sends scope_metadata, deterministic_summary,
+ * agent_summary, Account Details, selector state, cached frontend state, or any
+ * account/provider/broker/holdings/position/balance data — the backend builds
+ * the immutable artifact from the server-owned reviewed source row. */
+export type SavedReviewSourceKind = "trade_review_workspace" | "agent_team_run";
+
+export interface SavedReviewArtifactCreateRequest {
+  source_kind: SavedReviewSourceKind;
+  source_reference: string;
+  title: string;
+  report_type?: string;
+}
+
+export type SavedReviewArtifactStatus = "saved" | "unavailable";
+
+export interface SavedReviewReportMetadataRead {
+  report_reference: string;
+  title: string;
+  report_type: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Read side of a saved snapshot. The optional scope/summary snapshot bodies the
+ *  backend also returns are intentionally omitted here — the save action renders
+ *  only the saved/quiet confirmation, never the saved scope or summary, which
+ *  the Reports surfaces own. */
+export interface SavedReviewArtifactRead {
+  artifact_reference: string;
+  status: SavedReviewArtifactStatus;
+  report: SavedReviewReportMetadataRead;
+  generated_at: string;
+  saved_at: string;
+  review_pipeline_label: string;
+  limitations: string[];
+  caveat_codes: string[];
 }
 
 /* ── Generic API error shape ────────────────────────────────────────────── */

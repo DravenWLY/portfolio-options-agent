@@ -239,6 +239,92 @@ Notes:
     dev token returns 401 and only proves the route shell can render.
 ```
 
+## Stable Claude Preview (MCP) workflow with Docker
+
+This is the agreed, repeatable way for any Claude agent to drive the **Claude
+Preview MCP tool** (`preview_start` / `preview_stop` / `preview_snapshot` /
+`preview_screenshot` / `preview_resize`) on data-backed pages. It exists because
+the naive path is unstable.
+
+Root cause of the instability (observed P29A-T4): the Docker `frontend`
+container and the Claude Preview MCP server both want host port **5173**, and
+`frontend/vite.config.ts` hardcodes `server.port: 5173`, so `preview_start`
+**cannot** auto-bump to a side port — it errors `Port 5173 is in use by
+"com.docker.backend"`. The MCP tool only runs `npm run dev`; it cannot attach to
+the Docker frontend already on the port. Running both at once, or toggling Docker
+while a preview is up, leaves orphaned `node` servers on 5173 and a backend that
+intermittently reads `000`. **Never run the Docker frontend and Claude Preview
+at the same time.**
+
+Golden rule: when using Claude Preview, run **only the Docker data layer**
+(`postgres` + `backend`). The MCP Vite preview *is* the frontend.
+
+Steps:
+
+1. Start the data layer only (and free 5173 if the Docker frontend is up):
+   ```bash
+   docker compose up -d postgres backend
+   docker compose stop frontend            # only if it is running / owns 5173
+   ```
+   Wait for `curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health`
+   to return `200`.
+
+2. Ensure the Vite proxy has the dev token (`frontend/.env.local`, gitignored;
+   `vite.config.ts` reads it via `loadEnv` to add `X-Local-Access-Token`).
+   The hard rule still applies: **do not read repo `.env` or write `.env.*`
+   without explicit user authorization.** So:
+   - If `frontend/.env.local` already exists, use it.
+   - Otherwise ask the user to create it, **or** ask for explicit authorization
+     to create it. With that authorization, copy the token from the running
+     backend container env (never from repo `.env`, never printed):
+     ```bash
+     TOKEN=$(docker compose exec -T backend sh -lc 'printf %s "${LOCAL_DEV_ACCESS_TOKEN}"' | tr -d '\r\n')
+     [ -n "$TOKEN" ] && printf 'LOCAL_DEV_ACCESS_TOKEN=%s\n' "$TOKEN" > frontend/.env.local
+     unset TOKEN
+     ```
+   - Without a token the preview is shell-only (`/api/*` → 401); say so and do
+     not judge connected-data UI from it.
+
+3. Confirm 5173 is free, then start the preview:
+   ```bash
+   lsof -nP -iTCP:5173 -sTCP:LISTEN        # expect no output
+   ```
+   Then call `preview_start` with the `frontend` config.
+
+4. Verify it is **connected**, not shell-only (this is the proof):
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5173/api/users  # 200
+   curl -s http://localhost:5173/api/users   # dev user "Local Trader"
+   ```
+   A `401`/`500` means token missing or backend down — fix before reviewing.
+
+5. Let the user drive the embedded preview panel. Navigate within the SPA by
+   clicking nav (or open `http://localhost:5173/<route>` directly). Avoid using
+   `preview_eval` to navigate/click while the user is watching — it drives the
+   page out from under their panel; prefer it only for read-only assertions
+   (overflow math, text presence) the user does not need to see.
+
+6. Teardown (and honor the `teardown ports after work` rule):
+   ```bash
+   ```
+   Call `preview_stop` for the serverId, then:
+   ```bash
+   rm -f frontend/.env.local               # if the agent created it
+   docker compose down
+   ```
+
+If the Docker frontend **must** stay on 5173 (another user/agent is using it),
+do **not** use Claude Preview — it cannot attach to a non-preview process on its
+port. Either stop the Docker frontend to hand 5173 to the preview, or review
+against the Docker frontend directly (manual browser), without the MCP tool.
+
+Recovery from a stuck state:
+- `preview_list` → `preview_stop` every orphaned server.
+- `lsof -nP -iTCP:5173 -sTCP:LISTEN`; a stray `node` after `preview_stop` usually
+  clears within a few seconds — re-check before `preview_start`.
+- If `:8000/health` is `000`, `docker compose up -d postgres backend` and wait
+  for `200` before starting the preview.
+
 ### Expected Output Format
 
 For reviews, use:

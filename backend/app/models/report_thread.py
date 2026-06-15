@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PostgresUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -36,6 +37,7 @@ class ReportThread(Base):
         server_default="portfolio_report",
     )
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="draft", server_default="draft")
+    saved_artifact_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -44,3 +46,17 @@ class ReportThread(Base):
         onupdate=func.now(),
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    @property
+    def scope_metadata(self) -> dict | None:
+        if not isinstance(self.saved_artifact_json, dict):
+            return None
+        scope = self.saved_artifact_json.get("scope_metadata")
+        return scope if isinstance(scope, dict) else None
+
+    @property
+    def agent_summary(self) -> dict | None:
+        if not isinstance(self.saved_artifact_json, dict):
+            return None
+        summary = self.saved_artifact_json.get("agent_summary")
+        return summary if isinstance(summary, dict) else None

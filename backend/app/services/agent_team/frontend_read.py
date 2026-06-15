@@ -6,6 +6,7 @@ from app.schemas.agent_team import (
     AgentTeamRoleOutputRead,
     AgentTeamStageRead,
 )
+from app.services.agent_team.evidence_projection import unavailable_agent_scope_summary
 from app.services.agent_team.llm_provider import AGENT_TEAM_ROLES
 from app.services.agent_team.roles import role_definition
 from app.services.agent_team.run_state import AgentReviewRunState
@@ -37,6 +38,7 @@ def build_agent_team_analysis_console_read(state: AgentTeamAnalysisState) -> Age
         broker_snapshot_freshness=state.broker_snapshot_freshness,
         market_quote_freshness=state.market_quote_freshness,
         deterministic_evidence_summary=state.deterministic_evidence_summary,
+        scope_summary=unavailable_agent_scope_summary(),
         role_outputs=tuple(
             AgentTeamRoleOutputRead(
                 role_name=output.role_name,
@@ -95,6 +97,7 @@ def build_console_read_from_review_run_state(state: AgentReviewRunState) -> Agen
         broker_snapshot_freshness=state.broker_snapshot_freshness,
         market_quote_freshness=state.market_quote_freshness,
         deterministic_evidence_summary=_console_evidence_summary(state.deterministic_evidence_summary),
+        scope_summary=_console_scope_summary(state.scope_summary),
         role_outputs=tuple(
             AgentTeamRoleOutputRead(
                 role_name=output.role_name,
@@ -124,6 +127,19 @@ def build_console_read_from_review_run_state(state: AgentReviewRunState) -> Agen
         ),
         safety_flags=state.safety_flags,
     )
+
+
+def _console_scope_summary(scope_summary: dict[str, object]) -> dict[str, object]:
+    """Carry the lossy, sanitized scope summary onto the console contract.
+
+    Falls back to an explicit 'unavailable' summary for run states constructed
+    without scope (legacy/hand-built), so the console shape stays uniform. No
+    account refs, labels, kinds, or balances are ever introduced here.
+    """
+
+    if scope_summary:
+        return dict(scope_summary)
+    return unavailable_agent_scope_summary()
 
 
 def _console_evidence_summary(summary: dict[str, object]) -> dict[str, object]:

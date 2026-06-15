@@ -347,6 +347,13 @@ export interface ReportScopeMetadataRead {
 
 export interface TradeReviewWorkspaceRead {
   review_reference: string;
+  /** Phase 28A: opaque, app-owned source reference (e.g. `trrev_…`) present only
+   *  when the backend has materialized a save-eligible `saved_review_sources`
+   *  row for this review. Null on synthetic/stateless previews. The frontend
+   *  sends this verbatim as the save `source_reference` and never displays it;
+   *  it must NOT be derived from `review_reference`, route state, account id,
+   *  selector, or cache. */
+  saved_review_source_reference?: string | null;
   generated_at: string;
   calculation_version: string;
   supported_flow: SupportedTradeReviewFlow;

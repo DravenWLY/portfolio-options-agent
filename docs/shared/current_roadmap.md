@@ -109,19 +109,21 @@ What is complete:
 - Backend report-generation timestamp and replace-only regeneration semantics
   are implemented; frontend P29A-T7 has passed visual/UX and
   contract/privacy/safety closeout.
+- Phase 29B public-evidence backend and agentic wiring is complete through
+  P29B-T3: generation-time public evidence is persisted/read back, public role
+  projections are role-scoped, public analyst roles degrade honestly from
+  unreviewed/unavailable evidence, and package-aware validation prevents citing
+  unavailable public sections.
 
 What should happen next:
 
-- Execute Phase 29B: Codex C designs the backend public-evidence contract and
-  projection, while Claude E designs public-role evidence projections, degraded
-  states, and output/evaluation rules.
-- Keep Codex C and Claude E free to choose the backend/agentic design inside the
-  accepted rails: source/rights review, evidence-package-first, saved-report
-  reproducibility, no private brokerage data, no runtime private tools by
-  default, and no advice/order/execution wording.
-- After public evidence is implemented with stable reviewed sample payloads, do
-  a second-pass Reports / Agent Team UX refinement around richer analysis
-  content.
+- Commit and push the accepted P29B-T3A/T3B backend/agentic work.
+- Start P29B-T4 frontend rich report optimization using stable synthetic public
+  evidence sample payloads. Claude Design may be introduced for hierarchy and
+  concept exploration; Stitch should wait until a direction is chosen and must
+  consume reviewed mock data only.
+- Track the 7 unrelated full-backend-suite failures as a separate Codex C
+  backend maintenance/regression task; they are not blockers for P29B-T3.
 
 Architecture references:
 

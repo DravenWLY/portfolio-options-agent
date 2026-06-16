@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from app.schemas.reports import SavedEvidencePackageRead, validate_saved_review_artifact_payload
@@ -145,6 +146,23 @@ REPORT_PROHIBITED_PHRASES = frozenset(
         "guaranteed returns",
     }
 )
+# Bare-number invented technical levels / price targets. Public and technical
+# role narrative is qualitative and carries no numbers, so any level keyword
+# adjacent to a digit is LLM-invented and rejected (deterministic metrics are
+# backend-owned and never appear in narrative). Input is repr().lower().
+INVENTED_LEVEL_PATTERNS = (
+    re.compile(r"\b(?:support|resistance|pivot|breakout|breakdown)\b[^.\n]{0,16}?\d"),
+    re.compile(r"\d[^.\n]{0,8}?\b(?:support|resistance|pivot)\b"),
+    re.compile(r"\b(?:price\s+)?target\b[^.\n]{0,8}?\d"),
+    re.compile(r"\blevels?\b[^.\n]{0,8}?\d"),
+)
+# Source leakage: report output must carry sanitized labels only, never source
+# URLs, links, or raw source references (article bodies are already stripped at
+# the public-evidence layer; this guards generated narrative).
+SOURCE_LEAK_PATTERNS = (
+    re.compile(r"https?://"),
+    re.compile(r"\bwww\.[a-z0-9.-]+"),
+)
 
 
 def validate_agent_team_report_output(
@@ -158,6 +176,8 @@ def validate_agent_team_report_output(
     validate_saved_review_artifact_payload(payload)
     validate_llm_provider_output(payload, label=label)
     _reject_report_phrases(payload, label=label)
+    _reject_source_leaks(payload, label=label)
+    _reject_invented_levels(payload, label=label)
     _validate_evidence_references(payload, evidence_package=evidence_package)
 
 
@@ -165,6 +185,18 @@ def _reject_report_phrases(value: object, *, label: str) -> None:
     rendered = repr(value).lower()
     if any(phrase in rendered for phrase in REPORT_PROHIBITED_PHRASES):
         raise ValueError(f"{label} contains prohibited advice or execution wording")
+
+
+def _reject_source_leaks(value: object, *, label: str) -> None:
+    rendered = repr(value).lower()
+    if any(pattern.search(rendered) for pattern in SOURCE_LEAK_PATTERNS):
+        raise ValueError(f"{label} contains a source URL or raw source reference")
+
+
+def _reject_invented_levels(value: object, *, label: str) -> None:
+    rendered = repr(value).lower()
+    if any(pattern.search(rendered) for pattern in INVENTED_LEVEL_PATTERNS):
+        raise ValueError(f"{label} contains an invented technical level or price target")
 
 
 def _validate_evidence_references(

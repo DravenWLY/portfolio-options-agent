@@ -121,6 +121,32 @@ Current next task:
     - `git diff --check`
   - Review rule: after implementation and verification, request one Codex B
     review-only sub-agent. Do not mark done until Codex B PASS.
+  - Status: done 2026-06-15 by Codex C; Codex B review PASS.
+  - Implementation summary: added `public_evidence` to the saved artifact
+    readback model and `ReportThread.saved_artifact_json` projection path. During
+    explicit Agent Team generation, the backend now builds a generation-time
+    public evidence package, uses that same `SavedEvidencePackageRead` for
+    `validate_agent_team_report_output(..., evidence_package=evidence)`, and
+    persists the same `public_evidence` JSON alongside `agent_summary`.
+    `SavedEvidencePackageRead.from_saved_review_artifact` now reads saved public
+    evidence when present and defaults to `not_reviewed` only for legacy/source
+    artifacts without it. Added `SavedPublicRoleInstrumentContextRead` and
+    `SavedPublicRoleEvidenceProjectionRead`, plus
+    `build_public_role_evidence_projection(...)`, which narrows public evidence
+    for `fundamentals_analyst`, `news_analyst`, and `technical_analyst` to
+    role-allowed public sections and minimal instrument context.
+  - Verification: `cd backend && ./.venv/bin/python -m pytest
+    tests/unit/test_report_agent_schemas.py -q` -> 50 passed.
+    `cd backend && ./.venv/bin/python -m pytest
+    tests/unit/test_report_agent_schemas.py tests/api/test_reports.py
+    tests/api/test_trade_review_workspace.py tests/services/agent_team/
+    tests/services/agent_eval -q` -> 337 passed, 28 skipped, 2 deselected
+    locally (DB destructive-test guard). `git diff --check` clean. Codex B
+    review PASS. Non-blocking T3B handoff: wire public-role generation through
+    `build_public_role_evidence_projection(...)` using the already-built
+    `SavedEvidencePackageRead` instance, and keep
+    `validate_agent_team_report_output(..., evidence_package=evidence)` before
+    persistence so unavailable/not-reviewed public sections cannot be cited.
 
 Follow-up tasks:
 
@@ -136,10 +162,35 @@ Follow-up tasks:
     `validate_agent_team_report_output(..., evidence_package=evidence)` before
     persistence; this is the package-aware validator call that enforces nested
     public-section availability.
+  - Status: done 2026-06-15 by Claude E; Codex B review-only PASS. Public roles
+    are wired through `build_public_role_evidence_projection` on the same
+    `SavedEvidencePackageRead` instance used for package-aware validation and
+    persistence; honest fail-closed degradation matching P29B-T2
+    (not_reviewed/not_available/not_applicable -> skipped; assembly failure ->
+    unavailable/`public_evidence_provider_unavailable`; limited/stale ->
+    completed only with explicit caveat); run-level coverage code
+    (`public_evidence_roles_skipped` / `_partial_coverage` / `_roles_included`)
+    and dynamic `run_status`. Added `INVENTED_LEVEL_PATTERNS` and
+    `SOURCE_LEAK_PATTERNS` guards to `report_output_safety.py` (bare-number
+    support/resistance/pivot/target/level and source URLs). Files: backend/app/
+    services/reports/agent_team_report.py, backend/app/services/agent_team/
+    report_output_safety.py, backend/tests/unit/test_report_agent_schemas.py
+    (+9 positive/negative tests). Default not_reviewed behavior and existing P29A
+    behavior unchanged; offending generated text never persisted. Verification:
+    `tests/unit/test_report_agent_schemas.py` -> 59 passed; the T3B suite
+    (`test_report_agent_schemas.py test_reports.py test_trade_review_workspace.py
+    tests/services/agent_team/ tests/services/agent_eval`) -> 346 passed, 28
+    skipped, 2 deselected; `git diff --check` clean. (7 unrelated full-suite
+    failures in cash_balance/option_position/stock_position model-column,
+    economic_calendar, and snaptrade adapter tests are pre-existing — confirmed
+    by stashing the T3B files and re-running — and out of scope for T3B.)
 - `P29B-T3C` - Integrated closeout and docs checkpoint.
-  - Owner: original implementer of the final T3B fix, with Codex B review.
+  - Owner: Codex B.
   - Scope: close P29B-T3 after T3A/T3B PASS, then update only this active plan,
     changelog, and any required architecture note.
+  - Status: done 2026-06-15. T3A and T3B are reviewed PASS; active plan is
+    concise; P29B-T4 is the next planned product/frontend step. Commit/push
+    checkpoint for T3A/T3B should happen now before frontend/design work.
 - `P29B-T4` - Frontend rich report optimization.
   - Owner: Claude A or Codex F.
   - Reviewers: Claude B and Codex B.
@@ -150,18 +201,19 @@ Follow-up tasks:
 
 ## Coordination Checkpoint
 
-Checkpoint status: active cleanup in progress before P29B-T3A.
+Checkpoint status: P28A/P29A/P29B foundation was committed and pushed at
+`800561c` before P29B-T3A. Current post-checkpoint worktree contains intentional
+P29B-T3A/T3B changes only and should be committed/pushed before P29B-T4.
 
-Before Codex C starts P29B-T3A:
+Known unrelated test debt:
 
-- archive the long active-plan snapshot;
-- keep this active plan short;
-- verify the dirty worktree contains only intentional recent phase changes;
-- commit and push the accepted P28A/P29A/P29B foundation.
-
-Rationale: P29B-T3A will modify saved-artifact/readback and report-generation
-seams that already carry many recent accepted changes. A checkpoint now reduces
-review risk and prevents future agents from rereading completed history.
+- A full backend suite run by Claude E showed 7 failures in unrelated
+  cash_balance / option_position / stock_position model-column tests,
+  economic_calendar, and SnapTrade adapter short-call mapping tests.
+- Claude E confirmed the same failures remain after stashing T3B files, so they
+  are pre-existing and must not block P29B-T3 closeout.
+- Recommended owner: Codex C, as a separate backend regression/maintenance task
+  after the P29B-T3 checkpoint.
 
 ## Paused Or Deferred
 

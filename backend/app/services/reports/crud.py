@@ -86,6 +86,7 @@ def create_saved_review_artifact(
         "scope_metadata": source.scope_metadata_json,
         "deterministic_summary": source.deterministic_summary_json,
         "agent_summary": source.agent_summary_json,
+        "public_evidence": None,
         "generated_at": source.generated_at.isoformat(),
         "saved_at": saved_at.isoformat(),
         "review_pipeline_label": source.review_pipeline_label,
@@ -172,6 +173,7 @@ def saved_review_artifact_for_thread(report_thread: ReportThread) -> SavedReview
         scope_metadata=saved_artifact_json.get("scope_metadata"),
         deterministic_summary=saved_artifact_json.get("deterministic_summary"),
         agent_summary=saved_artifact_json.get("agent_summary"),
+        public_evidence=saved_artifact_json.get("public_evidence"),
         generated_at=generated_at,
         saved_at=saved_at,
         review_pipeline_label=saved_artifact_json.get("review_pipeline_label")
@@ -229,6 +231,7 @@ def _saved_artifact_json_can_be_committed(
             scope_metadata=saved_artifact_json.get("scope_metadata"),
             deterministic_summary=saved_artifact_json.get("deterministic_summary"),
             agent_summary=saved_artifact_json.get("agent_summary"),
+            public_evidence=saved_artifact_json.get("public_evidence"),
             generated_at=saved_artifact_json.get("generated_at"),
             saved_at=saved_artifact_json.get("saved_at"),
             review_pipeline_label=saved_artifact_json.get("review_pipeline_label"),

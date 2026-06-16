@@ -21,6 +21,7 @@ from app.schemas.reports import (
     SavedEvidenceSectionRead,
     SavedPublicEvidencePackageRead,
     SavedPublicEvidenceSectionRead,
+    SavedPublicRoleEvidenceProjectionRead,
     SavedReviewArtifactCreateRequest,
     SavedReviewArtifactRead,
     SavedReviewReportMetadataRead,
@@ -35,11 +36,16 @@ from app.services.reports.agent_team_report import (
     build_agent_team_summary_from_evidence,
     build_validation_failed_summary_for_test,
 )
-from app.services.reports.public_evidence import build_public_evidence_projection
+from app.services.reports.public_evidence import (
+    build_public_evidence_projection,
+    build_public_role_evidence_projection,
+)
 from app.services.agent_team.report_output_safety import validate_agent_team_report_output
 
 
 pytestmark = pytest.mark.unit
+
+_PUBLIC_ROLES = frozenset({"fundamentals_analyst", "news_analyst", "technical_analyst"})
 
 
 def test_report_thread_create_schema() -> None:
@@ -375,6 +381,75 @@ def test_saved_evidence_package_projects_from_saved_artifact_without_account_lab
     assert "ctx_reportscope1" not in rendered
 
 
+def test_saved_evidence_package_uses_saved_public_evidence_when_present() -> None:
+    public_evidence = SavedPublicEvidencePackageRead.not_reviewed("HOOD").model_copy(
+        update={
+            "public_evidence_mode": "synthetic_demo",
+            "public_company_profile": _reviewed_public_section(
+                "public_company_profile",
+                "Public company profile",
+                "Reviewed synthetic company profile attached at generation time.",
+            ),
+        }
+    )
+    artifact = _saved_review_artifact().model_copy(update={"public_evidence": public_evidence})
+
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
+
+    assert evidence.public_evidence is not None
+    assert evidence.public_evidence.public_evidence_mode == "synthetic_demo"
+    assert evidence.public_evidence.public_company_profile.availability == "available"
+    assert evidence.public_evidence.public_company_profile.summary_label == (
+        "Reviewed synthetic company profile attached at generation time."
+    )
+
+
+def test_saved_review_artifact_for_thread_reads_public_evidence_from_saved_json() -> None:
+    generated = datetime.now(UTC)
+    public_evidence = SavedPublicEvidencePackageRead.not_reviewed("HOOD").model_copy(
+        update={
+            "public_evidence_mode": "synthetic_demo",
+            "public_company_profile": _reviewed_public_section(
+                "public_company_profile",
+                "Public company profile",
+                "Reviewed synthetic company profile attached at generation time.",
+            ),
+        }
+    )
+    report_thread = ReportThread(
+        id=uuid4(),
+        user_id=uuid4(),
+        account_id=None,
+        title="Saved reviewed report",
+        report_type="trade_review",
+        status="completed",
+        created_at=generated,
+        updated_at=generated,
+        deleted_at=None,
+        saved_artifact_json={
+            "artifact_reference": "svrev_savedreview1",
+            "source_kind": "trade_review_workspace",
+            "source_reference": "workspace_savedreview1",
+            "scope_metadata": _saved_scope_metadata().model_dump(mode="json"),
+            "deterministic_summary": _saved_deterministic_summary().model_dump(mode="json"),
+            "agent_summary": None,
+            "public_evidence": public_evidence.model_dump(mode="json"),
+            "generated_at": generated.isoformat(),
+            "saved_at": generated.isoformat(),
+            "review_pipeline_label": "Portfolio Copilot review pipeline",
+            "limitations": ("Generated from reviewed data available at the time.",),
+            "caveat_codes": ("selected_context_scope",),
+        },
+    )
+
+    artifact = saved_review_artifact_for_thread(report_thread)
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
+
+    assert artifact.public_evidence is not None
+    assert evidence.public_evidence is not None
+    assert evidence.public_evidence.public_company_profile.availability == "available"
+
+
 def test_saved_public_evidence_package_defaults_to_not_reviewed_sections() -> None:
     public_evidence = SavedPublicEvidencePackageRead.not_reviewed("HOOD")
 
@@ -407,6 +482,61 @@ def test_public_evidence_projection_default_provider_is_not_reviewed_and_offline
     assert public_evidence.symbol_or_underlying == "HOOD"
     assert public_evidence.public_news_snapshot.availability == "not_reviewed"
     assert public_evidence.public_technical_context.source_label == "No reviewed public source attached"
+
+
+def test_public_role_evidence_projection_narrows_sections_to_role_boundary() -> None:
+    public_evidence = SavedPublicEvidencePackageRead.not_reviewed("HOOD").model_copy(
+        update={
+            "public_evidence_mode": "synthetic_demo",
+            "public_company_profile": _reviewed_public_section(
+                "public_company_profile",
+                "Public company profile",
+                "Reviewed synthetic company profile.",
+            ),
+            "public_fundamentals_snapshot": _reviewed_public_section(
+                "public_fundamentals_snapshot",
+                "Public fundamentals snapshot",
+                "Reviewed synthetic fundamentals snapshot.",
+            ),
+            "public_events_calendar": _reviewed_public_section(
+                "public_events_calendar",
+                "Public events calendar",
+                "Reviewed synthetic event calendar.",
+            ),
+            "public_news_snapshot": _reviewed_public_section(
+                "public_news_snapshot",
+                "Public news snapshot",
+                "Reviewed synthetic news snapshot.",
+            ),
+        }
+    )
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(
+        _saved_review_artifact().model_copy(update={"public_evidence": public_evidence})
+    )
+
+    projection = build_public_role_evidence_projection(evidence, role_name="fundamentals_analyst")
+
+    assert projection.role_name == "fundamentals_analyst"
+    assert projection.instrument_context.symbol_or_underlying == "HOOD"
+    assert projection.allowed_section_keys == (
+        "public_company_profile",
+        "public_fundamentals_snapshot",
+        "public_events_calendar",
+    )
+    assert projection.citable_section_keys == projection.allowed_section_keys
+    assert {section.section_key for section in projection.sections} == set(projection.allowed_section_keys)
+    assert "public_news_snapshot" not in projection.allowed_section_keys
+    assert projection.degrade_reason is None
+
+
+def test_public_role_evidence_projection_defaults_to_no_reviewed_public_evidence() -> None:
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(_saved_review_artifact())
+
+    projection = build_public_role_evidence_projection(evidence, role_name="news_analyst")
+
+    assert projection.citable_section_keys == ()
+    assert projection.degrade_reason == "no_reviewed_public_evidence"
+    assert {section.availability for section in projection.sections} == {"not_reviewed"}
 
 
 def test_saved_public_evidence_rejects_raw_source_payloads_urls_and_article_bodies() -> None:
@@ -810,6 +940,185 @@ def test_agent_team_report_validation_failure_falls_back_without_persisting_unsa
     assert "trade recommendation" not in rendered
 
 
+# -- P29B-T3B: public-role generation wiring and validation behavior ----------
+
+
+def test_public_roles_skip_honestly_for_default_not_reviewed_evidence() -> None:
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(_saved_review_artifact())
+
+    summary = build_agent_team_summary_from_evidence(
+        evidence, report_generated_at=datetime(2026, 6, 15, 23, 0, tzinfo=UTC)
+    )
+
+    public = {s.role_name: s for s in summary.role_summaries if s.role_name in _PUBLIC_ROLES}
+    assert {s.role_status for s in public.values()} == {"skipped"}
+    assert all(s.unavailable_reason == "no_reviewed_public_evidence" for s in public.values())
+    assert all(s.summary_markdown is None for s in public.values())
+    assert summary.warning_codes == ("public_evidence_roles_skipped",)
+    assert summary.run_status == "partially_completed"
+    assert summary.report_status == "full_agent_report"
+    validate_agent_team_report_output(
+        summary.model_dump(mode="python"), label="agent-team saved report", evidence_package=evidence
+    )
+
+
+def test_public_roles_complete_from_reviewed_available_public_evidence() -> None:
+    evidence = _evidence_with_public_sections(_all_reviewed_public_sections())
+    report_generated_at = datetime(2026, 6, 15, 21, 0, tzinfo=UTC)
+
+    summary = build_agent_team_summary_from_evidence(evidence, report_generated_at=report_generated_at)
+
+    public = {s.role_name: s for s in summary.role_summaries if s.role_name in _PUBLIC_ROLES}
+    assert {s.role_status for s in public.values()} == {"completed"}
+    assert "public_company_profile" in public["fundamentals_analyst"].evidence_references
+    assert "public_news_snapshot" in public["news_analyst"].evidence_references
+    assert "public_technical_context" in public["technical_analyst"].evidence_references
+    assert all("trade_intent_summary" in s.evidence_references for s in public.values())
+    assert summary.warning_codes == ("public_evidence_roles_included",)
+    assert summary.run_status == "completed"
+    # End-to-end: completed public summaries pass package-aware validation and do
+    # not fall back to validation_failed.
+    validate_agent_team_report_output(
+        summary.model_dump(mode="python"), label="agent-team saved report", evidence_package=evidence
+    )
+    revalidated = build_validation_failed_summary_for_test(
+        evidence, summary.model_dump(mode="python"), report_generated_at=report_generated_at
+    )
+    assert revalidated.report_status == "full_agent_report"
+
+
+def test_public_role_limited_evidence_completes_with_explicit_caveat() -> None:
+    sections = _all_reviewed_public_sections()
+    sections["public_news_snapshot"] = _limited_public_section(
+        "public_news_snapshot", "Public news snapshot", "Limited/stale synthetic news snapshot."
+    )
+    evidence = _evidence_with_public_sections(sections)
+
+    summary = build_agent_team_summary_from_evidence(
+        evidence, report_generated_at=datetime(2026, 6, 15, 21, 30, tzinfo=UTC)
+    )
+
+    news = next(s for s in summary.role_summaries if s.role_name == "news_analyst")
+    assert news.role_status == "completed"
+    assert "public_evidence_limited" in news.warning_codes
+    assert "limited or stale" in (news.summary_markdown or "")
+    validate_agent_team_report_output(
+        summary.model_dump(mode="python"), label="agent-team saved report", evidence_package=evidence
+    )
+
+
+def test_public_roles_partial_coverage_when_only_some_evidence_reviewed() -> None:
+    # Only the fundamentals-unique sections are reviewed; the events calendar is
+    # shared with news, so it stays not_reviewed to keep news/technical skipped.
+    sections = {
+        "public_company_profile": _reviewed_public_section(
+            "public_company_profile", "Public company profile", "Reviewed synthetic company profile."
+        ),
+        "public_fundamentals_snapshot": _reviewed_public_section(
+            "public_fundamentals_snapshot", "Public fundamentals snapshot", "Reviewed synthetic fundamentals."
+        ),
+    }
+    evidence = _evidence_with_public_sections(sections)
+
+    summary = build_agent_team_summary_from_evidence(
+        evidence, report_generated_at=datetime(2026, 6, 15, 22, 0, tzinfo=UTC)
+    )
+
+    by_role = {s.role_name: s for s in summary.role_summaries}
+    assert by_role["fundamentals_analyst"].role_status == "completed"
+    assert by_role["news_analyst"].role_status == "skipped"
+    assert by_role["news_analyst"].unavailable_reason == "no_reviewed_public_evidence"
+    assert by_role["technical_analyst"].role_status == "skipped"
+    assert summary.warning_codes == ("public_evidence_partial_coverage",)
+    assert summary.run_status == "partially_completed"
+    validate_agent_team_report_output(
+        summary.model_dump(mode="python"), label="agent-team saved report", evidence_package=evidence
+    )
+
+
+def test_public_role_assembly_failure_degrades_to_unavailable(monkeypatch) -> None:
+    import app.services.reports.agent_team_report as agent_team_report_module
+
+    def _raise_assembly_failure(*args, **kwargs):
+        raise ValueError("synthetic public-evidence projection assembly failure")
+
+    monkeypatch.setattr(
+        agent_team_report_module, "build_public_role_evidence_projection", _raise_assembly_failure
+    )
+    evidence = _evidence_with_public_sections(_all_reviewed_public_sections())
+
+    summary = build_agent_team_summary_from_evidence(
+        evidence, report_generated_at=datetime(2026, 6, 15, 22, 30, tzinfo=UTC)
+    )
+
+    public = {s.role_name: s for s in summary.role_summaries if s.role_name in _PUBLIC_ROLES}
+    assert {s.role_status for s in public.values()} == {"unavailable"}
+    assert all(s.unavailable_reason == "public_evidence_provider_unavailable" for s in public.values())
+    assert all(s.summary_markdown is None for s in public.values())
+    assert summary.warning_codes == ("public_evidence_roles_skipped",)
+    validate_agent_team_report_output(
+        summary.model_dump(mode="python"), label="agent-team saved report", evidence_package=evidence
+    )
+
+
+def test_public_role_cross_boundary_citation_fails_closed() -> None:
+    evidence = _evidence_with_public_sections(_all_reviewed_public_sections())
+    # public_news_snapshot is available but outside the fundamentals boundary.
+    payload = _single_role_summary_payload(
+        "fundamentals_analyst",
+        "Fundamentals Analyst",
+        ("trade_intent_summary", "public_news_snapshot"),
+        "Fundamentals summary citing a news section.",
+    )
+
+    with pytest.raises(ValueError):
+        validate_agent_team_report_output(payload, label="agent-team saved report", evidence_package=evidence)
+
+
+def test_report_output_rejects_invented_levels_and_price_targets() -> None:
+    evidence = _evidence_with_public_sections(_all_reviewed_public_sections())
+    for unsafe_markdown in (
+        "Technical view for HOOD: watch support at 145 and resistance near 160.",
+        "Technical view for HOOD: estimated target of 172 over the next year.",
+    ):
+        payload = _single_role_summary_payload(
+            "technical_analyst",
+            "Technical Analyst",
+            ("trade_intent_summary", "public_technical_context"),
+            unsafe_markdown,
+        )
+        with pytest.raises(ValueError):
+            validate_agent_team_report_output(
+                payload, label="agent-team saved report", evidence_package=evidence
+            )
+
+
+def test_report_output_rejects_source_url_leak() -> None:
+    evidence = _evidence_with_public_sections(_all_reviewed_public_sections())
+    payload = _single_role_summary_payload(
+        "news_analyst",
+        "News Analyst",
+        ("trade_intent_summary", "public_news_snapshot"),
+        "News summary. See https://news.example.com/article for the full story.",
+    )
+
+    with pytest.raises(ValueError):
+        validate_agent_team_report_output(payload, label="agent-team saved report", evidence_package=evidence)
+
+
+def test_report_output_rejects_private_data_token_in_public_summary() -> None:
+    evidence = _evidence_with_public_sections(_all_reviewed_public_sections())
+    payload = _single_role_summary_payload(
+        "fundamentals_analyst",
+        "Fundamentals Analyst",
+        ("trade_intent_summary", "public_company_profile"),
+        "Fundamentals summary referencing account_id for the reviewed account.",
+    )
+
+    with pytest.raises(ValueError):
+        validate_agent_team_report_output(payload, label="agent-team saved report", evidence_package=evidence)
+
+
 def test_saved_review_report_metadata_validates_report_reference() -> None:
     valid = SavedReviewReportMetadataRead(
         report_reference="svrev_savedreview1",
@@ -938,6 +1247,7 @@ def test_report_and_agent_schemas_do_not_expose_secret_fields() -> None:
         SavedEvidenceSectionRead,
         SavedPublicEvidencePackageRead,
         SavedPublicEvidenceSectionRead,
+        SavedPublicRoleEvidenceProjectionRead,
         SavedDeterministicReviewSummaryRead,
         SavedAgentTeamSummaryRead,
         SavedAgentTeamRoleSummaryRead,
@@ -1064,6 +1374,80 @@ def _reviewed_public_section(
         ),
         limitations=("Synthetic public evidence for backend contract tests only.",),
     )
+
+
+def _limited_public_section(
+    section_key: str,
+    section_label: str,
+    summary_label: str,
+) -> SavedPublicEvidenceSectionRead:
+    return SavedPublicEvidenceSectionRead(
+        section_key=section_key,  # type: ignore[arg-type]
+        section_label=section_label,
+        availability="limited",
+        freshness_category="stale",
+        freshness_label="Collected earlier; may be stale for this saved report",
+        source_label="Synthetic public evidence",
+        rights_status="internal_demo_only",
+        summary_label=summary_label,
+        limitations=("Synthetic limited/stale public evidence for backend contract tests only.",),
+    )
+
+
+def _all_reviewed_public_sections() -> dict[str, SavedPublicEvidenceSectionRead]:
+    labels = {
+        "public_company_profile": "Public company profile",
+        "public_fundamentals_snapshot": "Public fundamentals snapshot",
+        "public_events_calendar": "Public events calendar",
+        "public_news_snapshot": "Public news snapshot",
+        "public_market_context": "Public market context",
+        "public_technical_context": "Public technical context",
+    }
+    return {
+        key: _reviewed_public_section(key, label, f"Reviewed synthetic {label.lower()}.")
+        for key, label in labels.items()
+    }
+
+
+def _evidence_with_public_sections(
+    sections: dict[str, SavedPublicEvidenceSectionRead],
+) -> SavedEvidencePackageRead:
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(_saved_review_artifact())
+    assert evidence.public_evidence is not None
+    public_evidence = evidence.public_evidence.model_copy(
+        update={"public_evidence_mode": "synthetic_demo", **sections}
+    )
+    return evidence.model_copy(update={"public_evidence": public_evidence})
+
+
+def _single_role_summary_payload(
+    role_name: str,
+    display_name: str,
+    evidence_references: tuple[str, ...],
+    summary_markdown: str,
+) -> dict:
+    return {
+        "run_status": "partially_completed",
+        "provider_mode": "deterministic_template",
+        "role_summaries": (
+            {
+                "role_name": role_name,
+                "display_name": display_name,
+                "role_status": "completed",
+                "provider_status": "ok",
+                "summary_markdown": summary_markdown,
+                "evidence_references": evidence_references,
+                "warning_codes": (),
+                "unavailable_reason": None,
+            },
+        ),
+        "warning_codes": (),
+        "report_status": "full_agent_report",
+        "final_synthesis_markdown": "Agent Team analysis is generated from the saved evidence package.",
+        "final_synthesis_authored_by": "deterministic_template",
+        "evidence_schema_version": "p29a_t1_v1",
+        "evidence_references": ("trade_intent_summary",),
+    }
 
 
 def _saved_evidence_with_unavailable_market_quote() -> SavedEvidencePackageRead:

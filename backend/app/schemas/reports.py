@@ -36,6 +36,7 @@ SavedPublicEvidenceSectionKey = Literal[
     "public_technical_context",
     "public_market_context",
 ]
+AgentTeamPublicRoleName = Literal["fundamentals_analyst", "news_analyst", "technical_analyst"]
 AgentTeamReportStatus = Literal[
     "source_snapshot",
     "deterministic_draft",
@@ -388,6 +389,7 @@ class SavedReviewArtifactRead(BaseModel):
     scope_metadata: ReportScopeMetadataRead | None = None
     deterministic_summary: SavedDeterministicReviewSummaryRead | None = None
     agent_summary: SavedAgentTeamSummaryRead | None = None
+    public_evidence: "SavedPublicEvidencePackageRead | None" = None
     generated_at: datetime
     saved_at: datetime
     review_pipeline_label: str
@@ -593,6 +595,42 @@ class SavedPublicEvidencePackageRead(BaseModel):
         return self
 
 
+class SavedPublicRoleInstrumentContextRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    symbol_or_underlying: str | None = None
+    review_flow_label: str
+
+    @model_validator(mode="after")
+    def instrument_context_must_be_safe(self) -> "SavedPublicRoleInstrumentContextRead":
+        validate_public_evidence_payload(self.model_dump(mode="python"))
+        return self
+
+
+class SavedPublicRoleEvidenceProjectionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    role_name: AgentTeamPublicRoleName
+    instrument_context: SavedPublicRoleInstrumentContextRead
+    allowed_section_keys: tuple[SavedPublicEvidenceSectionKey, ...]
+    sections: tuple[SavedPublicEvidenceSectionRead, ...]
+    citable_section_keys: tuple[SavedPublicEvidenceSectionKey, ...]
+    degrade_reason: str | None = None
+
+    @model_validator(mode="after")
+    def public_role_projection_must_be_safe(self) -> "SavedPublicRoleEvidenceProjectionRead":
+        validate_public_evidence_payload(self.model_dump(mode="python"))
+        allowed = set(self.allowed_section_keys)
+        section_keys = {section.section_key for section in self.sections}
+        citable = set(self.citable_section_keys)
+        if not section_keys.issubset(allowed) or not citable.issubset(allowed):
+            raise ValueError("public role projection contains evidence outside the role boundary")
+        availability_by_key = {section.section_key: section.availability for section in self.sections}
+        if any(availability_by_key.get(section_key) not in {"available", "limited"} for section_key in citable):
+            raise ValueError("public role projection cites unavailable public evidence")
+        return self
+
+
 def _not_reviewed_public_section(
     section_key: SavedPublicEvidenceSectionKey,
     section_label: str,
@@ -747,7 +785,11 @@ class SavedEvidencePackageRead(BaseModel):
                 availability="not_reviewed",
                 summary_label="Market Mood was not included in this saved source.",
             ),
-            public_evidence=SavedPublicEvidencePackageRead.not_reviewed(deterministic.symbol_or_underlying),
+            public_evidence=(
+                artifact.public_evidence
+                if artifact.public_evidence is not None
+                else SavedPublicEvidencePackageRead.not_reviewed(deterministic.symbol_or_underlying)
+            ),
             caveat_codes=caveat_codes,
             limitations=limitations,
         )

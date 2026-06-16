@@ -191,6 +191,8 @@ def test_generate_agent_team_report_persists_summary_and_projects_on_reports(
     saved = response.json()
     assert saved["agent_summary"]["report_status"] == "full_agent_report"
     assert saved["agent_summary"]["report_generated_at"] == first_generated_at.isoformat().replace("+00:00", "Z")
+    assert saved["public_evidence"]["public_evidence_mode"] == "not_reviewed"
+    assert saved["public_evidence"]["public_company_profile"]["availability"] == "not_reviewed"
     assert saved["agent_summary"]["final_synthesis_markdown"] is not None
     assert saved["agent_summary"]["evidence_schema_version"] == "p29a_t1_v1"
     assert saved["agent_summary"]["role_summaries"]
@@ -218,6 +220,7 @@ def test_generate_agent_team_report_persists_summary_and_projects_on_reports(
     regenerated = regenerated_response.json()
     assert regenerated["agent_summary"]["report_generated_at"] == second_generated_at.isoformat().replace("+00:00", "Z")
     assert regenerated["agent_summary"]["report_status"] == "full_agent_report"
+    assert regenerated["public_evidence"] == saved["public_evidence"]
     assert {
         "source_reference": regenerated["source_reference"],
         "scope_metadata": regenerated["scope_metadata"],

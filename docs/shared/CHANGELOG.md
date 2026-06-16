@@ -1,5 +1,15 @@
 # Changelog
 
+- 2026-06-15: Added P29B-T3A backend public evidence persistence and projection
+  seam. Explicit Agent Team generation now persists generation-time
+  `public_evidence` inside the saved artifact JSON alongside `agent_summary`,
+  and `SavedEvidencePackageRead.from_saved_review_artifact` reads saved public
+  sections back before falling back to legacy `not_reviewed` defaults. Added a
+  role-scoped public evidence projection contract for fundamentals, news, and
+  technical analysts; projections expose only role-allowed sanitized public
+  sections plus minimal instrument context. Providers remain offline/synthetic
+  only; no public-role generation, frontend, live source, runtime tool, LLM,
+  TradingAgents, or provider integration was added.
 - 2026-06-15: Added P29B-T1 backend public evidence contract foundation.
   `SavedEvidencePackageRead` now has an additive `public_evidence` block with
   stable public section keys for company profile, fundamentals, news, events,

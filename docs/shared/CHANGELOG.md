@@ -1,5 +1,10 @@
 # Changelog
 
+- 2026-06-19: Drafted P29C-T0 public-evidence source governance. The proposed
+  architecture preserves the P29B saved evidence contract and adds a fail-closed
+  approval/acquisition boundary: no source or provider is authorized until the
+  founder records LLM, persistence, display, attribution, retention, and
+  environment rights for one initial section.
 - 2026-06-19: Closed MAINT-BE-1 by reconciling seven stale/nondeterministic
   backend tests without changing production behavior: three migration-backed
   model-column expectations, three economic-calendar tests isolated from ambient

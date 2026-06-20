@@ -66,6 +66,7 @@ Reference docs:
 - `docs/codex-b-architecture/PHASE_28A_SAVED_REVIEW_ARTIFACT_CONTRACT.md`
 - `docs/codex-b-architecture/PHASE_29A_AGENT_TEAM_REPORT_ARCHITECTURE.md`
 - `docs/codex-b-architecture/PHASE_29B_PUBLIC_AGENT_EVIDENCE_CONTRACT.md`
+- `docs/codex-b-architecture/PHASE_29C_PUBLIC_EVIDENCE_SOURCE_GOVERNANCE.md`
 - `docs/claude-e-agentic/PHASE_29A_T2_AGENT_TEAM_REPORT_OUTPUT_CONTRACT.md`
 - `docs/claude-e-agentic/PHASE_29A_T5_REPORT_GENERATION_UX_POLICY.md`
 - `docs/claude-e-agentic/PHASE_29B_T2_PUBLIC_ROLE_AGENTIC_DESIGN.md`
@@ -111,29 +112,23 @@ Detailed verification history is archived in:
   freshness operations move to the next architecture phase.
 - Detailed P29B-T4 through T7 implementation and verification history is archived in
   `docs/shared/implementation_plan_archive_2026-06-19.md`.
+- `MAINT-BE-1` - Seven stale/nondeterministic backend tests reconciled; full
+  backend suite clean (`1045 passed`, `122 skipped`, `3 deselected`).
 
 ## Next Handoff
 
-- `MAINT-BE-1` - Reconcile the seven known backend-suite failures.
-  - Owner: Codex C.
-  - Reviewer: Codex B for any contract/behavior change; ordinary test-expectation
-    corrections may use Codex C review-only verification under team policy.
-  - Scope: triage each failure against current intended behavior, then update
-    stale tests or fix genuine regressions in narrow groups. Do not bundle new
-    product features, provider integration, schema migrations, or frontend work.
-  - Failure groups: CashBalance/OptionPosition/StockPosition model-column
-    expectations; economic-calendar cache-sensitive API assertions; SnapTrade
-    short-call mapping expectation.
-  - Safety: no real DB, broker/provider calls, secrets, private payloads, or live
-    account data. Tests must remain offline/synthetic unless separately approved.
-  - Completion: full backend suite passes, or any genuinely environment-gated
-    residual is documented with a deterministic focused test and explicit owner.
-  - Status: done 2026-06-19; review-only Codex B PASS. The seven failures were
-    reconciled as migration-backed stale model-column expectations, an
-    economic-calendar test-isolation defect, and a stale SnapTrade short-call
-    fixture/assertion. No production code, schema, migration, provider behavior,
-    privacy boundary, or contract behavior changed. Full backend suite: `1045
-    passed`, `122` legitimate DB-gated skips, `3 deselected`.
+- `P29C-T0` - Public evidence source governance and founder decision.
+  - Owner: Codex B and founder.
+  - Architecture draft:
+    `docs/codex-b-architecture/PHASE_29C_PUBLIC_EVIDENCE_SOURCE_GOVERNANCE.md`.
+  - Current gate: approve the architecture, choose exactly one initial public
+    evidence section/source category, and record permitted LLM, persistence,
+    display, attribution, retention, and environment uses.
+  - Status: architecture drafted 2026-06-19; founder/source-rights decision
+    pending. No provider or backend implementation is authorized yet.
+  - Next implementation owner after PASS: Codex C for P29C-T1, beginning with an
+    offline fail-closed source-policy/fake-adapter contract. External calls remain
+    out of scope until a separate approved P29C-T2 source slice.
 
 ## Coordination Checkpoint
 

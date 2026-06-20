@@ -121,13 +121,12 @@ What is complete:
 
 What should happen next:
 
-1. Codex C owns a separate maintenance task for the seven known full-backend-
-   suite failures: model-column expectation drift, economic-calendar cache
-   sensitivity, and SnapTrade short-call mapping expectation drift.
-2. After maintenance triage, propose the next architecture phase for production-
-   reviewed public evidence sourcing, rights, provider policy, freshness, and
-   generation-time persistence. No provider integration starts before founder
-   source/rights direction and Codex B architecture/privacy review.
+1. MAINT-BE-1 is complete; the full backend suite is clean apart from legitimate
+   DB-gated skips and configured deselections.
+2. Review P29C-T0, the proposed source-governance architecture for production-
+   reviewed public evidence. The founder must choose one initial section/source
+   category and approve LLM, persistence, display, attribution, retention, and
+   environment uses before Codex C receives a provider task.
 3. Keep Account Details and Agent Console outside routine Skyframe rollout.
    Either surface requires its own narrow privacy-safe plan and review gates.
 
@@ -136,6 +135,7 @@ Architecture references:
 - `docs/codex-b-architecture/PHASE_29A_AGENT_TEAM_REPORT_ARCHITECTURE.md`
 - `docs/claude-e-agentic/PHASE_29A_T2_AGENT_TEAM_REPORT_OUTPUT_CONTRACT.md`
 - `docs/codex-b-architecture/PHASE_29B_PUBLIC_AGENT_EVIDENCE_CONTRACT.md`
+- `docs/codex-b-architecture/PHASE_29C_PUBLIC_EVIDENCE_SOURCE_GOVERNANCE.md`
 
 ### Deferred Scope Management
 

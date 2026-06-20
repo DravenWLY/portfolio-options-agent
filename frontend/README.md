@@ -24,6 +24,13 @@ The dev server starts at `http://localhost:5173`.
 All `/api` requests are proxied to `http://localhost:8000` — see `vite.config.ts`.
 The frontend never calls broker APIs or market-data providers directly.
 
+For reviewed local Skyframe fixture smoke runs, the development proxy can read
+`SKYFRAME_FIXTURE_HEADER=private-safe-v1` and
+`SKYFRAME_DASHBOARD_STATE=unavailable|populated|empty` and forward their
+corresponding request headers to the backend. These variables are proxy-only:
+they must not use a `VITE_` prefix and are never bundled into browser code.
+Backend fixture activation still requires its separate local-only safety gates.
+
 ## Available commands
 
 | Command             | Description                        |

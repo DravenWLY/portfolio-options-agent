@@ -17,6 +17,7 @@ from app.api.routes import (
     users,
 )
 from app.core.access_guard import require_local_access
+from app.services.skyframe_fixtures import SkyframeFixtureMiddleware
 from app.services.symbol_directory import run_symbol_directory_startup_refresh_if_enabled
 
 
@@ -32,6 +33,7 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+app.add_middleware(SkyframeFixtureMiddleware)
 
 protected = [Depends(require_local_access)]
 

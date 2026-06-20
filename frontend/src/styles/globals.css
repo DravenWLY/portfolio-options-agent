@@ -136,6 +136,10 @@
   --sidebar-width-collapsed: 60px;
   --topbar-height: 52px;
 
+  /* Skyframe shared page frame. The primitive reads this token by default so
+     page max-width stays in the CSS token layer rather than component code. */
+  --skyframe-page-max: 1320px;
+
   /* ==========================================================================
      P20A-T1 — Modern Portfolio Desk tokens (PREFIX COEXISTENCE).
      Translated (not pasted) from the typed prototype at
@@ -304,6 +308,83 @@ body {
 .mp-surface { font-family: var(--mp-font-sans); }
 .mp-display { font-family: var(--mp-font-display); letter-spacing: -0.01em; }
 .mp-mono    { font-family: var(--mp-font-mono); font-variant-numeric: tabular-nums; }
+
+/* P29B-T5B — Reports-only Skyframe surface prototype.
+   Sky blue is atmosphere, not action color: controls and focus states keep
+   contrast-safe MP accent values while the Reports page gets a light sky wash,
+   stepped white/near-white cards, and stronger rules for scan clarity. */
+.reports-skyframe {
+  /* Reports-specific memo surfaces. The page frame + top-anchored sky wash now
+     come from the shared .skyframe-surface primitive (P29B-T6A). */
+  --reports-rail-surface: rgba(22, 25, 33, 0.82);
+  --reports-reading-surface: var(--mp-card);
+  --reports-card-surface: var(--mp-card);
+  --reports-soft-surface: var(--mp-paper-2);
+  --reports-evidence-surface: rgba(31, 36, 48, 0.70);
+  --reports-trust-surface:
+    linear-gradient(135deg, rgba(34, 211, 238, 0.10), rgba(96, 165, 250, 0.04)),
+    var(--mp-paper-2);
+  --reports-action-surface:
+    linear-gradient(135deg, rgba(34, 211, 238, 0.14), rgba(96, 165, 250, 0.05)),
+    var(--mp-card);
+  --reports-rule: var(--mp-rule);
+  --reports-rule-strong: var(--mp-rule-2);
+  --reports-section-shadow: 0 10px 28px -24px rgba(0, 0, 0, 0.65);
+}
+
+[data-theme="light"] .reports-skyframe {
+  --reports-rail-surface: rgba(255, 255, 255, 0.90);
+  --reports-reading-surface: #FFFFFF;
+  --reports-card-surface: #FFFFFF;
+  --reports-soft-surface: #F3F8FD;
+  --reports-evidence-surface: #F7FAFE;
+  --reports-trust-surface:
+    linear-gradient(135deg, rgba(189, 224, 254, 0.58), rgba(255, 255, 255, 0.82)),
+    #F8FBFF;
+  --reports-action-surface:
+    linear-gradient(135deg, rgba(162, 210, 255, 0.34), rgba(255, 255, 255, 0.88)),
+    #FFFFFF;
+  --reports-rule: #D8E2EC;
+  --reports-rule-strong: #B9C8D8;
+  --reports-section-shadow: 0 12px 30px -24px rgba(15, 65, 92, 0.42);
+}
+
+/* P29B-T6A — Shared Skyframe page surface primitive. A framed workspace
+   container with a top-anchored sky wash that fades into the page surface
+   (atmosphere only — never a persistent full-page tint). Promoted from the
+   accepted P29B-T5B Reports sky-header wash so any route can consume it via the
+   SkyframeSurface component. Sky stays surface-only; controls/focus/status keep
+   contrast-safe MP/Skyframe accents ("calm sky atmosphere, crisp analyst
+   structure"). */
+.skyframe-surface {
+  --skyframe-page-wash:
+    linear-gradient(180deg, rgba(34, 211, 238, 0.07) 0%, rgba(15, 17, 23, 0) 280px),
+    var(--mp-paper);
+  --skyframe-page-rule: var(--mp-rule);
+  --skyframe-section-shadow: 0 10px 28px -24px rgba(0, 0, 0, 0.65);
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--space-5);
+  border: 1px solid var(--skyframe-page-rule);
+  border-radius: var(--radius-lg);
+  background: var(--skyframe-page-wash);
+  box-shadow: var(--skyframe-section-shadow);
+  box-sizing: border-box;
+  color: var(--mp-ink);
+  min-width: 0;
+}
+
+[data-theme="light"] .skyframe-surface {
+  --skyframe-page-wash:
+    linear-gradient(180deg, rgba(189, 224, 254, 0.62) 0%, rgba(162, 210, 255, 0.22) 170px, rgba(247, 248, 251, 0) 360px),
+    var(--mp-paper);
+  --skyframe-page-rule: #D6E1EC;
+  --skyframe-section-shadow: 0 12px 30px -24px rgba(15, 65, 92, 0.42);
+}
 
 /* P20A-T4 — Sidebar nav-item hover/focus. Only the active route keeps the
    card-colored background + rule border. Idle rows are transparent until
@@ -544,6 +625,50 @@ a:hover {
   outline: 2px solid var(--mp-accent);
   outline-offset: 2px;
   box-shadow: 0 0 0 4px var(--mp-accent-soft);
+}
+
+/* P29B-T4 — Reports rail search/filter controls. Component-scoped focus/hover
+   in the MP Desk language (accent border + soft glow that hugs the field), so
+   the search input, its clear (×), and the status select match
+   .report-thread-button instead of falling through to the legacy
+   --color-accent :focus-visible global. Border lives here (not inline) so the
+   hover/focus border-color can override the rest state. */
+.report-rail-search,
+.report-rail-select {
+  border: 1px solid var(--mp-rule);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.report-rail-search:hover,
+.report-rail-select:hover {
+  border-color: var(--mp-rule-strong);
+}
+.report-rail-search:focus-visible,
+.report-rail-select:focus-visible {
+  outline: none;
+  border-color: var(--mp-accent);
+  box-shadow: 0 0 0 3px var(--mp-accent-soft);
+}
+.report-rail-search:focus:not(:focus-visible),
+.report-rail-select:focus:not(:focus-visible) {
+  outline: none;
+}
+/* Suppress the engine's native search clear so only the custom × shows. */
+.report-rail-search::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.report-rail-clear {
+  color: var(--mp-mute);
+}
+.report-rail-clear:hover {
+  color: var(--mp-ink-2);
+}
+.report-rail-clear:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--mp-accent-soft);
+}
+.report-rail-clear:focus:not(:focus-visible) {
+  outline: none;
 }
 
 @media (max-width: 900px) {

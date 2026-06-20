@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500&family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <style>
+    .mp-root {
+      color-scheme: dark;
+      --mp-paper:#0F1117; --mp-paper-2:#161921; --mp-card:#1A1E28; --mp-card-2:#1F2430;
+      --mp-rule:#262B38; --mp-rule-2:#313848; --mp-rule-strong:#404858;
+      --mp-ink:#F0F1F4; --mp-ink-2:#C5C8D2; --mp-mute:#8B90A0; --mp-mute-2:#5C6170;
+      --mp-accent:#22D3EE; --mp-accent-ink:#67E8F9; --mp-accent-soft:rgba(34,211,238,0.10); --mp-accent-line:rgba(34,211,238,0.20);
+      --mp-live:#34D399; --mp-live-soft:rgba(52,211,153,0.10);
+      --mp-stale:#FBBF24; --mp-stale-soft:rgba(251,191,36,0.10);
+      --mp-block:#F87171; --mp-block-soft:rgba(248,113,113,0.08);
+      --mp-info:#60A5FA; --mp-info-soft:rgba(96,165,250,0.08);
+      --mp-font-display:"Newsreader","Source Serif 4",Georgia,ui-serif,serif;
+      --mp-font-sans:"Geist","Inter Tight",ui-sans-serif,system-ui,-apple-system,sans-serif;
+      --mp-font-mono:"JetBrains Mono","IBM Plex Mono",ui-monospace,Menlo,monospace;
+    }
+    .mp-root[data-theme="light"] {
+      color-scheme: light;
+      --mp-paper:#F7F8FB; --mp-paper-2:#EEF0F5; --mp-card:#FFFFFF; --mp-card-2:#F3F5F8;
+      --mp-rule:#E5E7EB; --mp-rule-2:#D1D5DB; --mp-rule-strong:#9CA3AF;
+      --mp-ink:#111827; --mp-ink-2:#374151; --mp-mute:#6B7280; --mp-mute-2:#9CA3AF;
+      --mp-accent:#0E7490; --mp-accent-ink:#064E52; --mp-accent-soft:rgba(14,116,144,0.08); --mp-accent-line:rgba(14,116,144,0.25);
+      --mp-live:#047857; --mp-live-soft:rgba(4,120,87,0.08);
+      --mp-stale:#B45309; --mp-stale-soft:rgba(180,83,9,0.08);
+      --mp-block:#B91C1C; --mp-block-soft:rgba(185,28,28,0.06);
+      --mp-info:#1D4ED8; --mp-info-soft:rgba(29,78,216,0.06);
+    }
+    @keyframes rp-spin { to { transform: rotate(360deg); } }
+    .rp-disclosure summary::-webkit-details-marker { display: none; }
+    .rp-disclosure summary { list-style: none; }
+    .rp-disclosure[open] .rp-chevron { transform: rotate(90deg); }
+    .rp-chevron { transition: transform 140ms ease; }
+    .lib-btn:hover { border-color: var(--mp-rule-strong) !important; }
+    .seg-btn { transition: background-color 120ms ease, color 120ms ease; }
+    @media (max-width: 1100px) { .rp-deskgrid { grid-template-columns: minmax(0,1fr) !important; } }
+  </style>
+</helmet>
+
+<div class="mp-root" data-theme="{{ themeAttr }}" style="font-family: var(--mp-font-sans); background: var(--mp-paper); color: var(--mp-ink); min-height: 100vh; padding: 22px; display: flex; flex-direction: column; gap: 20px;">
+
+  <!-- ===== CONTROL BAR ===== -->
+  <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; max-width: 1480px; margin: 0 auto; width: 100%;">
+    <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+      <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mp-mute);">Concept directions · Reports reading pane</span>
+      <h1 style="font-family: var(--mp-font-display); margin: 0; font-size: 25px; font-weight: 500; letter-spacing: -0.01em; color: var(--mp-ink);">Agent Team report — analyst memo</h1>
+      <span style="font-size: 12px; color: var(--mp-mute);">{{ directionName }} · interactive concept — click any saved report to swap the pane</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-mute-2);">Direction</span>
+        <div style="display: inline-flex; border: 1px solid var(--mp-rule); border-radius: 7px; overflow: hidden; background: var(--mp-card);">
+          <button type="button" class="seg-btn" onClick="{{ setDirA }}" style="{{ dirAStyle }}">A · Synthesis column</button>
+          <button type="button" class="seg-btn" onClick="{{ setDirB }}" style="{{ dirBStyle }}">B · Desk &amp; margin</button>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-mute-2);">Content width</span>
+        <div style="display: inline-flex; border: 1px solid var(--mp-rule); border-radius: 7px; overflow: hidden; background: var(--mp-card);">
+          <button type="button" class="seg-btn" onClick="{{ setW1024 }}" style="{{ w1024Style }}">1024</button>
+          <button type="button" class="seg-btn" onClick="{{ setW1280 }}" style="{{ w1280Style }}">1280</button>
+          <button type="button" class="seg-btn" onClick="{{ setW1440 }}" style="{{ w1440Style }}">1440</button>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-mute-2);">Theme</span>
+        <button type="button" onClick="{{ toggleTheme }}" style="display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--mp-rule); border-radius: 7px; background: var(--mp-card); color: var(--mp-ink-2); padding: 7px 12px; font-family: inherit; font-size: 12px; font-weight: 600; cursor: pointer;">
+          <sc-if value="{{ isDark }}" hint-placeholder-val="{{ true }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14A8 8 0 1110 4a7 7 0 0010 10z"></path></svg>Dark</sc-if>
+          <sc-if value="{{ isLight }}" hint-placeholder-val="{{ false }}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>Light</sc-if>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== APP SHELL ===== -->
+  <div style="margin: 0 auto; width: 100%; max-width: 1480px; overflow-x: auto;">
+    <div style="{{ shellStyle }}">
+      <!-- left nav -->
+      <nav style="width: 220px; flex-shrink: 0; border-right: 1px solid var(--mp-rule); background: var(--mp-paper-2); padding: 18px 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+        <div style="display: flex; align-items: center; gap: 9px; padding: 4px 8px 16px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--mp-accent)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18L10 6l4 8 6-12"></path></svg>
+          <span style="font-family: var(--mp-font-display); font-size: 16px; font-weight: 500; color: var(--mp-ink);">Portfolio Copilot</span>
+        </div>
+        <sc-for list="{{ navItems }}" as="nav" hint-placeholder-count="5">
+          <span style="{{ nav.style }}">
+            <sc-if value="{{ nav.isOverview }}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg></sc-if>
+            <sc-if value="{{ nav.isReview }}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13M4 12h10M4 17h7"></path></svg></sc-if>
+            <sc-if value="{{ nav.isAgent }}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M5 21c0-3.9 3.1-7 7-7s7 3.1 7 7"></path></svg></sc-if>
+            <sc-if value="{{ nav.isReports }}" hint-placeholder-val="{{ true }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10l3 3v14a1 1 0 01-1 1H5a1 1 0 01-1-1V4a1 1 0 011-1h2z"></path><path d="M8 12h8M8 16h5M8 8h4"></path></svg></sc-if>
+            <sc-if value="{{ nav.isPortfolio }}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V8l9-5 9 5v13"></path><path d="M9 21v-7h6v7"></path></svg></sc-if>
+            {{ nav.label }}
+          </span>
+        </sc-for>
+        <span style="margin-top: auto; padding: 10px 8px 0; font-size: 10px; color: var(--mp-mute-2); line-height: 1.5;">Demo · synthetic data only</span>
+      </nav>
+
+      <!-- library rail -->
+      <aside style="width: 272px; flex-shrink: 0; border-right: 1px solid var(--mp-rule); padding: 20px 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; background: var(--mp-paper);">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--mp-rule);">
+          <span style="color: var(--mp-mute); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">Saved analyses</span>
+          <span style="color: var(--mp-mute); font-size: 11px; font-variant-numeric: tabular-nums; border: 1px solid var(--mp-rule); border-radius: 999px; padding: 0 7px; line-height: 1.7;">{{ libCount }}</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px; min-width: 0;">
+          <sc-for list="{{ library }}" as="item" hint-placeholder-count="7">
+            <button type="button" class="lib-btn" onClick="{{ item.onSelect }}" style="{{ item.cardStyle }}">
+              <span aria-hidden="true" style="{{ item.iconChipStyle }}">
+                <sc-if value="{{ item.iconAgent }}" hint-placeholder-val="{{ true }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M5 21c0-3.9 3.1-7 7-7s7 3.1 7 7"></path></svg></sc-if>
+                <sc-if value="{{ item.iconClock }}" hint-placeholder-val="{{ false }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></sc-if>
+                <sc-if value="{{ item.iconAlert }}" hint-placeholder-val="{{ false }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l10 18H2L12 3z"></path><path d="M12 10v5M12 18.5v.5"></path></svg></sc-if>
+                <sc-if value="{{ item.iconShield }}" hint-placeholder-val="{{ false }}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"></path></svg></sc-if>
+              </span>
+              <span style="display: flex; flex-direction: column; gap: 5px; min-width: 0;">
+                <span style="color: var(--mp-ink); font-size: 13px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere;">{{ item.title }}</span>
+                <span style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 10px; color: var(--mp-mute);"><span style="font-family: var(--mp-font-mono);">{{ item.savedLabel }}</span></span>
+                <span style="{{ item.chipStyle }}">{{ item.chipLabel }}</span>
+              </span>
+            </button>
+          </sc-for>
+        </div>
+        <span style="font-size: 10px; color: var(--mp-mute-2); line-height: 1.5; padding-top: 4px;">Read-only saved snapshots · current account selector never reinterprets a saved report.</span>
+      </aside>
+
+      <!-- reading pane -->
+      <main style="flex: 1; min-width: 0; padding: 24px 28px; background: var(--mp-paper); overflow: hidden;">
+        <dc-import name="ReadingPane" report="{{ selectedReport }}" direction="{{ direction }}" generating="{{ isGenerating }}" onGenerate="{{ onGenerate }}" hint-size="100%,640px"></dc-import>
+      </main>
+    </div>
+  </div>
+
+  <!-- ===== RATIONALE ===== -->
+  <div style="margin: 8px auto 0; width: 100%; max-width: 1480px;">
+    <div style="border: 1px solid var(--mp-rule); border-radius: 10px; background: var(--mp-card); padding: 20px 24px; display: flex; flex-direction: column; gap: 14px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mp-accent-ink);">Rationale</span>
+        <span style="font-family: var(--mp-font-display); font-size: 18px; color: var(--mp-ink);">{{ directionName }}</span>
+      </div>
+      <sc-if value="{{ showA }}" hint-placeholder-val="{{ true }}">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px;">
+          <div style="display: flex; flex-direction: column; gap: 5px;"><span style="font-size: 12px; font-weight: 700; color: var(--mp-ink);">Hierarchy</span><span style="font-size: 13px; line-height: 1.6; color: var(--mp-ink-2);">A single reading column. Portfolio-aware roles are full-width memo sections with serif lead-ins; public analysts collapse into one boxed "Market context" band below — same column, visibly lighter weight.</span></div>
+          <div style="display: flex; flex-direction: column; gap: 5px;"><span style="font-size: 12px; font-weight: 700; color: var(--mp-ink);">Public stays secondary</span><span style="font-size: 13px; line-height: 1.6; color: var(--mp-ink-2);">Public roles never get a full memo block — they read as compact context cards in a muted, explicitly-labeled "Secondary" band, after the primary roles.</span></div>
+          <div style="display: flex; flex-direction: column; gap: 5px;"><span style="font-size: 12px; font-weight: 700; color: var(--mp-ink);">Deterministic vs narrative</span><span style="font-size: 13px; line-height: 1.6; color: var(--mp-ink-2);">Kept distinct by <strong>explicit zone labels</strong>: every block is captioned "Agent narrative · analysis only" (serif prose) or "Deterministic evidence cited · backend-owned" (mono ledger), separated by a dashed rule.</span></div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ showB }}" hint-placeholder-val="{{ false }}">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px;">
+          <div style="display: flex; flex-direction: column; gap: 5px;"><span style="font-size: 12px; font-weight: 700; color: var(--mp-ink);">Hierarchy</span><span style="font-size: 13px; line-height: 1.6; color: var(--mp-ink-2);">A two-tier desk: portfolio-aware roles own the main editorial column; public analysts live in a narrow right-hand margin rail — spatially subordinate, never a primary block.</span></div>
+          <div style="display: flex; flex-direction: column; gap: 5px;"><span style="font-size: 12px; font-weight: 700; color: var(--mp-ink);">Public stays secondary</span><span style="font-size: 13px; line-height: 1.6; color: var(--mp-ink-2);">The margin rail is smaller type on paper-2, sticky beside the memo. It carries the coverage note and skipped reasons honestly without competing for reading weight.</span></div>
+          <div style="display: flex; flex-direction: column; gap: 5px;"><span style="font-size: 12px; font-weight: 700; color: var(--mp-ink);">Deterministic vs narrative</span><span style="font-size: 13px; line-height: 1.6; color: var(--mp-ink-2);">Kept distinct by <strong>material</strong>: narrative is editorial serif on paper with a hairline rule; deterministic evidence is a bordered mono "Evidence ledger" panel — a different surface entirely.</span></div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+
+  <!-- ===== TRACK A / B LEGEND ===== -->
+  <div style="margin: 0 auto; width: 100%; max-width: 1480px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px;">
+      <div style="border: 1px solid var(--mp-rule); border-radius: 10px; background: var(--mp-card); padding: 16px 18px; display: flex; flex-direction: column; gap: 7px;">
+        <span style="display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-ink);"><span style="width: 9px; height: 9px; border-radius: 999px; background: var(--mp-accent);"></span>Track A · ships frontend-only</span>
+        <span style="font-size: 12px; line-height: 1.6; color: var(--mp-ink-2);">Everything drawn from today's read contract: title, report type, saved + generated times, run/role status, synthesis &amp; role narratives, keys-only evidence citations, warning codes, and coverage <em>derived</em> from role status. No invented values.</span>
+      </div>
+      <div style="border: 1px dashed var(--mp-info); border-radius: 10px; background: var(--mp-info-soft); padding: 16px 18px; display: flex; flex-direction: column; gap: 7px;">
+        <span style="display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-info);"><span style="width: 9px; height: 9px; border-radius: 2px; border: 1px dashed var(--mp-info);"></span>Track B · proposed additive fields</span>
+        <span style="font-size: 12px; line-height: 1.6; color: var(--mp-ink-2);">Mocked with synthetic data, never shipping: the structured <strong>coverage descriptor</strong> (the dotted meter in the trust strip) and <strong>per-section freshness / rights chips</strong>. Each carries a "Track B" marker and routes to Codex C / Codex B before any implementation.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== STATE GALLERY ===== -->
+  <div style="margin: 8px auto 0; width: 100%; max-width: 1480px; display: flex; flex-direction: column; gap: 14px;">
+    <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;">
+      <span style="font-family: var(--mp-font-display); font-size: 18px; color: var(--mp-ink);">All report states</span>
+      <span style="font-size: 12px; color: var(--mp-mute);">{{ directionName }} · synthetic payloads · scroll each frame · "Open" loads it in the pane above</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 16px; align-items: start;">
+      <sc-for list="{{ gallery }}" as="g" hint-placeholder-count="6">
+        <div style="border: 1px solid var(--mp-rule); border-radius: 10px; background: var(--mp-paper); overflow: hidden; display: flex; flex-direction: column; min-width: 0;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--mp-rule); background: var(--mp-paper-2);">
+            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+              <span style="font-size: 12px; font-weight: 700; color: var(--mp-ink);">{{ g.label }}</span>
+              <span style="font-size: 10px; font-family: var(--mp-font-mono); color: var(--mp-mute);">{{ g.tag }}</span>
+            </div>
+            <button type="button" onClick="{{ g.onOpen }}" style="flex-shrink: 0; appearance: none; cursor: pointer; font-family: inherit; font-size: 11px; font-weight: 600; color: var(--mp-accent-ink); background: var(--mp-accent-soft); border: 1px solid var(--mp-accent-line); border-radius: 6px; padding: 5px 11px;">Open ↑</button>
+          </div>
+          <div style="max-height: 540px; overflow-y: auto; padding: 18px 18px; min-width: 0;">
+            <dc-import name="ReadingPane" report="{{ g.payload }}" direction="{{ direction }}" generating="{{ false }}" onGenerate="{{ noop }}" hint-size="100%,640px"></dc-import>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;direction&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;A&quot;, &quot;B&quot;], &quot;default&quot;: &quot;A&quot;}, &quot;theme&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;dark&quot;, &quot;light&quot;], &quot;default&quot;: &quot;dark&quot;}}">
+class Component extends DCLogic {
+  state = { direction: "A", theme: "dark", width: 1280, selectedId: "r2", generatingId: null, generated: {} };
+
+  // ---------- synthetic payloads (demo-only) ----------
+  scope() {
+    return {
+      summary: "Demo brokerage · margin · single account",
+      chips: [
+        { key: "account", value: "Demo brokerage · margin" },
+        { key: "instrument", value: "DEMOCO · stock buy" },
+        { key: "as of", value: "saved Jun 14, 2026" },
+      ],
+    };
+  }
+  riskRole(extra) {
+    return Object.assign({
+      role_name: "risk_management_agent", display_name: "Risk Manager", role_status: "completed", provider_status: "ok",
+      paras: [
+        "Risk review draws only on the saved deterministic evidence package. It restates the saved actionability mode, the freshness labels attached at save time, and the caveats flagged for manual review.",
+        "No values are recomputed here. The states shown are exactly those the backend wrote into this snapshot, preserved for audit.",
+      ],
+      evidence_references: ["trade_intent_summary","scope_state","actionability","account_readiness","freshness","portfolio_impact_summary","concentration_risk_drift","liquidity_collateral_caveats","options_exposure_summary","market_quote_freshness"],
+      warning_codes: [],
+      track_b: { freshness: "Snapshot fresh at save", rights: "Internal evidence", source: "Deterministic package" },
+    }, extra || {});
+  }
+  pmRole(extra) {
+    return Object.assign({
+      role_name: "portfolio_manager_agent", display_name: "Portfolio Manager", role_status: "completed", provider_status: "ok",
+      paras: [
+        "Portfolio synthesis reads the validated role summaries and the saved evidence package only. It places this trade review inside the saved portfolio scope and gathers the caveats the other roles raised.",
+        "Deterministic backend services own every calculation referenced; the judgement itself stays with manual review.",
+      ],
+      evidence_references: ["trade_intent_summary","scope_state","portfolio_impact_summary","concentration_risk_drift"],
+      warning_codes: [],
+      track_b: { freshness: "Snapshot fresh at save", rights: "Internal evidence", source: "Validated role summaries" },
+    }, extra || {});
+  }
+  fundRole(extra) {
+    return Object.assign({
+      role_name: "fundamentals_analyst", display_name: "Fundamentals Analyst", role_status: "completed", provider_status: "ok",
+      paras: [
+        "Reviewed public company-profile labels describe the instrument's sector and business category.",
+        "Specific figures are not present in the reviewed evidence and are not generated here; treat this as background framing for the saved scope.",
+      ],
+      evidence_references: ["trade_intent_summary","public_company_profile","public_fundamentals_snapshot"],
+      warning_codes: ["public_evidence_limited"],
+      track_b: { freshness: "As of save", rights: "Public · licensed", source: "Company profile feed" },
+    }, extra || {});
+  }
+  newsRole(extra) {
+    return Object.assign({
+      role_name: "news_analyst", display_name: "News Analyst", role_status: "completed", provider_status: "ok",
+      paras: [
+        "Reviewed public news and event metadata note an upcoming scheduled event.",
+        "This summary is limited and may be stale, so treat it as historical context to verify manually rather than as current reporting.",
+      ],
+      evidence_references: ["trade_intent_summary","public_news_snapshot","public_events_calendar"],
+      warning_codes: ["public_evidence_limited"],
+      track_b: { freshness: "May be stale", rights: "Public · licensed", source: "News metadata feed" },
+    }, extra || {});
+  }
+  techRole(extra) {
+    return Object.assign({
+      role_name: "technical_analyst", display_name: "Technical Analyst", role_status: "completed", provider_status: "ok",
+      paras: [
+        "Reviewed public technical metadata is summarized as descriptive context only.",
+        "Pattern and range language is omitted because the reviewed evidence does not include it; nothing here describes levels to act on.",
+      ],
+      evidence_references: ["trade_intent_summary"],
+      warning_codes: [],
+      track_b: { freshness: "As of save", rights: "Public · derived", source: "Technical metadata" },
+    }, extra || {});
+  }
+  skip(role, reason) {
+    return Object.assign({}, role, { role_status: "skipped", provider_status: "skipped", paras: [], summary_markdown: null, unavailable_reason: reason, warning_codes: [reason], track_b: null });
+  }
+
+  synthMd() {
+    return "Agent Team analysis is generated from the saved evidence package. Deterministic backend services own all calculations; scope, freshness, and caveats remain attached for audit.\n\nThis synthesis restates validated role summaries only — it adds no figures, freshness, or rights of its own, and the saved scope is never reinterpreted by the current account selector.";
+  }
+  fullSummary(roles, completeness, warns) {
+    return {
+      run_status: completeness === "full" ? "completed" : "partially_completed",
+      provider_mode: "managed_provider",
+      report_generated_at_label: "Jun 15, 2026 · 20:06",
+      report_status: "full_agent_report",
+      final_synthesis_markdown: this.synthMd(),
+      final_synthesis_authored_by: "deterministic_template",
+      evidence_schema_version: "p29a.2",
+      evidence_references: ["trade_intent_summary","scope_state","actionability","freshness"],
+      warning_codes: warns || [],
+      role_summaries: roles,
+    };
+  }
+
+  reportsMap() {
+    const baseMeta = (id, title, created) => ({ id, title, report_type: "trade_review · stock buy · DEMOCO", created_at_label: created, scope_metadata: this.scope() });
+
+    // R7 — full public coverage (all completed)
+    const r7 = Object.assign(baseMeta("r7", "Trade review · DEMOCO · full coverage", "Jun 15, 2026 · 19:58"),
+      { agent_summary: this.fullSummary([ this.riskRole(), this.pmRole(), this.fundRole(), this.newsRole(), this.techRole() ], "full", ["public_evidence_roles_included"]) });
+
+    // R2 — public included, partial run (technical skipped)
+    const r2 = Object.assign(baseMeta("r2", "Trade review · DEMOCO · public included", "Jun 14, 2026 · 16:32"),
+      { agent_summary: this.fullSummary([ this.riskRole(), this.pmRole(), this.fundRole(), this.newsRole(), this.skip(this.techRole(), "no_reviewed_public_evidence") ], "partial", ["public_evidence_partial_coverage"]) });
+
+    // R3 — partial public coverage (only fundamentals)
+    const r3 = Object.assign(baseMeta("r3", "Trade review · DEMOCO · 1 of 3 public", "Jun 13, 2026 · 11:04"),
+      { agent_summary: this.fullSummary([ this.riskRole(), this.pmRole(), this.fundRole(), this.skip(this.newsRole(), "no_reviewed_public_evidence"), this.skip(this.techRole(), "no_reviewed_public_evidence") ], "partial", ["public_evidence_partial_coverage"]) });
+
+    // R4 — public skipped, three reasons (today's default)
+    const r4 = Object.assign(baseMeta("r4", "Trade review · DEMOCO · portfolio-only", "Jun 12, 2026 · 09:20"),
+      { agent_summary: this.fullSummary([ this.riskRole(), this.pmRole(), this.skip(this.fundRole(), "no_reviewed_public_evidence"), this.skip(this.newsRole(), "public_evidence_not_available"), this.skip(this.techRole(), "public_evidence_not_applicable") ], "full", ["public_evidence_roles_skipped"]) });
+
+    // R1 — source snapshot (no agent summary)
+    const r1 = Object.assign(baseMeta("r1", "Trade review · DEMOCO · saved snapshot", "Jun 11, 2026 · 14:47"), { agent_summary: null });
+
+    // R5 — agent unavailable
+    const r5role = (r) => Object.assign({}, r, { role_status: "unavailable", provider_status: "provider_unavailable", paras: [], summary_markdown: null, unavailable_reason: "provider_unavailable", evidence_references: ["trade_intent_summary"], warning_codes: ["provider_unavailable"], track_b: null });
+    const r5 = Object.assign(baseMeta("r5", "Trade review · DEMOCO · narrative unavailable", "Jun 10, 2026 · 13:15"),
+      { agent_summary: { run_status: "failed", provider_mode: "managed_provider", report_generated_at_label: null, report_status: "agent_unavailable", final_synthesis_markdown: null, final_synthesis_authored_by: null, evidence_schema_version: "p29a.2", evidence_references: ["trade_intent_summary","scope_state"], warning_codes: ["agent_provider_unavailable"], role_summaries: [ r5role(this.riskRole()), r5role(this.pmRole()), r5role(this.fundRole()), r5role(this.newsRole()), r5role(this.techRole()) ] } });
+
+    // R6 — validation failed
+    const r6role = (r) => Object.assign({}, r, { role_status: "validation_failed", provider_status: "safety_validation_failed", paras: [], summary_markdown: null, unavailable_reason: "safety_validation_failed", evidence_references: ["trade_intent_summary"], warning_codes: ["safety_validation_failed"], track_b: null });
+    const r6 = Object.assign(baseMeta("r6", "Trade review · DEMOCO · narrative withheld", "Jun 9, 2026 · 17:41"),
+      { agent_summary: { run_status: "failed", provider_mode: "managed_provider", report_generated_at_label: null, report_status: "validation_failed", final_synthesis_markdown: null, final_synthesis_authored_by: null, evidence_schema_version: "p29a.2", evidence_references: ["trade_intent_summary","scope_state"], warning_codes: ["narrative_validation_failed"], role_summaries: [ r6role(this.riskRole()), r6role(this.pmRole()) ] } });
+
+    return { r7, r2, r3, r4, r1, r5, r6 };
+  }
+
+  makeGenerated(id) {
+    const base = this.reportsMap()[id];
+    const gen = Object.assign({}, base, {
+      agent_summary: this.fullSummary([ this.riskRole(), this.pmRole(), this.fundRole(), this.newsRole(), this.skip(this.techRole(), "no_reviewed_public_evidence") ], "partial", ["public_evidence_partial_coverage"]),
+    });
+    return gen;
+  }
+
+  generate(id) {
+    if (this.state.generatingId) return;
+    this.setState({ generatingId: id });
+    setTimeout(() => {
+      this.setState((s) => ({ generated: Object.assign({}, s.generated, { [id]: this.makeGenerated(id) }), generatingId: null }));
+    }, 1900);
+  }
+
+  statusOf(report) {
+    const s = report.agent_summary;
+    if (!s) return "source_snapshot";
+    return s.report_status || "full_agent_report";
+  }
+
+  renderVals() {
+    const map = this.reportsMap();
+    const order = ["r7","r2","r3","r4","r1","r5","r6"];
+    const dir = this.state.direction;
+    const themeAttr = this.state.theme;
+
+    const segActive = { background: "var(--mp-accent)", color: "var(--mp-paper)", border: "none", padding: "7px 13px", fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer" };
+    const segIdle = { background: "transparent", color: "var(--mp-ink-2)", border: "none", padding: "7px 13px", fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer" };
+
+    // library items
+    const metaFor = (st) => ({
+      source_snapshot: { chip: "Source snapshot", fg: "var(--mp-mute)", soft: "transparent", icon: "clock" },
+      full_agent_report: { chip: "Agent Team analysis", fg: "var(--mp-accent)", soft: "var(--mp-accent-soft)", icon: "agent" },
+      agent_unavailable: { chip: "Agent Team unavailable", fg: "var(--mp-mute)", soft: "transparent", icon: "alert" },
+      validation_failed: { chip: "Narrative withheld", fg: "var(--mp-block)", soft: "var(--mp-block-soft)", icon: "shield" },
+    }[st] || { chip: "Report", fg: "var(--mp-mute)", soft: "transparent", icon: "clock" });
+
+    const library = order.map((id) => {
+      const base = map[id];
+      const display = this.state.generated[id] || base;
+      const st = this.statusOf(display);
+      const m = metaFor(st);
+      const selected = id === this.state.selectedId;
+      return {
+        id, title: base.title, savedLabel: base.created_at_label,
+        chipLabel: m.chip,
+        onSelect: () => this.setState({ selectedId: id }),
+        cardStyle: {
+          appearance: "none", font: "inherit", textAlign: "left", cursor: "pointer",
+          display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", alignItems: "start", gap: 11,
+          borderWidth: 1, borderStyle: "solid",
+          borderColor: selected ? "var(--mp-accent-line)" : "var(--mp-rule)",
+          borderRadius: 8, padding: "12px 13px",
+          background: selected ? "var(--mp-accent-soft)" : "var(--mp-card)",
+          color: "var(--mp-ink)",
+          boxShadow: selected ? "inset 3px 0 0 var(--mp-accent)" : "none",
+          transition: "border-color 120ms ease, background-color 120ms ease", minWidth: 0,
+        },
+        iconChipStyle: {
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 28, height: 28, borderRadius: 5,
+          color: m.fg, borderWidth: 1, borderStyle: "solid",
+          borderColor: m.fg === "var(--mp-mute)" ? "var(--mp-rule)" : m.fg,
+          background: m.soft === "transparent" ? "var(--mp-card-2)" : m.soft,
+          flexShrink: 0, marginTop: 1,
+        },
+        chipStyle: {
+          display: "inline-flex", alignItems: "center", gap: 5, alignSelf: "flex-start",
+          fontSize: 10, fontWeight: 600, padding: "1px 7px",
+          border: "1px solid " + m.fg, borderRadius: 4, color: m.fg,
+          background: m.soft, lineHeight: 1.5, whiteSpace: "nowrap", marginTop: 1,
+        },
+        iconAgent: m.icon === "agent", iconClock: m.icon === "clock", iconAlert: m.icon === "alert", iconShield: m.icon === "shield",
+      };
+    });
+
+    const selectedBase = map[this.state.selectedId] || map.r2;
+    const selectedReport = this.state.generated[this.state.selectedId] || selectedBase;
+
+    const navStyle = (active) => ({
+      display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 7,
+      fontSize: 13, fontWeight: active ? 600 : 500,
+      color: active ? "var(--mp-ink)" : "var(--mp-mute)",
+      background: active ? "var(--mp-card)" : "transparent",
+      border: active ? "1px solid var(--mp-rule)" : "1px solid transparent",
+    });
+    const navItems = [
+      { label: "Overview", isOverview: true, style: navStyle(false) },
+      { label: "Trade review", isReview: true, style: navStyle(false) },
+      { label: "Agent console", isAgent: true, style: navStyle(false) },
+      { label: "Reports", isReports: true, style: navStyle(true) },
+      { label: "Portfolio", isPortfolio: true, style: navStyle(false) },
+    ];
+
+    const shellStyle = {
+      display: "flex", width: this.state.width + "px", minWidth: this.state.width + "px",
+      border: "1px solid var(--mp-rule)", borderRadius: 12, overflow: "hidden",
+      background: "var(--mp-paper)", boxShadow: "var(--mp-shadow-md, 0 4px 12px -3px rgba(0,0,0,0.3))",
+      minHeight: 640,
+    };
+
+    const galleryOrder = [
+      { id: "r2", label: "Full report · public included (partial run)", tag: "full_agent_report · partially_completed" },
+      { id: "r3", label: "Partial public coverage · 1 of 3", tag: "full_agent_report · partial" },
+      { id: "r4", label: "Public skipped · portfolio-only (default)", tag: "full_agent_report · roles_skipped" },
+      { id: "r1", label: "Source snapshot", tag: "source_snapshot · agent_summary = null" },
+      { id: "r5", label: "Agent unavailable", tag: "agent_unavailable · run failed" },
+      { id: "r6", label: "Validation failed · narrative withheld", tag: "validation_failed · run failed" },
+    ];
+    const gallery = galleryOrder.map((g) => ({
+      label: g.label, tag: g.tag, payload: map[g.id],
+      onOpen: () => this.setState({ selectedId: g.id }),
+    }));
+
+    return {
+      themeAttr,
+      direction: dir,
+      directionName: dir === "A" ? "Direction A · Synthesis Column" : "Direction B · Desk & Margin",
+      isDark: themeAttr === "dark", isLight: themeAttr === "light",
+      showA: dir === "A", showB: dir === "B",
+      setDirA: () => this.setState({ direction: "A" }),
+      setDirB: () => this.setState({ direction: "B" }),
+      dirAStyle: dir === "A" ? segActive : segIdle,
+      dirBStyle: dir === "B" ? segActive : segIdle,
+      setW1024: () => this.setState({ width: 1024 }),
+      setW1280: () => this.setState({ width: 1280 }),
+      setW1440: () => this.setState({ width: 1440 }),
+      w1024Style: this.state.width === 1024 ? segActive : segIdle,
+      w1280Style: this.state.width === 1280 ? segActive : segIdle,
+      w1440Style: this.state.width === 1440 ? segActive : segIdle,
+      toggleTheme: () => this.setState((s) => ({ theme: s.theme === "dark" ? "light" : "dark" })),
+      navItems,
+      library, libCount: order.length,
+      shellStyle,
+      selectedReport,
+      isGenerating: this.state.generatingId === this.state.selectedId,
+      onGenerate: () => this.generate(this.state.selectedId),
+      gallery,
+      noop: () => {},
+    };
+  }
+}
+</script>
+</body>
+</html>

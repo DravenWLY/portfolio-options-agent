@@ -38,10 +38,10 @@ export default function Timestamp({
 
 const stamp: React.CSSProperties = {
   fontSize: "var(--font-size-xs)",
-  color: "var(--color-text-muted)",
+  color: "var(--mp-mute)",
 };
 const unknown: React.CSSProperties = {
   fontSize: "var(--font-size-xs)",
-  color: "var(--color-text-muted)",
+  color: "var(--mp-mute)",
   fontStyle: "italic",
 };

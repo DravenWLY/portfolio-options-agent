@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Badge, DemoChip, MpIcon, PageHeader, Panel, SafetyStrip, type MpIconName } from "../components/shared/mp";
 import AppearanceControl from "../components/layout/AppearanceControl";
 import { DEMO_SETTINGS_PROVIDER_INFO } from "../components/demo/modernDeskDemoData";
+import SkyframeSurface from "../components/shared/SkyframeSurface";
 
 /**
  * SettingsPage — sectioned settings workspace (P20C-T3).
@@ -52,7 +53,7 @@ export default function SettingsPage() {
   const [active, setActive] = useState<SettingsSection>("account");
 
   return (
-    <div className="mp-surface" style={styles.page}>
+    <SkyframeSurface className="mp-surface" maxWidth={1280} style={styles.surface}>
       <PageHeader
         eyebrow="Workspace · settings"
         title="Settings"
@@ -104,7 +105,7 @@ export default function SettingsPage() {
         "No broker order placement",
         "No destructive provider controls",
       ]} />
-    </div>
+    </SkyframeSurface>
   );
 }
 
@@ -388,10 +389,7 @@ function FutureRows({ items }: { items: { label: string; description: string }[]
 /* ── Styles ──────────────────────────────────────────────────────────────── */
 
 const styles: Record<string, React.CSSProperties> = {
-  page: {
-    display: "flex", flexDirection: "column", gap: "var(--space-5)",
-    maxWidth: 1280, margin: "0 auto", color: "var(--mp-ink)",
-  },
+  surface: { gap: "var(--space-5)" },
   layout: {
     display: "grid",
     gridTemplateColumns: "220px minmax(0, 1fr)",

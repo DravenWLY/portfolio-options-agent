@@ -23,6 +23,7 @@ import type {
   AgentTeamReportRunCompleteness,
   AgentTeamReportStatus,
   ReportThreadRead,
+  SavedAgentTeamRoleSummaryRead,
   SavedAgentTeamSummaryRead,
 } from "../../types/api";
 
@@ -77,6 +78,148 @@ export function skippedRoleCount(summary: SavedAgentTeamSummaryRead | null): num
   return (summary?.role_summaries ?? []).filter((r) => r.role_status === "skipped").length;
 }
 
+/** Portfolio-aware roles, shown as the primary band. Everything else (the
+ *  public analysts) is the secondary "market context" band. Backend-owned role
+ *  names — never renamed in the UI. */
+export const PRIMARY_ROLE_NAMES: readonly string[] = [
+  "risk_management_agent",
+  "portfolio_manager_agent",
+];
+
+export interface SplitRoles {
+  primary: SavedAgentTeamRoleSummaryRead[];
+  context: SavedAgentTeamRoleSummaryRead[];
+}
+
+/** Split saved role summaries into the primary portfolio-aware band and the
+ *  secondary public "market context" band, preserving canonical primary order. */
+export function splitRoles(summary: SavedAgentTeamSummaryRead | null): SplitRoles {
+  const roles = summary?.role_summaries ?? [];
+  const primary = PRIMARY_ROLE_NAMES.map((name) =>
+    roles.find((r) => r.role_name === name),
+  ).filter((r): r is SavedAgentTeamRoleSummaryRead => Boolean(r));
+  const context = roles.filter((r) => !PRIMARY_ROLE_NAMES.includes(r.role_name));
+  return { primary, context };
+}
+
+export interface PublicCoverage {
+  done: number;
+  total: number;
+  /** Compact text for the trust strip. */
+  text: string;
+  /** Longer, honest note for the market-context band header (null when N/A). */
+  note: string | null;
+}
+
+/** Public-analyst coverage, derived only from saved `role_status` (Track A —
+ *  no new backend field). Honest and non-defect: skipped public roles read as
+ *  "not yet enabled", never as an error. */
+export function publicCoverage(summary: SavedAgentTeamSummaryRead | null): PublicCoverage {
+  if (!summary) {
+    return { done: 0, total: 0, text: "Coverage pending — no analysis generated", note: null };
+  }
+  const { context } = splitRoles(summary);
+  const total = context.length;
+  const done = context.filter((r) => r.role_status === "completed").length;
+  if (total === 0) {
+    return { done: 0, total: 0, text: "Portfolio-aware roles only", note: null };
+  }
+  if (done === 0) {
+    return {
+      done,
+      total,
+      text: "Portfolio-aware roles only",
+      note: "Public market analysts are not yet enabled, so this report covers the portfolio-aware roles only.",
+    };
+  }
+  return {
+    done,
+    total,
+    text: `${done} of ${total} public analysts contributing`,
+    note: `${done} of ${total} public analysts contributed; the rest had no reviewed public evidence.`,
+  };
+}
+
+/** Rail status filter (client-side, over already-loaded threads). */
+export type ReportFilterValue =
+  | "all"
+  | "full_agent_report"
+  | "source_snapshot"
+  | "no_narrative";
+
+export const REPORT_FILTER_OPTIONS: { value: ReportFilterValue; label: string }[] = [
+  { value: "all", label: "All reports" },
+  { value: "full_agent_report", label: "Agent Team report" },
+  { value: "source_snapshot", label: "Source snapshot" },
+  { value: "no_narrative", label: "Draft / unavailable" },
+];
+
+/** Whether a derived report status passes the rail status filter. */
+export function matchesStatusFilter(
+  status: AgentTeamReportStatus,
+  filter: ReportFilterValue,
+): boolean {
+  switch (filter) {
+    case "all":
+      return true;
+    case "full_agent_report":
+      return status === "full_agent_report";
+    case "source_snapshot":
+      return status === "source_snapshot";
+    case "no_narrative":
+      return (
+        status === "deterministic_draft" ||
+        status === "agent_unavailable" ||
+        status === "validation_failed"
+      );
+  }
+}
+
+/** Whether a saved report matches a free-text query (title + report type only —
+ *  both are display-safe saved fields; no inference, no private data). */
+export function matchesQuery(thread: ReportThreadRead, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (q === "") return true;
+  return (
+    thread.title.toLowerCase().includes(q) ||
+    thread.report_type.toLowerCase().includes(q)
+  );
+}
+
+/** Status badge icon per role status (paired with text — never color-only). */
+export function roleStatusIcon(status: AgentTeamReportRoleStatus): MpIconName {
+  if (status === "completed") return "check";
+  if (status === "validation_failed") return "shield";
+  return "info";
+}
+
+/** First paragraph of a role narrative, for the compact context-card snippet. */
+export function firstParagraph(markdown: string | null): string {
+  if (!markdown) return "";
+  return markdown.replace(/\r\n/g, "\n").split("\n\n")[0].trim();
+}
+
+/** Honest, non-defect copy for a role with no narrative, keyed on the sanitized
+ *  `unavailable_reason`. Falls back to a neutral line. */
+export function roleUnavailableText(reason: string | null): string {
+  switch (reason) {
+    case "no_reviewed_public_evidence":
+      return "No reviewed public evidence was attached for this analyst.";
+    case "public_evidence_not_available":
+      return "Public evidence was not available for this analyst.";
+    case "public_evidence_not_applicable":
+      return "Public evidence is not applicable to this saved scope.";
+    case "provider_unavailable":
+      return "The provider was unavailable, so no narrative was produced.";
+    case "safety_validation_failed":
+      return "The narrative was withheld by safety validation.";
+    case "blocked_actionability_llm_roles_skipped":
+      return "The review was gated, so analyst narratives were not generated.";
+    default:
+      return "No narrative was produced for this role.";
+  }
+}
+
 /** Compact, honest coverage note for a generated report. Derived from the
  *  existing `role_summaries`; today the only skipped roles are the public market
  *  analysts, which are not yet enabled. Returns null when nothing was skipped. */
@@ -127,7 +270,7 @@ export const REPORT_STATUS_META: Record<AgentTeamReportStatus, ReportStatusMeta>
     tone: "block",
     icon: "shield",
     description:
-      "The generated narrative was withheld by safety validation. The saved deterministic evidence remains available for manual review.",
+      "The generated narrative was withheld by safety validation; the offending text is never shown. The saved deterministic evidence remains available for manual review.",
   },
   source_snapshot: {
     label: "Source snapshot",
@@ -135,7 +278,7 @@ export const REPORT_STATUS_META: Record<AgentTeamReportStatus, ReportStatusMeta>
     tone: "mute",
     icon: "clock",
     description:
-      "Saved deterministic review snapshot. No Agent Team report has been generated from it yet.",
+      "Saved deterministic review snapshot. This is a complete kept analysis; no Agent Team report has been generated from it yet.",
   },
 };
 

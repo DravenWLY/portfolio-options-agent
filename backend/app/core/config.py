@@ -18,6 +18,14 @@ class Settings:
     snaptrade_consumer_key: str = ""
     snaptrade_environment: str = "sandbox"
     snaptrade_secret_encryption_key: str = ""
+    skyframe_fixtures_enabled: bool = False
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def get_settings() -> Settings:
@@ -33,6 +41,7 @@ def get_settings() -> Settings:
             "SNAPTRADE_SECRET_ENCRYPTION_KEY",
             Settings.snaptrade_secret_encryption_key,
         ),
+        skyframe_fixtures_enabled=_env_flag("POA_SKYFRAME_FIXTURES", Settings.skyframe_fixtures_enabled),
     )
     if settings.snaptrade_client_id and not settings.snaptrade_secret_encryption_key:
         raise ValueError("SNAPTRADE_SECRET_ENCRYPTION_KEY is required when SnapTrade is configured")

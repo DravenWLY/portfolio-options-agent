@@ -1,4 +1,5 @@
 import MarketDataStatusPanel from "../components/marketdata/MarketDataStatusPanel";
+import SkyframeSurface from "../components/shared/SkyframeSurface";
 
 /**
  * MarketDataPage — Phase 12 thin market-data status slice.
@@ -14,7 +15,7 @@ import MarketDataStatusPanel from "../components/marketdata/MarketDataStatusPane
  */
 export default function MarketDataPage() {
   return (
-    <div style={styles.page}>
+    <SkyframeSurface className="mp-surface" maxWidth={900}>
       <div style={styles.pageHeader}>
         <h1 style={styles.pageTitle}>Market Data</h1>
         <p style={styles.pageSubtitle}>
@@ -44,17 +45,11 @@ export default function MarketDataPage() {
           No trades, orders, or automated actions are performed.
         </p>
       </aside>
-    </div>
+    </SkyframeSurface>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  page: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "var(--space-6)",
-    maxWidth: 900,
-  },
   pageHeader: {
     display: "flex",
     flexDirection: "column",
@@ -69,7 +64,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   pageSubtitle: {
     fontSize: "var(--font-size-sm)",
-    color: "var(--color-text-muted)",
+    color: "var(--mp-ink-2)",
     margin: 0,
   },
   separationNotice: {
@@ -97,7 +92,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   noticeBody: {
     fontSize: "var(--font-size-sm)",
-    color: "var(--color-text-muted)",
+    color: "var(--mp-ink-2)",
     lineHeight: 1.6,
     margin: 0,
   },
@@ -109,7 +104,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   footerText: {
     fontSize: "var(--font-size-xs)",
-    color: "var(--color-text-muted)",
+    color: "var(--mp-ink-2)",
     lineHeight: 1.6,
     margin: 0,
   },

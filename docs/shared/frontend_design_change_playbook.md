@@ -2,7 +2,7 @@
 
 Status: active guidance
 Owner: shared, with Codex B architecture and Claude A frontend
-Last updated: 2026-05-23
+Last updated: 2026-06-18
 
 Use this playbook before any major frontend redesign, prototype adoption, Figma/Claude Design integration, or visual system migration. It exists because prototype-to-product integration can become expensive when the design is translated before contracts, tokens, and component boundaries are clear.
 
@@ -11,6 +11,17 @@ Use this playbook before any major frontend redesign, prototype adoption, Figma/
 Treat frontend redesign as a design-system migration, not as a copy/paste of a prototype into the app.
 
 The prototype is a visual and interaction reference. The application remains a typed React/TypeScript product with existing backend contracts, privacy boundaries, product-safety rules, and route ownership.
+
+Major frontend redesigns and visual migrations must cite root `STYLE.md` /
+Portfolio Copilot Skyframe. Skyframe is the app-wide product style source of
+truth; per-surface design docs may refine it but must not override its privacy,
+safety, evidence, manual-decision-support, or contrast boundaries.
+
+Skyframe's medium-high contrast standard is mandatory: "calm sky atmosphere,
+crisp analyst structure." Sky blue is a surface/atmosphere color, not the
+hierarchy system by itself. Visual migrations must preserve obvious section and
+element separation through surface steps, rules, spacing, typography, accent
+edges, or other contrast-safe structure.
 
 ## When To Use
 
@@ -81,6 +92,56 @@ Extract the design into stable tokens before page work:
 - Card/panel surfaces.
 
 Use app-scoped token names when migrating alongside an existing design system. For example, the Modern Portfolio Desk migration used `--mp-*` tokens so legacy `--color-*` consumers could coexist during the transition.
+
+## Skyframe Per-Surface Rollout Checklist
+
+Use this checklist when migrating any page, workspace, report surface, or shared
+component toward Portfolio Copilot Skyframe:
+
+- Cite root `STYLE.md` / Portfolio Copilot Skyframe in the task handoff.
+- Preserve backend contracts, existing API clients, TypeScript types, and
+  reviewed frontend read fields.
+- Do not fabricate values, coverage, timestamps, provenance, metrics, report
+  states, freshness, or evidence.
+- Keep deterministic evidence and Agent Team narrative visually distinct.
+- Preserve Skyframe medium-high section contrast in light and dark mode:
+  "calm sky atmosphere, crisp analyst structure."
+- Use sky blue as surface/atmosphere only; do not make it the action or status
+  hierarchy by itself.
+- Keep controls, links, focus rings, selected states, and status labels
+  contrast-safe with `--mp-*` / `--skyframe-*` tokens.
+- Check 1024, 1280, and 1440 px widths when the slice changes visible layout.
+- Do not use screenshots, reviews, fixtures, or examples that expose private
+  account data, provider payloads, logs, generated private reports, or real
+  brokerage data.
+- Require Claude B visual/safety review for meaningful UI changes.
+- Require Codex B review only if product safety, privacy, report semantics,
+  evidence-display rules, frontend read-contract boundaries, or cross-surface
+  product posture changes.
+- Run the Skyframe token guard after token work:
+  `cd frontend && npm run check:skyframe-tokens`.
+  The guard is warning-only during migration. It reports new raw hex usage
+  outside `globals.css`, new files using legacy `var(--color-*)`, or increases
+  above the tracked legacy-token baseline.
+
+### Synthetic/Private-Safe Skyframe Smoke
+
+Skyframe route-shell smoke and connected data-state smoke are different checks.
+Do not merge their results.
+
+- Frontend-only shell smoke may validate route framing, `SkyframeSurface`,
+  light/dark theme behavior, 1024/1280/1440 overflow, and obvious unsafe action
+  wording.
+- Frontend-only shell smoke does not validate connected report, account,
+  dashboard, provider, broker, or saved-artifact data states.
+- For data-backed Skyframe surfaces, use a reviewed synthetic/private-safe
+  backend seed or fixture before running connected smoke. Do not inspect local
+  DB contents, real saved reports, generated private reports, broker data,
+  provider payloads, logs, or screenshots containing private data.
+- If no synthetic/private-safe fixture exists, record the blocker and the exact
+  fixture needed. Do not force full-stack preview against unknown local data.
+- Keep route names honest in reports. For example, the current Dashboard route is
+  `/`, even when a task colloquially calls it `/dashboard`.
 
 ## Shared Primitives Before Pages
 

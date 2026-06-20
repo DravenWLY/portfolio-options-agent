@@ -1,5 +1,13 @@
 # Changelog
 
+- 2026-06-19: Added the P29B-T7E synthetic/private-safe connected Skyframe smoke
+  fixture overlay. `POA_SKYFRAME_FIXTURES=1` plus a local/dev/test `APP_ENV`, a
+  valid `X-Local-Access-Token`, and `X-Skyframe-Fixture: private-safe-v1`
+  activates fixed synthetic responses for connected Reports, Dashboard,
+  Trade Review, Market Mood, and Economic Calendar smoke paths. The overlay uses
+  fixed demo ids, does not echo incoming real-looking ids, returns synthetic 404s
+  for active smoke-owned unsupported paths, and makes no DB, broker, provider,
+  market-data, LLM, TradingAgents, or external calls.
 - 2026-06-15: Added P29B-T3A backend public evidence persistence and projection
   seam. Explicit Agent Team generation now persists generation-time
   `public_evidence` inside the saved artifact JSON alongside `agent_summary`,

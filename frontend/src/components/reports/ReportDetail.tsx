@@ -1,27 +1,28 @@
 /**
  * ReportDetail — the report "reading view" (right pane of the Reports
- * workspace). When an Agent Team analysis exists it is the primary content:
- * final synthesis first, then per-role analyst sections, with deterministic
- * scope/evidence/caveats as supporting provenance below. When no analysis
- * exists yet, the saved snapshot is shown honestly as a complete kept analysis
- * with an optional action to generate one.
+ * workspace), in the "analyst memo" direction.
  *
- * Timestamps are kept honest and distinct: the source snapshot's saved time and
- * (when a report exists) the Agent Team generation time are shown separately so
- * neither is mistaken for the other. The technical read/build time is not
- * surfaced.
+ * Hierarchy: a compact provenance trust strip, then (when an analysis exists)
+ * the Agent Team final synthesis as the serif lede, then per-role analyst
+ * sections grouped into a PRIMARY portfolio-aware band (full editorial memo
+ * blocks) and a SECONDARY public "market context" band (compact cards), with
+ * deterministic scope/evidence/caveats as supporting provenance below. When no
+ * analysis exists yet, the saved snapshot is shown honestly as a complete kept
+ * analysis with an optional action to generate one.
  *
- * Generation is manual and explicit. While a request is in flight the body shows
- * a transient "generating" affordance over the last persisted status (the parent
- * owns the single-flight request), and the prior body stays visible — no
- * skeleton flash. Stale guard: a newly selected report shows a skeleton until its
- * own detail loads; the previous report's body is never shown for it.
+ * Within each primary memo block the agent narrative and the deterministic
+ * evidence it cited are kept in explicitly labeled, visually distinct zones.
  *
- * All content is read from the saved record only; nothing is reconstructed from
- * the current account selector, Account Details, route, or cache.
+ * Timestamps stay honest and distinct (snapshot saved vs report generated) and
+ * live in the trust strip; the technical read/build time is not surfaced.
+ *
+ * Generation is manual and explicit; while a request is in flight the body shows
+ * a transient generating affordance over the prior status (parent owns the
+ * single-flight request) and the prior body stays visible — no skeleton flash.
+ * Stale guard: a newly selected report shows a skeleton until its own detail
+ * loads. All content is read from the saved record only.
  */
 import { Badge, MpIcon } from "../shared/mp";
-import Timestamp from "../shared/Timestamp";
 import { EmptyState, ErrorState, LoadingSkeleton } from "../shared/StateViews";
 import type {
   AgentTeamReportStatus,
@@ -33,13 +34,15 @@ import AgentRoleSection from "./AgentRoleSection";
 import GenerateAgentTeamReport from "./GenerateAgentTeamReport";
 import ReportProse from "./ReportProse";
 import ReportProvenance from "./ReportProvenance";
+import ReportTrustStrip from "./ReportTrustStrip";
 import {
-  coverageNote,
   deriveReportStatus,
   humanizeCode,
+  publicCoverage,
   reportStatusMeta,
   runCompleteness,
   runCompletenessLabel,
+  splitRoles,
 } from "./reportStatus";
 
 export type ReportDetailStatus = "idle" | "loading" | "success" | "error";
@@ -50,11 +53,8 @@ interface ReportDetailProps {
   status: ReportDetailStatus;
   error: string | null;
   onRetry: () => void;
-  /** Transient: a generation request for this report is in flight. */
   isGenerating: boolean;
-  /** Sanitized generation error for this report, or null. */
   generateError: string | null;
-  /** Explicit, manual trigger to run/re-run the Agent Team report. */
   onGenerate: () => void;
 }
 
@@ -85,10 +85,6 @@ export default function ReportDetail({
     detailMatchesSelection && detail ? detail : selectedThread,
   );
   const headerMeta = reportStatusMeta(reportStatus);
-  // Keep the matched body visible during a background refetch (e.g. after
-  // generation) so the transient state sits over the prior status; only show a
-  // skeleton when we have no matching detail yet (stale guard for new
-  // selections).
   const showBody = detailMatchesSelection && detail;
 
   return (
@@ -125,7 +121,6 @@ function ReportHeader({
   const meta = reportStatusMeta(reportStatus);
   const completeness = runCompleteness(thread.agent_summary);
   const showCompleteness = reportStatus === "full_agent_report" && completeness !== "full";
-  const reportGeneratedAt = thread.agent_summary?.report_generated_at ?? null;
 
   return (
     <header style={styles.header}>
@@ -136,14 +131,6 @@ function ReportHeader({
         </h2>
         <span style={styles.headerMeta}>
           <span style={styles.type}>{thread.report_type}</span>
-          <span aria-hidden="true" style={styles.dot}>·</span>
-          <Timestamp iso={thread.created_at} prefix="Snapshot saved" />
-          {reportGeneratedAt && (
-            <>
-              <span aria-hidden="true" style={styles.dot}>·</span>
-              <Timestamp iso={reportGeneratedAt} prefix="Report generated" />
-            </>
-          )}
         </span>
       </div>
       <div style={styles.headerBadges}>
@@ -168,10 +155,6 @@ function StateBanner({
   description: string;
 }) {
   const meta = reportStatusMeta(reportStatus);
-  // Mute states (source_snapshot / agent_unavailable) carry no alert tone, so
-  // the icon takes the readable body-ink color instead of the faint rule color
-  // — clearly legible in both themes while staying neutral. Toned states keep
-  // their semantic color.
   const iconColor = meta.tone === "mute" ? "var(--mp-ink-2)" : `var(--mp-${meta.tone})`;
   return (
     <div
@@ -211,10 +194,19 @@ function ReportBody({
   const canGenerate = reportStatus === "source_snapshot" && hasScope;
   const canRetry =
     (reportStatus === "agent_unavailable" || reportStatus === "validation_failed") && hasScope;
-  const note = coverageNote(summary);
+  const { primary, context } = splitRoles(summary);
+  const coverage = publicCoverage(summary);
+  const hasRoles = (summary?.role_summaries.length ?? 0) > 0;
 
   return (
     <div style={styles.body}>
+      <ReportTrustStrip
+        summary={summary}
+        createdAt={detail.created_at}
+        reportGeneratedAt={summary?.report_generated_at ?? null}
+        scope={detail.scope_metadata}
+      />
+
       <StateBanner reportStatus={reportStatus} description={statusDescription} />
 
       {canGenerate && (
@@ -236,24 +228,32 @@ function ReportBody({
 
       {summary?.final_synthesis_markdown && <FinalSynthesis summary={summary} />}
 
-      {summary && summary.role_summaries.length > 0 && (
-        <section style={styles.rolesSection} aria-label="Analyst sections">
-          <div style={styles.sectionHeading}>
-            <MpIcon name="agent" size={15} style={styles.sectionIcon} />
-            <h3 style={styles.sectionTitle}>Analyst sections</h3>
-            <span style={styles.sectionCount}>{summary.role_summaries.length}</span>
-          </div>
-          {note && (
-            <p style={styles.coverageNote}>
-              <MpIcon name="info" size={13} style={styles.coverageIcon} />
-              <span>{note}</span>
-            </p>
+      {hasRoles && (
+        <section style={styles.roles} aria-label="Analyst sections">
+          {primary.length > 0 && (
+            <>
+              <BandHeader label="Portfolio-aware roles" pill="Primary" tone="accent" />
+              {primary.map((role) => (
+                <AgentRoleSection key={role.role_name} role={role} variant="primary" />
+              ))}
+            </>
           )}
-          <div style={styles.rolesGrid}>
-            {summary.role_summaries.map((role) => (
-              <AgentRoleSection key={role.role_name} role={role} />
-            ))}
-          </div>
+
+          {context.length > 0 && (
+            <div style={styles.contextBand}>
+              <div style={styles.contextBandHead}>
+                <span style={styles.contextBandTitle}>Market context · public analysts</span>
+                <span style={styles.secondaryPill}>Secondary</span>
+                <span style={styles.bandSpacer} />
+                {coverage.note && <span style={styles.contextNote}>{coverage.note}</span>}
+              </div>
+              <div style={styles.contextGrid}>
+                {context.map((role) => (
+                  <AgentRoleSection key={role.role_name} role={role} variant="context" />
+                ))}
+              </div>
+            </div>
+          )}
         </section>
       )}
 
@@ -268,12 +268,31 @@ function ReportBody({
   );
 }
 
+function BandHeader({ label, pill, tone }: { label: string; pill: string; tone: "accent" }) {
+  return (
+    <div style={styles.bandHead}>
+      <span style={styles.bandTitle}>{label}</span>
+      <span
+        style={{
+          ...styles.bandPill,
+          color: `var(--mp-${tone})`,
+          borderColor: `var(--mp-${tone}-line)`,
+          backgroundColor: `var(--mp-${tone}-soft)`,
+        }}
+      >
+        {pill}
+      </span>
+      <span style={styles.bandRule} />
+    </div>
+  );
+}
+
 function FinalSynthesis({ summary }: { summary: SavedAgentTeamSummaryRead }) {
   if (!summary.final_synthesis_markdown) return null;
   return (
     <section style={styles.synthesis} aria-label="Final synthesis">
       <div style={styles.synthesisHead}>
-        <span style={styles.synthesisEyebrow}>Final synthesis · Analysis only</span>
+        <span style={styles.synthesisEyebrow}>Final synthesis · Agent narrative · analysis only</span>
         {summary.final_synthesis_authored_by && (
           <span style={styles.synthesisAuthor}>
             Authored by {humanizeCode(summary.final_synthesis_authored_by)}
@@ -281,7 +300,7 @@ function FinalSynthesis({ summary }: { summary: SavedAgentTeamSummaryRead }) {
         )}
       </div>
       <div style={styles.synthesisProse}>
-        <ReportProse text={summary.final_synthesis_markdown} />
+        <ReportProse text={summary.final_synthesis_markdown} display color="var(--mp-ink)" />
       </div>
     </section>
   );
@@ -292,6 +311,11 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: "var(--space-4)",
+    padding: "var(--space-5)",
+    border: "1px solid var(--reports-rule)",
+    borderRadius: "var(--radius-lg)",
+    background: "var(--reports-reading-surface)",
+    boxShadow: "var(--reports-section-shadow)",
     minWidth: 0,
   },
   header: {
@@ -301,7 +325,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "var(--space-4)",
     flexWrap: "wrap",
     paddingBottom: "var(--space-4)",
-    borderBottom: "1px solid var(--mp-rule)",
+    borderBottom: "1px solid var(--reports-rule-strong)",
     minWidth: 0,
   },
   headerText: {
@@ -338,9 +362,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: "var(--mp-font-mono)",
     overflowWrap: "anywhere",
   },
-  dot: {
-    color: "var(--mp-mute-2)",
-  },
   headerBadges: {
     display: "flex",
     alignItems: "center",
@@ -358,12 +379,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     gap: "var(--space-3)",
     alignItems: "flex-start",
-    // Longhand border props (not the `border` shorthand) so the per-status
-    // `borderColor` override below does not trip React's shorthand/longhand
-    // style conflict warning.
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: "var(--mp-rule)",
+    borderColor: "var(--reports-rule)",
     borderRadius: "var(--radius-md)",
     padding: "var(--space-3) var(--space-4)",
     minWidth: 0,
@@ -386,7 +404,8 @@ const styles: Record<string, React.CSSProperties> = {
     borderLeft: "3px solid var(--mp-accent)",
     borderRadius: "var(--radius-md)",
     padding: "var(--space-5) var(--space-6)",
-    backgroundColor: "var(--mp-card)",
+    background: "var(--reports-card-surface)",
+    boxShadow: "var(--reports-section-shadow)",
     minWidth: 0,
   },
   synthesisHead: {
@@ -411,53 +430,84 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: "64ch",
     minWidth: 0,
   },
-  rolesSection: {
+  roles: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "var(--space-4)",
+    minWidth: 0,
+  },
+  bandHead: {
+    display: "flex",
+    alignItems: "center",
+    gap: "var(--space-2)",
+    minWidth: 0,
+  },
+  bandTitle: {
+    color: "var(--mp-ink)",
+    fontSize: "var(--font-size-sm)",
+    fontWeight: 700,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+  },
+  bandPill: {
+    fontSize: "var(--font-size-xs)",
+    fontWeight: 700,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    border: "1px solid var(--mp-accent-line)",
+    borderRadius: 999,
+    padding: "1px 8px",
+  },
+  bandRule: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "var(--reports-rule-strong)",
+  },
+  contextBand: {
     display: "flex",
     flexDirection: "column",
     gap: "var(--space-3)",
+    borderRadius: "var(--radius-md)",
+    padding: "var(--space-4)",
+    background: "var(--reports-soft-surface)",
+    border: "1px solid var(--reports-rule)",
     minWidth: 0,
   },
-  sectionHeading: {
+  contextBandHead: {
     display: "flex",
     alignItems: "center",
-    gap: 8,
+    gap: "var(--space-2)",
+    flexWrap: "wrap",
+    minWidth: 0,
   },
-  sectionIcon: {
+  contextBandTitle: {
     color: "var(--mp-mute)",
-    flexShrink: 0,
+    fontSize: "var(--font-size-sm)",
+    fontWeight: 700,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
   },
-  sectionTitle: {
-    margin: 0,
-    color: "var(--mp-ink)",
-    fontSize: "var(--font-size-md)",
-    fontWeight: 600,
-  },
-  sectionCount: {
+  secondaryPill: {
     color: "var(--mp-mute)",
     fontSize: "var(--font-size-xs)",
-    fontVariantNumeric: "tabular-nums",
-    border: "1px solid var(--mp-rule)",
+    fontWeight: 700,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    border: "1px solid var(--reports-rule-strong)",
     borderRadius: 999,
-    padding: "0 7px",
-    lineHeight: 1.7,
+    padding: "1px 8px",
   },
-  coverageNote: {
-    margin: 0,
-    display: "flex",
-    gap: 6,
-    alignItems: "flex-start",
+  bandSpacer: {
+    flex: 1,
+  },
+  contextNote: {
     color: "var(--mp-mute)",
     fontSize: "var(--font-size-xs)",
-    lineHeight: 1.6,
+    lineHeight: 1.5,
   },
-  coverageIcon: {
-    color: "var(--mp-mute-2)",
-    flexShrink: 0,
-    marginTop: 2,
-  },
-  rolesGrid: {
+  contextGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
     gap: "var(--space-3)",
     alignItems: "start",
     minWidth: 0,

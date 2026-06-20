@@ -10,7 +10,14 @@ export default defineConfig(({ mode }) => {
   // the client (Vite only exposes VITE_-prefixed vars to browser code).
   const fileEnv = loadEnv(mode, process.cwd(), "");
   const localAccessToken = process.env.LOCAL_DEV_ACCESS_TOKEN ?? fileEnv.LOCAL_DEV_ACCESS_TOKEN;
+  const skyframeFixtureHeader = process.env.SKYFRAME_FIXTURE_HEADER ?? fileEnv.SKYFRAME_FIXTURE_HEADER;
+  const skyframeDashboardState = process.env.SKYFRAME_DASHBOARD_STATE ?? fileEnv.SKYFRAME_DASHBOARD_STATE;
   const backendUrl = process.env.BACKEND_URL ?? fileEnv.BACKEND_URL ?? "http://localhost:8000";
+  const proxyHeaders = {
+    ...(localAccessToken ? { "X-Local-Access-Token": localAccessToken } : {}),
+    ...(skyframeFixtureHeader ? { "X-Skyframe-Fixture": skyframeFixtureHeader } : {}),
+    ...(skyframeDashboardState ? { "X-Skyframe-Dashboard-State": skyframeDashboardState } : {}),
+  };
 
   return {
     plugins: [react()],
@@ -22,7 +29,7 @@ export default defineConfig(({ mode }) => {
         "/api": {
           target: backendUrl,
           changeOrigin: true,
-          headers: localAccessToken ? { "X-Local-Access-Token": localAccessToken } : undefined,
+          headers: Object.keys(proxyHeaders).length > 0 ? proxyHeaders : undefined,
           rewrite: (path) => path.replace(/^\/api/, ""),
         },
       },

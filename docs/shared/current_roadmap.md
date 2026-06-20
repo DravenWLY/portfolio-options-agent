@@ -118,10 +118,11 @@ What is complete:
 What should happen next:
 
 - Commit and push the accepted P29B-T3A/T3B backend/agentic work.
-- Start P29B-T4 frontend rich report optimization using stable synthetic public
-  evidence sample payloads. Claude Design may be introduced for hierarchy and
-  concept exploration; Stitch should wait until a direction is chosen and must
-  consume reviewed mock data only.
+- Start P29B-T5 Skyframe token unification and Reports sky-surface prototype.
+  P29B-T4 Direction A is accepted as the Reports reference direction; future
+  Reports styling should cite `STYLE.md` / Portfolio Copilot Skyframe and
+  preserve the medium-high contrast standard ("calm sky atmosphere, crisp
+  analyst structure").
 - Track the 7 unrelated full-backend-suite failures as a separate Codex C
   backend maintenance/regression task; they are not blockers for P29B-T3.
 

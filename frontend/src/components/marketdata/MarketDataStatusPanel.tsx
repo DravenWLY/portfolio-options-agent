@@ -142,7 +142,7 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontWeight: 700,
     fontSize: "var(--font-size-base)",
-    color: "var(--color-text-primary)",
+    color: "var(--mp-ink)",
   },
   scopeBadge: {
     fontSize: "var(--font-size-xs)",
@@ -155,7 +155,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   notConnected: {
     fontSize: "var(--font-size-sm)",
-    color: "var(--color-text-secondary)",
+    color: "var(--mp-ink-2)",
     margin: 0,
     fontWeight: 600,
   },
@@ -176,7 +176,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   statusLabel: {
     fontSize: "var(--font-size-xs)",
-    color: "var(--color-text-muted)",
+    color: "var(--mp-mute)",
     textTransform: "uppercase",
     letterSpacing: "0.06em",
     margin: 0,
@@ -190,12 +190,12 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "1px 6px",
     border: "1px solid var(--color-unknown)",
     borderRadius: "var(--radius-sm)",
-    color: "var(--color-text-secondary)",
+    color: "var(--mp-ink-2)",
     fontWeight: 600,
   },
   clusterNote: {
     fontSize: "var(--font-size-xs)",
-    color: "var(--color-text-muted)",
+    color: "var(--mp-ink-2)",
     margin: 0,
     lineHeight: 1.6,
   },
@@ -211,14 +211,14 @@ const styles: Record<string, React.CSSProperties> = {
   factKey: {
     display: "inline-block",
     minWidth: 160,
-    color: "var(--color-text-muted)",
+    color: "var(--mp-mute)",
   },
   factVal: {
-    color: "var(--color-text-secondary)",
+    color: "var(--mp-ink-2)",
   },
   safety: {
     fontSize: "var(--font-size-sm)",
-    color: "var(--color-text-secondary)",
+    color: "var(--mp-ink-2)",
     margin: 0,
     lineHeight: 1.6,
     fontWeight: 600,

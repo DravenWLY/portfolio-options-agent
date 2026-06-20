@@ -26,23 +26,24 @@ export default function SectionCard({ id, label, headerRight, children }: Sectio
 
 const styles: Record<string, React.CSSProperties> = {
   card: {
-    backgroundColor: "var(--color-surface)",
-    border: "1px solid var(--color-border)",
+    backgroundColor: "var(--mp-card)",
+    border: "1px solid var(--mp-rule)",
     borderRadius: "var(--radius-md)",
     overflow: "hidden",
+    boxShadow: "var(--mp-shadow-sm)",
   },
   header: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     padding: "var(--space-4) var(--space-6)",
-    borderBottom: "1px solid var(--color-border-subtle)",
+    borderBottom: "1px solid var(--mp-rule)",
     gap: "var(--space-4)",
   },
   label: {
     fontSize: "var(--font-size-sm)",
     fontWeight: 600,
-    color: "var(--color-text-muted)",
+    color: "var(--mp-mute)",
     textTransform: "uppercase",
     letterSpacing: "0.08em",
   },

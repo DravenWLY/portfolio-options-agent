@@ -3,6 +3,7 @@ import { useRiskReview } from "../hooks/useRiskReview";
 import { RISK_REVIEW_STUB_NOTICE, type RiskReviewScenario } from "../api/riskReview";
 import RiskReviewPanel from "../components/risk/RiskReviewPanel";
 import { LoadingSkeleton, ErrorState, EmptyState } from "../components/shared/StateViews";
+import SkyframeSurface from "../components/shared/SkyframeSurface";
 
 /**
  * RiskReviewPage — read-only deterministic risk review (P13-T8).
@@ -30,7 +31,7 @@ export default function RiskReviewPage() {
   const { status, report, error, reload } = useRiskReview(scenario);
 
   return (
-    <div style={styles.page}>
+    <SkyframeSurface className="mp-surface" maxWidth={940}>
       <div style={styles.header}>
         <h1 style={styles.title}>Risk Review</h1>
         <p style={styles.subtitle}>
@@ -72,12 +73,11 @@ export default function RiskReviewPage() {
         />
       )}
       {status === "success" && report && <RiskReviewPanel report={report} />}
-    </div>
+    </SkyframeSurface>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { display: "flex", flexDirection: "column", gap: "var(--space-6)", maxWidth: 940 },
   header: { display: "flex", flexDirection: "column", gap: "var(--space-1)" },
   title: {
     fontSize: "var(--font-size-xl)",
@@ -91,8 +91,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "var(--font-size-xs)",
     color: "var(--color-text-secondary)",
     backgroundColor: "var(--color-surface-2)",
-    border: "1px solid var(--color-border)",
-    borderLeft: "3px solid var(--color-stale)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--color-border)",
+    borderLeftWidth: 3,
+    borderLeftColor: "var(--color-stale)",
     borderRadius: "var(--radius-md)",
     padding: "var(--space-3) var(--space-5)",
     lineHeight: 1.6,
@@ -114,7 +117,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "var(--font-size-xs)",
     fontWeight: 600,
     padding: "var(--space-1) var(--space-3)",
-    border: "1px solid var(--color-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--color-border)",
     borderRadius: "var(--radius-sm)",
     backgroundColor: "transparent",
     color: "var(--color-text-secondary)",

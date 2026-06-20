@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { Badge, MpIcon, PageHeader } from "../components/shared/mp";
+import SkyframeSurface from "../components/shared/SkyframeSurface";
 import { LoadingSkeleton, ErrorState, EmptyState } from "../components/shared/StateViews";
 import { marketMoodApi } from "../api/marketMood";
 import { ApiRequestError } from "../api/client";
@@ -106,7 +107,7 @@ export default function MarketMoodPage() {
   const isUnavailable = status === "success" && data?.data_mode !== "provider_reference";
 
   return (
-    <div className="mp-surface" style={styles.page}>
+    <SkyframeSurface className="mp-surface" maxWidth={1320} style={styles.page}>
       <div style={styles.crumbRow}>
         <Link to="/" style={styles.crumb}>
           <MpIcon name="chevron-r" size={13} style={styles.backIcon} />
@@ -168,7 +169,7 @@ export default function MarketMoodPage() {
           </>
         )
       )}
-    </div>
+    </SkyframeSurface>
   );
 }
 
@@ -672,8 +673,6 @@ const styles: Record<string, CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     gap: "var(--space-5)",
-    maxWidth: 1320,
-    margin: "0 auto",
     color: "var(--mp-ink)",
   },
   crumbRow: { display: "flex", marginBottom: "calc(-1 * var(--space-3))" },

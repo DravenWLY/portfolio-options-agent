@@ -105,7 +105,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid var(--mp-accent-line)",
     borderRadius: "var(--radius-md)",
     padding: "var(--space-4) var(--space-5)",
-    backgroundColor: "var(--mp-accent-soft)",
+    background: "var(--reports-action-surface)",
     minWidth: 0,
   },
   retryCard: {
@@ -114,10 +114,10 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "var(--space-2)",
     borderWidth: 1,
     borderStyle: "solid",
-    borderColor: "var(--mp-rule)",
+    borderColor: "var(--reports-rule)",
     borderRadius: "var(--radius-md)",
     padding: "var(--space-3) var(--space-4)",
-    backgroundColor: "var(--mp-card-2)",
+    background: "var(--reports-soft-surface)",
     minWidth: 0,
   },
   head: {
@@ -135,7 +135,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-sm)",
     border: "1px solid var(--mp-accent-line)",
     color: "var(--mp-accent)",
-    backgroundColor: "var(--mp-card)",
+    background: "var(--reports-card-surface)",
     flexShrink: 0,
   },
   copy: {

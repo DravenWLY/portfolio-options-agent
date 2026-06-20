@@ -5,6 +5,7 @@ import TradeReviewForm from "../components/trade-review/TradeReviewForm";
 import TradeReviewResults from "../components/trade-review/TradeReviewResults";
 import { LoadingSkeleton, ErrorState, EmptyState } from "../components/shared/StateViews";
 import { Badge, PageHeader, SafetyStrip } from "../components/shared/mp";
+import SkyframeSurface from "../components/shared/SkyframeSurface";
 import { useAccountContext } from "../context/useAccountContext";
 import type { TradeReviewSubmission, TradeReviewWorkspaceRead } from "../types/tradeReview";
 
@@ -60,7 +61,7 @@ export default function TradeReviewPage() {
   }
 
   return (
-    <div className="mp-surface" style={styles.page}>
+    <SkyframeSurface className="mp-surface" maxWidth={1280}>
       <PageHeader
         eyebrow="Workspace · trade review"
         title="Review trade"
@@ -106,12 +107,11 @@ export default function TradeReviewPage() {
           "Data freshness may affect review quality",
         ]}
       />
-    </div>
+    </SkyframeSurface>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { display: "flex", flexDirection: "column", gap: "var(--space-6)", maxWidth: 1280, margin: "0 auto", color: "var(--mp-ink)" },
   grid: { display: "grid", gap: "var(--space-6)", minWidth: 0 },
   formRail: {
     alignSelf: "flex-start", paddingRight: 2, minWidth: 0,

@@ -17,6 +17,7 @@ import type {
 import type { PortfolioContextListRead, PortfolioContextRead } from "../types/portfolioContext";
 import EconomicCalendarPanel from "../components/economic-calendar/EconomicCalendarPanel";
 import MarketMoodCard from "../components/market-context/MarketMoodCard";
+import SkyframeSurface from "../components/shared/SkyframeSurface";
 
 /**
  * DashboardPage — compact review-readiness cockpit (P20D-T2 → T5).
@@ -127,7 +128,7 @@ export default function DashboardPage() {
   /* ── No user ─────────────────────────────────────────────────────────── */
   if (!userId) {
     return (
-      <div className="mp-surface" style={styles.page}>
+      <SkyframeSurface className="mp-surface" maxWidth={1280}>
         <PageHeader
           eyebrow="Workspace · overview"
           title="Dashboard"
@@ -135,12 +136,12 @@ export default function DashboardPage() {
         />
         <EmptyState title="No user selected" body="Select a user from the developer account selector to load dashboard data." />
         <DashboardSafetyStrip />
-      </div>
+      </SkyframeSurface>
     );
   }
 
   return (
-    <div className="mp-surface" style={styles.page}>
+    <SkyframeSurface className="mp-surface" maxWidth={1280}>
       <PageHeader
         eyebrow="Workspace · overview"
         title="Dashboard"
@@ -189,7 +190,7 @@ export default function DashboardPage() {
       <AgentProviderStatusRow slot={state.readiness} />
 
       <DashboardSafetyStrip />
-    </div>
+    </SkyframeSurface>
   );
 }
 
@@ -662,7 +663,6 @@ function Td({ children, mono, align = "left" }: { children: React.ReactNode; mon
 /* ── Styles ───────────────────────────────────────────────────────────── */
 
 const styles: Record<string, React.CSSProperties> = {
-  page: { display: "flex", flexDirection: "column", gap: "var(--space-5)", maxWidth: 1280, margin: "0 auto", color: "var(--mp-ink)" },
   primaryBtn: {
     fontSize: "var(--font-size-sm)", fontWeight: 600, padding: "8px 16px",
     backgroundColor: "var(--mp-accent)", color: "var(--mp-card)",

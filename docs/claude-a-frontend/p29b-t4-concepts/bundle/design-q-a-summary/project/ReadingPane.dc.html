@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="font-family: var(--mp-font-sans); color: var(--mp-ink); min-width: 0; display: flex; flex-direction: column; gap: 20px;">
+
+  <!-- ============ HEADER (shared) ============ -->
+  <header style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 1px solid var(--mp-rule); min-width: 0;">
+    <div style="display: flex; flex-direction: column; gap: 5px; min-width: 0;">
+      <span style="color: var(--mp-mute); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">{{ r.eyebrow }}</span>
+      <h2 style="font-family: var(--mp-font-display); margin: 0; color: var(--mp-ink); font-size: 27px; font-weight: 500; line-height: 1.18; letter-spacing: -0.01em; overflow-wrap: anywhere;">{{ r.title }}</h2>
+      <span style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; color: var(--mp-mute); font-size: 11px;">
+        <span style="font-family: var(--mp-font-mono);">{{ r.reportType }}</span>
+      </span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end;">
+      <span style="{{ r.statusBadgeStyle }}">
+        <sc-if value="{{ r.statusIsAccent }}" hint-placeholder-val="{{ true }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M5 21c0-3.9 3.1-7 7-7s7 3.1 7 7"></path></svg></sc-if>
+        <sc-if value="{{ r.statusIsMute }}" hint-placeholder-val="{{ true }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></sc-if>
+        <sc-if value="{{ r.statusIsBlock }}" hint-placeholder-val="{{ true }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"></path></svg></sc-if>
+        {{ r.statusChip }}
+      </span>
+      <sc-if value="{{ r.showCompletenessBadge }}" hint-placeholder-val="{{ false }}">
+        <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; padding: 2px 8px; border: 1px solid var(--mp-stale); border-radius: 4px; color: var(--mp-stale); background: var(--mp-stale-soft); white-space: nowrap;">{{ r.completenessLabel }}</span>
+      </sc-if>
+    </div>
+  </header>
+
+  <!-- ============ TRUST STRIP (shared) ============ -->
+  <div role="note" aria-label="Provenance trust strip" style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 11px 16px; border: 1px solid var(--mp-rule); border-radius: 8px; background: var(--mp-paper-2); min-width: 0;">
+    <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--mp-ink-2);">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mp-mute)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M5 21c0-3.9 3.1-7 7-7s7 3.1 7 7"></path></svg>
+      <span>{{ r.coverageText }}</span>
+    </span>
+    <span aria-hidden="true" style="width: 1px; height: 13px; background: var(--mp-rule-2);"></span>
+    <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--mp-ink-2);">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mp-mute)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+      <span>Snapshot saved <span style="font-family: var(--mp-font-mono); color: var(--mp-mute);">{{ r.snapshotSaved }}</span></span>
+    </span>
+    <sc-if value="{{ r.hasGenerated }}" hint-placeholder-val="{{ true }}">
+      <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--mp-ink-2);">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mp-accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M5 21c0-3.9 3.1-7 7-7s7 3.1 7 7"></path></svg>
+        <span>Report generated <span style="font-family: var(--mp-font-mono); color: var(--mp-mute);">{{ r.reportGenerated }}</span></span>
+      </span>
+    </sc-if>
+    <span aria-hidden="true" style="width: 1px; height: 13px; background: var(--mp-rule-2);"></span>
+    <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--mp-ink-2);">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mp-mute)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="1.5"></rect><path d="M8 11V7a4 4 0 018 0v4"></path></svg>
+      <span>{{ r.savedScope }}</span>
+    </span>
+    <span style="margin-left: auto; display: inline-flex; align-items: center; gap: 8px;">
+      <span style="display: inline-flex; align-items: center; gap: 5px;">
+        <span style="display: inline-flex; gap: 3px;">
+          <sc-for list="{{ r.coverageDots }}" as="dot" hint-placeholder-count="3">
+            <span style="{{ dot.style }}"></span>
+          </sc-for>
+        </span>
+        <span style="font-size: 10px; font-family: var(--mp-font-mono); color: var(--mp-mute); white-space: nowrap;">{{ r.coverageMeterLabel }}</span>
+      </span>
+      <span style="font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-info); border: 1px dashed var(--mp-info); border-radius: 4px; padding: 1px 5px; white-space: nowrap;">Track B</span>
+    </span>
+  </div>
+
+  <!-- ============ STATE BANNER (shared) ============ -->
+  <sc-if value="{{ r.showBanner }}" hint-placeholder-val="{{ true }}">
+    <div role="note" style="{{ r.bannerStyle }}">
+      <span aria-hidden="true" style="{{ r.bannerIconStyle }}">
+        <sc-if value="{{ r.bannerIsClock }}" hint-placeholder-val="{{ true }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></sc-if>
+        <sc-if value="{{ r.bannerIsAlert }}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l10 18H2L12 3z"></path><path d="M12 10v5M12 18.5v.5"></path></svg></sc-if>
+        <sc-if value="{{ r.bannerIsShield }}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"></path></svg></sc-if>
+      </span>
+      <p style="margin: 0; color: var(--mp-ink-2); font-size: 13px; line-height: 1.6;">{{ r.bannerText }}</p>
+    </div>
+  </sc-if>
+
+  <!-- ============ GENERATE / RETRY ACTION (shared) ============ -->
+  <sc-if value="{{ r.showAction }}" hint-placeholder-val="{{ false }}">
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; border: 1px solid var(--mp-rule); border-radius: 8px; padding: 14px 18px; background: var(--mp-card); min-width: 0;">
+      <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0;">
+        <span style="font-size: 13px; font-weight: 600; color: var(--mp-ink);">{{ r.actionTitle }}</span>
+        <span style="font-size: 12px; color: var(--mp-mute); line-height: 1.5;">{{ r.actionNote }}</span>
+      </div>
+      <button type="button" onClick="{{ onGenerate }}" disabled="{{ generating }}" style="{{ r.actionBtnStyle }}">
+        <sc-if value="{{ generating }}" hint-placeholder-val="{{ false }}">
+          <span style="display: inline-flex; align-items: center; gap: 8px;">
+            <span style="width: 12px; height: 12px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 999px; display: inline-block; animation: rp-spin 0.7s linear infinite;"></span>
+            Generating analysis…
+          </span>
+        </sc-if>
+        <sc-if value="{{ r.notGenerating }}" hint-placeholder-val="{{ true }}">
+          <span style="display: inline-flex; align-items: center; gap: 7px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M5 21c0-3.9 3.1-7 7-7s7 3.1 7 7"></path><path d="M9 8h6"></path></svg>
+            {{ r.actionButtonLabel }}
+          </span>
+        </sc-if>
+      </button>
+    </div>
+  </sc-if>
+
+  <!-- ============ FINAL SYNTHESIS (shared, narrative) ============ -->
+  <sc-if value="{{ r.showSynthesis }}" hint-placeholder-val="{{ true }}">
+    <section aria-label="Final synthesis" style="display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--mp-accent-line); border-left: 3px solid var(--mp-accent); border-radius: 8px; padding: 22px 26px; background: var(--mp-card); min-width: 0;">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+        <span style="color: var(--mp-accent-ink); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">Final synthesis · Agent narrative · analysis only</span>
+        <span style="color: var(--mp-mute); font-size: 11px;">Authored by {{ r.synthesisAuthor }}</span>
+      </div>
+      <div style="max-width: 64ch; min-width: 0; display: flex; flex-direction: column; gap: 11px;">
+        <sc-for list="{{ r.synthesisParas }}" as="para" hint-placeholder-count="2">
+          <p style="margin: 0; font-family: var(--mp-font-display); font-size: 17px; line-height: 1.62; color: var(--mp-ink); text-wrap: pretty;">{{ para }}</p>
+        </sc-for>
+      </div>
+    </section>
+  </sc-if>
+
+  <!-- ============ ROLES — DIRECTION A: SYNTHESIS COLUMN (labeled zones) ============ -->
+  <sc-if value="{{ showA }}" hint-placeholder-val="{{ true }}">
+    <sc-if value="{{ r.showRoles }}" hint-placeholder-val="{{ true }}">
+      <section aria-label="Analyst sections" style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
+
+        <!-- PRIMARY BAND -->
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-ink);">Portfolio-aware roles</span>
+          <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mp-accent); border: 1px solid var(--mp-accent-line); background: var(--mp-accent-soft); border-radius: 999px; padding: 1px 8px;">Primary</span>
+          <span style="flex: 1; height: 1px; background: var(--mp-rule);"></span>
+        </div>
+
+        <sc-for list="{{ primaryRoles }}" as="role" hint-placeholder-count="2">
+          <article style="display: flex; flex-direction: column; gap: 14px; border: 1px solid var(--mp-rule); border-left: 3px solid var(--mp-accent); border-radius: 8px; padding: 20px 24px; background: var(--mp-card); min-width: 0;">
+            <header style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+              <h4 style="margin: 0; font-family: var(--mp-font-display); color: var(--mp-ink); font-size: 19px; font-weight: 500; line-height: 1.2;">{{ role.displayName }}</h4>
+              <span style="{{ role.badgeStyle }}">{{ role.statusIconAndLabel }}<sc-if value="{{ role.isCompleted }}" hint-placeholder-val="{{ true }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"></path></svg></sc-if><sc-if value="{{ role.isWithheld }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"></path></svg></sc-if><sc-if value="{{ role.isOther }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v.5M12 11v5"></path></svg></sc-if>{{ role.statusLabel }}</span>
+            </header>
+
+            <!-- NARRATIVE ZONE -->
+            <div style="display: flex; flex-direction: column; gap: 9px; min-width: 0;">
+              <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--mp-accent-ink);">Agent narrative · analysis only</span>
+              <sc-if value="{{ role.hasNarrative }}" hint-placeholder-val="{{ true }}">
+                <div style="max-width: 64ch; display: flex; flex-direction: column; gap: 9px;">
+                  <sc-for list="{{ role.paras }}" as="para" hint-placeholder-count="2">
+                    <p style="margin: 0; font-family: var(--mp-font-display); font-size: 16px; line-height: 1.6; color: var(--mp-ink-2); text-wrap: pretty;">{{ para }}</p>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <sc-if value="{{ role.noNarrative }}" hint-placeholder-val="{{ false }}">
+                <p style="margin: 0; display: flex; gap: 8px; align-items: flex-start; color: var(--mp-mute); font-size: 13px; line-height: 1.6;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mp-mute-2)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-top: 2px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v.5M12 11v5"></path></svg>
+                  <span>{{ role.unavailableText }}</span>
+                </p>
+              </sc-if>
+            </div>
+
+            <!-- DETERMINISTIC EVIDENCE ZONE -->
+            <sc-if value="{{ role.hasEvidence }}" hint-placeholder-val="{{ true }}">
+              <div style="display: flex; flex-direction: column; gap: 8px; border-top: 1px dashed var(--mp-rule-2); padding-top: 13px; min-width: 0;">
+                <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--mp-mute);">Deterministic evidence cited · backend-owned</span>
+                <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px;">
+                  <sc-for list="{{ role.evidence }}" as="chip" hint-placeholder-count="4">
+                    <li style="font-family: var(--mp-font-mono); color: var(--mp-ink-2); border: 1px solid var(--mp-rule); border-radius: 4px; padding: 2px 8px; font-size: 11px; background: var(--mp-paper-2); overflow-wrap: anywhere;">{{ chip.label }}</li>
+                  </sc-for>
+                </ul>
+              </div>
+            </sc-if>
+
+            <!-- TRACK B per-role chips -->
+            <sc-if value="{{ role.hasTrackB }}" hint-placeholder-val="{{ false }}">
+              <div style="display: flex; flex-direction: column; gap: 7px; border: 1px dashed var(--mp-info); border-radius: 6px; padding: 9px 12px; background: var(--mp-info-soft); min-width: 0;">
+                <span style="font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-info);">Track B · proposed additive field — per-section freshness / rights</span>
+                <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px;">
+                  <sc-for list="{{ role.trackBChips }}" as="tb" hint-placeholder-count="3">
+                    <li style="display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--mp-ink-2); border: 1px solid var(--mp-info); border-radius: 4px; padding: 1px 7px; background: var(--mp-card);"><span style="color: var(--mp-mute); font-size: 10px;">{{ tb.key }}</span>{{ tb.value }}</li>
+                  </sc-for>
+                </ul>
+              </div>
+            </sc-if>
+
+            <footer style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-top: 1px solid var(--mp-rule); padding-top: 11px; min-width: 0;">
+              <span style="color: var(--mp-mute); font-size: 11px;">Provider: {{ role.providerLabel }}</span>
+              <sc-if value="{{ role.hasWarnings }}" hint-placeholder-val="{{ false }}">
+                <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px;">
+                  <sc-for list="{{ role.warnings }}" as="w" hint-placeholder-count="1">
+                    <li title="{{ w.code }}" style="color: var(--mp-mute); background: var(--mp-paper-2); border: 1px solid var(--mp-rule); border-radius: 4px; padding: 1px 6px; font-size: 11px; font-family: var(--mp-font-mono);">{{ w.code }}</li>
+                  </sc-for>
+                </ul>
+              </sc-if>
+            </footer>
+          </article>
+        </sc-for>
+
+        <!-- SECONDARY CONTEXT BAND -->
+        <sc-if value="{{ r.hasContextRoles }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 4px; border-radius: 10px; padding: 16px; background: var(--mp-paper-2); border: 1px solid var(--mp-rule); min-width: 0;">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-mute);">Market context · public analysts</span>
+              <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mp-mute); border: 1px solid var(--mp-rule-2); border-radius: 999px; padding: 1px 8px;">Secondary</span>
+              <span style="flex: 1;"></span>
+              <span style="font-size: 11px; color: var(--mp-mute);">{{ r.contextCoverageNote }}</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; align-items: start; min-width: 0;">
+              <sc-for list="{{ contextRoles }}" as="role" hint-placeholder-count="3">
+                <article style="{{ role.contextCardStyle }}">
+                  <header style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+                    <h5 style="margin: 0; font-size: 13px; font-weight: 600; color: var(--mp-ink-2);">{{ role.displayName }}</h5>
+                    <span style="{{ role.badgeStyleSm }}"><sc-if value="{{ role.isCompleted }}" hint-placeholder-val="{{ false }}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"></path></svg></sc-if><sc-if value="{{ role.isOther }}" hint-placeholder-val="{{ true }}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle></svg></sc-if>{{ role.statusLabel }}</span>
+                  </header>
+                  <sc-if value="{{ role.hasNarrative }}" hint-placeholder-val="{{ false }}">
+                    <p style="margin: 0; font-size: 12px; line-height: 1.55; color: var(--mp-mute); text-wrap: pretty;">{{ role.contextSnippet }}</p>
+                  </sc-if>
+                  <sc-if value="{{ role.noNarrative }}" hint-placeholder-val="{{ true }}">
+                    <p style="margin: 0; font-size: 12px; line-height: 1.5; color: var(--mp-mute-2);">{{ role.unavailableText }}</p>
+                  </sc-if>
+                  <sc-if value="{{ role.hasTrackB }}" hint-placeholder-val="{{ false }}">
+                    <span style="display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; font-size: 10px; color: var(--mp-info); border: 1px dashed var(--mp-info); border-radius: 4px; padding: 1px 6px;"><span style="font-weight: 700; letter-spacing: 0.04em;">Track B</span> {{ role.trackBFreshness }}</span>
+                  </sc-if>
+                </article>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+      </section>
+    </sc-if>
+  </sc-if>
+
+  <!-- ============ ROLES — DIRECTION B: DESK & MARGIN (material + spatial) ============ -->
+  <sc-if value="{{ showB }}" hint-placeholder-val="{{ false }}">
+    <sc-if value="{{ r.showRoles }}" hint-placeholder-val="{{ true }}">
+      <section aria-label="Analyst sections" style="display: grid; grid-template-columns: minmax(0, 1fr) 256px; gap: 22px; align-items: start; min-width: 0;" class="rp-deskgrid">
+
+        <!-- MAIN COLUMN: portfolio-aware primary -->
+        <div style="display: flex; flex-direction: column; gap: 18px; min-width: 0;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-ink);">Portfolio-aware desk</span>
+            <span style="font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mp-accent); border: 1px solid var(--mp-accent-line); background: var(--mp-accent-soft); border-radius: 999px; padding: 1px 8px;">Primary</span>
+            <span style="flex: 1; height: 1px; background: var(--mp-rule);"></span>
+          </div>
+
+          <sc-for list="{{ primaryRoles }}" as="role" hint-placeholder-count="2">
+            <article style="display: flex; flex-direction: column; gap: 14px; min-width: 0;">
+              <header style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--mp-rule); padding-bottom: 9px;">
+                <h4 style="margin: 0; font-family: var(--mp-font-display); color: var(--mp-ink); font-size: 21px; font-weight: 500; line-height: 1.15;">{{ role.displayName }}</h4>
+                <span style="{{ role.badgeStyle }}">{{ role.statusIconAndLabel }}<sc-if value="{{ role.isCompleted }}" hint-placeholder-val="{{ true }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"></path></svg></sc-if><sc-if value="{{ role.isWithheld }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"></path></svg></sc-if><sc-if value="{{ role.isOther }}" hint-placeholder-val="{{ false }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v.5M12 11v5"></path></svg></sc-if>{{ role.statusLabel }}</span>
+              </header>
+
+              <!-- narrative as editorial memo (paper / serif) -->
+              <sc-if value="{{ role.hasNarrative }}" hint-placeholder-val="{{ true }}">
+                <div style="max-width: 62ch; display: flex; flex-direction: column; gap: 10px; border-left: 2px solid var(--mp-accent-line); padding-left: 16px;">
+                  <sc-for list="{{ role.paras }}" as="para" hint-placeholder-count="2">
+                    <p style="margin: 0; font-family: var(--mp-font-display); font-size: 16px; line-height: 1.62; color: var(--mp-ink); text-wrap: pretty;">{{ para }}</p>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <sc-if value="{{ role.noNarrative }}" hint-placeholder-val="{{ false }}">
+                <p style="margin: 0; display: flex; gap: 8px; align-items: flex-start; color: var(--mp-mute); font-size: 13px; line-height: 1.6; border-left: 2px solid var(--mp-rule); padding-left: 16px;">
+                  <span>{{ role.unavailableText }}</span>
+                </p>
+              </sc-if>
+
+              <!-- deterministic evidence as a distinct LEDGER material -->
+              <sc-if value="{{ role.hasEvidence }}" hint-placeholder-val="{{ true }}">
+                <div style="border: 1px solid var(--mp-rule-2); border-radius: 6px; background: var(--mp-paper-2); padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; min-width: 0;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+                    <span style="display: inline-flex; align-items: center; gap: 6px; font-family: var(--mp-font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--mp-mute);">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13M4 12h10M4 17h7"></path></svg>
+                      Evidence ledger · backend-owned
+                    </span>
+                    <span style="font-size: 10px; color: var(--mp-mute-2); font-family: var(--mp-font-mono);">keys only</span>
+                  </div>
+                  <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px;">
+                    <sc-for list="{{ role.evidence }}" as="chip" hint-placeholder-count="4">
+                      <li style="font-family: var(--mp-font-mono); color: var(--mp-ink-2); border: 1px solid var(--mp-rule); border-radius: 4px; padding: 2px 8px; font-size: 11px; background: var(--mp-card); overflow-wrap: anywhere;">{{ chip.label }}</li>
+                    </sc-for>
+                  </ul>
+                  <sc-if value="{{ role.hasTrackB }}" hint-placeholder-val="{{ false }}">
+                    <div style="display: flex; flex-direction: column; gap: 6px; border-top: 1px dashed var(--mp-info); padding-top: 9px;">
+                      <span style="font-size: 9px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--mp-info);">Track B · proposed freshness / rights field</span>
+                      <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px;">
+                        <sc-for list="{{ role.trackBChips }}" as="tb" hint-placeholder-count="3">
+                          <li style="display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--mp-ink-2); border: 1px solid var(--mp-info); border-radius: 4px; padding: 1px 7px; background: var(--mp-info-soft);"><span style="color: var(--mp-mute); font-size: 10px;">{{ tb.key }}</span>{{ tb.value }}</li>
+                        </sc-for>
+                      </ul>
+                    </div>
+                  </sc-if>
+                  <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--mp-rule); padding-top: 9px;">
+                    <span style="color: var(--mp-mute); font-size: 11px; font-family: var(--mp-font-mono);">provider: {{ role.providerLabel }}</span>
+                    <sc-if value="{{ role.hasWarnings }}" hint-placeholder-val="{{ false }}">
+                      <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px;">
+                        <sc-for list="{{ role.warnings }}" as="w" hint-placeholder-count="1">
+                          <li style="color: var(--mp-mute); background: var(--mp-card); border: 1px solid var(--mp-rule); border-radius: 4px; padding: 1px 6px; font-size: 11px; font-family: var(--mp-font-mono);">{{ w.code }}</li>
+                        </sc-for>
+                      </ul>
+                    </sc-if>
+                  </div>
+                </div>
+              </sc-if>
+            </article>
+          </sc-for>
+        </div>
+
+        <!-- MARGIN RAIL: public market context -->
+        <aside style="{{ r.marginRailStyle }}">
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <span style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mp-mute);">Market context</span>
+            <span style="font-size: 10px; color: var(--mp-mute-2);">Public analysts · secondary</span>
+          </div>
+          <p style="margin: 0; font-size: 11px; line-height: 1.5; color: var(--mp-mute);">{{ r.contextCoverageNote }}</p>
+          <sc-if value="{{ r.hasContextRoles }}" hint-placeholder-val="{{ true }}">
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <sc-for list="{{ contextRoles }}" as="role" hint-placeholder-count="3">
+                <div style="display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--mp-rule); padding-top: 10px; min-width: 0;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <span style="font-size: 12px; font-weight: 600; color: var(--mp-ink-2);">{{ role.displayName }}</span>
+                    <span style="{{ role.badgeStyleSm }}"><sc-if value="{{ role.isCompleted }}" hint-placeholder-val="{{ false }}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4L19 6"></path></svg></sc-if><sc-if value="{{ role.isOther }}" hint-placeholder-val="{{ true }}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle></svg></sc-if>{{ role.statusLabel }}</span>
+                  </div>
+                  <sc-if value="{{ role.hasNarrative }}" hint-placeholder-val="{{ false }}">
+                    <p style="margin: 0; font-size: 11px; line-height: 1.5; color: var(--mp-mute); text-wrap: pretty;">{{ role.contextSnippet }}</p>
+                  </sc-if>
+                  <sc-if value="{{ role.noNarrative }}" hint-placeholder-val="{{ true }}">
+                    <p style="margin: 0; font-size: 11px; line-height: 1.45; color: var(--mp-mute-2);">{{ role.unavailableText }}</p>
+                  </sc-if>
+                  <sc-if value="{{ role.hasTrackB }}" hint-placeholder-val="{{ false }}">
+                    <span style="display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; font-size: 9px; color: var(--mp-info); border: 1px dashed var(--mp-info); border-radius: 4px; padding: 1px 5px;"><span style="font-weight: 700;">Track B</span> {{ role.trackBFreshness }}</span>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </aside>
+      </section>
+    </sc-if>
+  </sc-if>
+
+  <!-- ============ PROVENANCE + AUDIT (shared) ============ -->
+  <section aria-label="Supporting evidence and provenance" style="display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--mp-rule); border-radius: 8px; padding: 16px 20px; background: var(--mp-paper-2); min-width: 0;">
+    <header style="display: flex; align-items: center; gap: 8px;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--mp-mute)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"></path></svg>
+      <h3 style="margin: 0; color: var(--mp-ink); font-size: 15px; font-weight: 600;">Supporting evidence &amp; provenance</h3>
+    </header>
+    <p style="margin: 0; color: var(--mp-mute); font-size: 11px; line-height: 1.6;">Deterministic scope, freshness, and caveats are read from this saved report only. The current account selector does not expand, narrow, or rename them.</p>
+
+    <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+      <span style="color: var(--mp-mute); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;">Saved scope</span>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+        <sc-for list="{{ r.scopeChips }}" as="chip" hint-placeholder-count="3">
+          <span style="display: inline-flex; align-items: center; gap: 5px; color: var(--mp-ink-2); border: 1px solid var(--mp-rule); border-radius: 4px; padding: 2px 8px; font-size: 11px; background: var(--mp-card);"><span style="color: var(--mp-mute); font-size: 10px;">{{ chip.key }}</span>{{ chip.value }}</span>
+        </sc-for>
+      </div>
+    </div>
+
+    <details class="rp-disclosure" style="min-width: 0;">
+      <summary style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--mp-ink-2); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; list-style: none;">
+        <svg class="rp-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--mp-mute)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"></path></svg>
+        Audit detail
+      </summary>
+      <dl style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin: 13px 0 8px;">
+        <sc-for list="{{ r.auditRows }}" as="row" hint-placeholder-count="5">
+          <div style="display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--mp-rule); border-radius: 4px; padding: 8px 11px; background: var(--mp-card); min-width: 0;">
+            <dt style="color: var(--mp-mute); font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;">{{ row.label }}</dt>
+            <dd style="margin: 0; color: var(--mp-ink); font-size: 12px; overflow-wrap: anywhere; {{ row.valueStyle }}">{{ row.value }}</dd>
+          </div>
+        </sc-for>
+      </dl>
+      <sc-if value="{{ r.hasReportWarnings }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="color: var(--mp-mute); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;">Report warnings</span>
+          <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px;">
+            <sc-for list="{{ r.reportWarnings }}" as="w" hint-placeholder-count="1">
+              <li style="color: var(--mp-mute); background: var(--mp-card); border: 1px solid var(--mp-rule); border-radius: 4px; padding: 1px 6px; font-size: 11px; font-family: var(--mp-font-mono);">{{ w.code }}</li>
+            </sc-for>
+          </ul>
+        </div>
+      </sc-if>
+    </details>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 720, &quot;height&quot;: 900}, &quot;report&quot;: {&quot;editor&quot;: null, &quot;default&quot;: null}, &quot;direction&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;A&quot;, &quot;B&quot;], &quot;default&quot;: &quot;A&quot;}, &quot;generating&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false}, &quot;onGenerate&quot;: {&quot;editor&quot;: null, &quot;default&quot;: null}}">
+class Component extends DCLogic {
+  // ---- presentation maps ----
+  evLabel(key) {
+    const m = {
+      trade_intent_summary: "Trade intent summary",
+      scope_state: "Review scope state",
+      actionability: "Actionability / review mode",
+      freshness: "Data freshness",
+      account_readiness: "Account readiness",
+      portfolio_impact_summary: "Portfolio impact summary",
+      concentration_risk_drift: "Concentration & risk drift",
+      liquidity_collateral_caveats: "Liquidity & collateral caveats",
+      options_exposure_summary: "Options exposure summary",
+      market_quote_freshness: "Market quote freshness",
+      public_company_profile: "Public company profile",
+      public_fundamentals_snapshot: "Public fundamentals snapshot",
+      public_news_snapshot: "Public news snapshot",
+      public_events_calendar: "Public events calendar",
+    };
+    return m[key] || this.humanize(key);
+  }
+  humanize(code) {
+    if (!code) return "";
+    const s = String(code).replace(/[_-]+/g, " ").trim();
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  unavailableText(reason) {
+    const m = {
+      no_reviewed_public_evidence: "No reviewed public evidence was attached for this analyst.",
+      public_evidence_not_available: "Public evidence was not available for this analyst.",
+      public_evidence_not_applicable: "Public evidence is not applicable to this saved scope.",
+      provider_unavailable: "The provider was unavailable, so no narrative was produced.",
+      safety_validation_failed: "The narrative was withheld by safety validation.",
+    };
+    return m[reason] || "No narrative was produced for this role.";
+  }
+  statusInfo(s) {
+    const m = {
+      completed:        { label: "Completed",   fg: "var(--mp-live)",  soft: "var(--mp-live-soft)" },
+      skipped:          { label: "Skipped",     fg: "var(--mp-mute)",  soft: "transparent" },
+      unavailable:      { label: "Unavailable", fg: "var(--mp-mute)",  soft: "transparent" },
+      gated:            { label: "Gated",       fg: "var(--mp-stale)", soft: "var(--mp-stale-soft)" },
+      validation_failed:{ label: "Withheld",    fg: "var(--mp-block)", soft: "var(--mp-block-soft)" },
+    };
+    return m[s] || m.skipped;
+  }
+  badgeStyle(fg, soft, sm) {
+    return {
+      display: "inline-flex", alignItems: "center", gap: 5,
+      fontSize: sm ? 10 : 11, fontWeight: 600, letterSpacing: "0.02em",
+      padding: sm ? "1px 6px" : "2px 8px",
+      border: "1px solid " + fg, borderRadius: 4,
+      color: fg, background: soft, lineHeight: 1.4, whiteSpace: "nowrap",
+    };
+  }
+
+  buildRole(raw) {
+    const si = this.statusInfo(raw.role_status);
+    const hasNarrative = raw.role_status === "completed" && Array.isArray(raw.paras) && raw.paras.length > 0;
+    const evidence = (raw.evidence_references || []).map((k) => ({ label: this.evLabel(k) }));
+    const warnings = (raw.warning_codes || []).map((c) => ({ code: c }));
+    const tb = raw.track_b || null;
+    const trackBChips = tb ? [
+      tb.freshness ? { key: "freshness", value: tb.freshness } : null,
+      tb.rights ? { key: "rights", value: tb.rights } : null,
+      tb.source ? { key: "source", value: tb.source } : null,
+    ].filter(Boolean) : [];
+    const snippet = hasNarrative ? raw.paras[0] : "";
+    return {
+      roleName: raw.role_name,
+      displayName: raw.display_name,
+      statusLabel: si.label,
+      statusIconAndLabel: "",
+      badgeStyle: this.badgeStyle(si.fg, si.soft, false),
+      badgeStyleSm: this.badgeStyle(si.fg, si.soft, true),
+      isCompleted: raw.role_status === "completed",
+      isWithheld: raw.role_status === "validation_failed",
+      isOther: raw.role_status === "skipped" || raw.role_status === "unavailable" || raw.role_status === "gated",
+      hasNarrative,
+      noNarrative: !hasNarrative,
+      paras: raw.paras || [],
+      contextSnippet: snippet,
+      unavailableText: this.unavailableText(raw.unavailable_reason),
+      evidence,
+      hasEvidence: evidence.length > 0,
+      hasWarnings: warnings.length > 0,
+      warnings,
+      providerLabel: this.humanize(raw.provider_status || "ok"),
+      hasTrackB: trackBChips.length > 0,
+      trackBChips,
+      trackBFreshness: tb ? (tb.freshness || "") : "",
+      contextCardStyle: {
+        display: "flex", flexDirection: "column", gap: 8,
+        border: "1px solid var(--mp-rule)", borderRadius: 8,
+        padding: "12px 14px", background: "var(--mp-card)", minWidth: 0,
+      },
+    };
+  }
+
+  renderVals() {
+    const report = this.props.report || {};
+    const direction = this.props.direction || "A";
+    const showA = direction === "A";
+    const showB = direction === "B";
+    const summary = report.agent_summary || null;
+    const status = summary ? (summary.report_status || "full_agent_report") : "source_snapshot";
+
+    const statusMeta = {
+      full_agent_report: { eyebrow: "Agent Team report", chip: "Agent Team analysis", tone: "accent" },
+      agent_unavailable: { eyebrow: "Agent Team unavailable", chip: "Agent Team unavailable", tone: "mute" },
+      validation_failed: { eyebrow: "Narrative withheld", chip: "Narrative withheld", tone: "block" },
+      source_snapshot:   { eyebrow: "Source snapshot", chip: "Source snapshot", tone: "mute" },
+    }[status] || { eyebrow: "Report", chip: "Report", tone: "mute" };
+
+    const toneFg = { accent: "var(--mp-accent)", mute: "var(--mp-mute)", block: "var(--mp-block)", stale: "var(--mp-stale)" }[statusMeta.tone];
+    const toneSoft = { accent: "var(--mp-accent-soft)", mute: "transparent", block: "var(--mp-block-soft)", stale: "var(--mp-stale-soft)" }[statusMeta.tone];
+
+    // roles grouped
+    const PRIMARY = ["risk_management_agent", "portfolio_manager_agent"];
+    const rolesRaw = summary ? (summary.role_summaries || []) : [];
+    const primaryRaw = PRIMARY.map((n) => rolesRaw.find((r) => r.role_name === n)).filter(Boolean);
+    const contextRaw = rolesRaw.filter((r) => !PRIMARY.includes(r.role_name));
+    const primaryRoles = primaryRaw.map((r) => this.buildRole(r));
+    const contextRoles = contextRaw.map((r) => this.buildRole(r));
+
+    // coverage (Track A derived)
+    const ctxTotal = contextRaw.length || 3;
+    const ctxDone = contextRaw.filter((r) => r.role_status === "completed").length;
+    let coverageText, contextCoverageNote;
+    if (!summary) {
+      coverageText = "Coverage pending — no analysis generated";
+      contextCoverageNote = "Generate an Agent Team report to add market context.";
+    } else if (ctxDone === 0 && contextRaw.length > 0) {
+      coverageText = "Portfolio-aware roles only";
+      contextCoverageNote = "Public market analysts are not yet enabled, so this report covers the portfolio-aware roles only.";
+    } else if (ctxDone === 0) {
+      coverageText = "Portfolio-aware roles only";
+      contextCoverageNote = "Public market analysts are not yet enabled.";
+    } else {
+      coverageText = ctxDone + " of " + ctxTotal + " public analysts contributing";
+      contextCoverageNote = ctxDone + " of " + ctxTotal + " public analysts contributed; the rest had no reviewed public evidence.";
+    }
+
+    // coverage meter dots (Track B descriptor)
+    const coverageDots = [];
+    for (let i = 0; i < ctxTotal; i++) {
+      const on = i < ctxDone;
+      coverageDots.push({ style: {
+        width: 7, height: 7, borderRadius: 999,
+        background: on ? "var(--mp-accent)" : "transparent",
+        border: "1px solid " + (on ? "var(--mp-accent)" : "var(--mp-rule-strong)"),
+      }});
+    }
+    const coverageMeterLabel = ctxDone + "/" + ctxTotal + " context";
+
+    // banner
+    let banner = null;
+    if (status === "source_snapshot") banner = { text: "Saved deterministic review snapshot. This is a complete kept analysis; no Agent Team report has been generated from it yet.", icon: "clock" };
+    else if (status === "agent_unavailable") banner = { text: "Agent Team generation was skipped safely. The saved deterministic evidence below remains available for manual review.", icon: "alert" };
+    else if (status === "validation_failed") banner = { text: "The generated narrative was withheld by safety validation; the offending text is never shown. The saved deterministic evidence below remains available for manual review.", icon: "shield" };
+
+    const bannerTone = status === "validation_failed" ? "block" : "mute";
+    const bannerStyle = {
+      display: "flex", gap: 12, alignItems: "flex-start",
+      borderWidth: 1, borderStyle: "solid",
+      borderColor: bannerTone === "block" ? "var(--mp-block)" : "var(--mp-rule)",
+      borderRadius: 8, padding: "12px 16px",
+      background: bannerTone === "block" ? "var(--mp-block-soft)" : "var(--mp-card-2)",
+      minWidth: 0,
+    };
+    const bannerIconStyle = { flexShrink: 0, marginTop: 1, color: bannerTone === "block" ? "var(--mp-block)" : "var(--mp-ink-2)" };
+
+    // action
+    let action = null;
+    if (status === "source_snapshot") action = { title: "Generate Agent Team report", note: "Run the analyst roles over this saved evidence package. Manual, explicit action.", label: "Generate Agent Team report" };
+    else if (status === "agent_unavailable" || status === "validation_failed") action = { title: "Re-run the Agent Team report", note: "Try generating the analyst narrative again from the saved evidence package.", label: "Try again" };
+    const actionBtnStyle = {
+      appearance: "none", cursor: this.props.generating ? "default" : "pointer",
+      fontFamily: "inherit", fontSize: 13, fontWeight: 600,
+      color: this.props.generating ? "var(--mp-mute)" : "var(--mp-paper)",
+      background: this.props.generating ? "var(--mp-card-2)" : "var(--mp-accent)",
+      border: "1px solid " + (this.props.generating ? "var(--mp-rule)" : "var(--mp-accent)"),
+      borderRadius: 6, padding: "9px 16px", whiteSpace: "nowrap",
+    };
+
+    // synthesis
+    const synthParas = summary && summary.final_synthesis_markdown ? summary.final_synthesis_markdown.split("\n\n") : [];
+
+    // scope chips
+    const scope = report.scope_metadata || {};
+    const scopeChips = (scope.chips || []).map((c) => ({ key: c.key, value: c.value }));
+
+    // audit rows
+    const auditRows = [];
+    auditRows.push({ label: "Report state", value: this.humanize(status), valueStyle: {} });
+    if (summary) {
+      auditRows.push({ label: "Run status", value: this.humanize(summary.run_status), valueStyle: {} });
+      auditRows.push({ label: "Provider mode", value: this.humanize(summary.provider_mode), valueStyle: { fontFamily: "var(--mp-font-mono)", fontSize: 11 } });
+      if (summary.final_synthesis_authored_by) auditRows.push({ label: "Synthesis author", value: this.humanize(summary.final_synthesis_authored_by), valueStyle: {} });
+      if (summary.evidence_schema_version) auditRows.push({ label: "Evidence schema", value: summary.evidence_schema_version, valueStyle: { fontFamily: "var(--mp-font-mono)", fontSize: 11 } });
+    }
+    auditRows.push({ label: "Snapshot saved", value: report.created_at_label || "—", valueStyle: {} });
+    if (summary && summary.report_generated_at_label) auditRows.push({ label: "Report generated", value: summary.report_generated_at_label, valueStyle: {} });
+
+    const reportWarnings = summary ? (summary.warning_codes || []).map((c) => ({ code: c })) : [];
+
+    // completeness badge
+    const allRoles = rolesRaw.length;
+    const doneRoles = rolesRaw.filter((r) => r.role_status === "completed").length;
+    const showCompletenessBadge = status === "full_agent_report" && allRoles > 0 && doneRoles < allRoles;
+    const completenessLabel = doneRoles === 0 ? "No roles completed" : "Some roles completed";
+
+    const marginRailStyle = {
+      display: "flex", flexDirection: "column", gap: 12,
+      border: "1px solid var(--mp-rule)", borderRadius: 10,
+      padding: 16, background: "var(--mp-paper-2)", minWidth: 0,
+      position: "sticky", top: 12,
+    };
+
+    return {
+      showA, showB,
+      onGenerate: this.props.onGenerate || (() => {}),
+      generating: !!this.props.generating,
+      primaryRoles, contextRoles,
+      r: {
+        eyebrow: statusMeta.eyebrow,
+        title: report.title || "Saved report",
+        reportType: report.report_type || "trade_review",
+        statusChip: statusMeta.chip,
+        statusBadgeStyle: this.badgeStyle(toneFg, toneSoft, false),
+        statusIsAccent: statusMeta.tone === "accent",
+        statusIsMute: statusMeta.tone === "mute",
+        statusIsBlock: statusMeta.tone === "block",
+        showCompletenessBadge, completenessLabel,
+        coverageText,
+        snapshotSaved: report.created_at_label || "—",
+        hasGenerated: !!(summary && summary.report_generated_at_label),
+        reportGenerated: summary ? (summary.report_generated_at_label || "") : "",
+        savedScope: scope.summary || "Saved scope attached",
+        coverageDots, coverageMeterLabel,
+        showBanner: !!banner,
+        bannerText: banner ? banner.text : "",
+        bannerStyle, bannerIconStyle,
+        bannerIsClock: banner && banner.icon === "clock",
+        bannerIsAlert: banner && banner.icon === "alert",
+        bannerIsShield: banner && banner.icon === "shield",
+        showAction: !!action,
+        actionTitle: action ? action.title : "",
+        actionNote: action ? action.note : "",
+        actionButtonLabel: action ? action.label : "",
+        actionBtnStyle,
+        notGenerating: !this.props.generating,
+        showSynthesis: synthParas.length > 0,
+        synthesisAuthor: summary ? this.humanize(summary.final_synthesis_authored_by || "deterministic_template") : "",
+        synthesisParas: synthParas,
+        showRoles: rolesRaw.length > 0,
+        hasContextRoles: contextRoles.length > 0,
+        contextCoverageNote,
+        scopeChips,
+        auditRows,
+        hasReportWarnings: reportWarnings.length > 0,
+        reportWarnings,
+        marginRailStyle,
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>

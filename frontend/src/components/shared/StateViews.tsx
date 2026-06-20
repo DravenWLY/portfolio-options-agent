@@ -27,7 +27,7 @@ const skeletonWrap: React.CSSProperties = {
 const skeletonRow: React.CSSProperties = {
   height: 14,
   borderRadius: "var(--radius-sm)",
-  backgroundColor: "var(--color-surface-2)",
+  backgroundColor: "var(--mp-card-2)",
   animation: "pulse 1.6s ease-in-out infinite",
 };
 
@@ -61,12 +61,12 @@ const errorWrap: React.CSSProperties = {
   gap: "var(--space-3)",
   alignItems: "flex-start",
   padding: "var(--space-4)",
-  backgroundColor: "var(--color-error-bg)",
-  border: "1px solid var(--color-error)",
+  backgroundColor: "var(--mp-block-soft)",
+  border: "1px solid var(--mp-block)",
   borderRadius: "var(--radius-md)",
 };
 const errorIcon: React.CSSProperties = {
-  color: "var(--color-error)",
+  color: "var(--mp-block)",
   fontSize: "var(--font-size-lg)",
   flexShrink: 0,
   marginTop: 1,
@@ -74,23 +74,23 @@ const errorIcon: React.CSSProperties = {
 const errorTitle: React.CSSProperties = {
   fontWeight: 600,
   fontSize: "var(--font-size-sm)",
-  color: "var(--color-error)",
+  color: "var(--mp-block)",
   marginBottom: "var(--space-1)",
 };
 const errorMessage: React.CSSProperties = {
   fontSize: "var(--font-size-sm)",
-  color: "var(--color-text-secondary)",
+  color: "var(--mp-ink-2)",
 };
 const retryBtn: React.CSSProperties = {
   marginTop: "var(--space-2)",
   padding: "var(--space-1) var(--space-3)",
   fontSize: "var(--font-size-sm)",
   backgroundColor: "transparent",
-  color: "var(--color-error)",
-  border: "1px solid var(--color-error)",
+  color: "var(--mp-block)",
+  border: "1px solid var(--mp-block)",
   borderRadius: "var(--radius-sm)",
   cursor: "pointer",
-  fontFamily: "var(--font-family)",
+  fontFamily: "var(--mp-font-sans)",
 };
 
 /* ── Empty state ────────────────────────────────────────────────────────── */
@@ -115,17 +115,17 @@ const emptyWrap: React.CSSProperties = {
 };
 const emptyIcon: React.CSSProperties = {
   fontSize: 28,
-  color: "var(--color-text-muted)",
+  color: "var(--mp-mute)",
   lineHeight: 1,
 };
 const emptyTitle: React.CSSProperties = {
   fontSize: "var(--font-size-sm)",
   fontWeight: 600,
-  color: "var(--color-text-secondary)",
+  color: "var(--mp-ink-2)",
 };
 const emptyBody: React.CSSProperties = {
   fontSize: "var(--font-size-sm)",
-  color: "var(--color-text-muted)",
+  color: "var(--mp-mute)",
   lineHeight: 1.6,
   maxWidth: 360,
 };

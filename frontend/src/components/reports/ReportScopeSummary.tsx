@@ -108,18 +108,18 @@ function ChipGroup({
 
 const styles: Record<string, React.CSSProperties> = {
   wrap: {
-    border: "1px solid var(--mp-rule)",
+    border: "1px solid var(--reports-rule)",
     borderLeft: "3px solid var(--mp-accent)",
     borderRadius: "var(--radius-md)",
     padding: "var(--space-3)",
-    backgroundColor: "var(--mp-card-2)",
+    background: "var(--reports-evidence-surface)",
     display: "flex",
     flexDirection: "column",
     gap: "var(--space-2)",
     minWidth: 0,
   },
   compactWrap: {
-    borderTop: "1px solid var(--mp-rule)",
+    borderTop: "1px solid var(--reports-rule)",
     paddingTop: "var(--space-2)",
     display: "flex",
     flexDirection: "column",
@@ -206,7 +206,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   chip: {
     color: "var(--mp-ink-2)",
-    border: "1px solid var(--mp-rule)",
+    border: "1px solid var(--reports-rule)",
     borderRadius: "var(--radius-sm)",
     padding: "2px 6px",
     fontSize: "var(--font-size-xs)",
@@ -214,8 +214,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   codeChip: {
     color: "var(--mp-ink-2)",
-    backgroundColor: "var(--mp-card)",
-    border: "1px solid var(--mp-rule)",
+    background: "var(--reports-card-surface)",
+    border: "1px solid var(--reports-rule)",
     borderRadius: "var(--radius-sm)",
     padding: "2px 6px",
     fontSize: "var(--font-size-xs)",

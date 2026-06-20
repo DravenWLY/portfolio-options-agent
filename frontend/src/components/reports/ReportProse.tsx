@@ -9,6 +9,11 @@
  */
 interface ReportProseProps {
   text: string;
+  /** Render in the serif display face for the editorial "memo" feel (used by
+   *  the final synthesis and the primary role narratives). */
+  display?: boolean;
+  /** Override the body text color (e.g. stronger ink for the synthesis lede). */
+  color?: string;
 }
 
 type Block =
@@ -55,21 +60,32 @@ function parseBlocks(text: string): Block[] {
   return blocks;
 }
 
-export default function ReportProse({ text }: ReportProseProps) {
+export default function ReportProse({ text, display = false, color }: ReportProseProps) {
   const blocks = parseBlocks(text);
   if (blocks.length === 0) return null;
+
+  const paraStyle: React.CSSProperties = {
+    ...styles.paragraph,
+    ...(display ? styles.paragraphDisplay : undefined),
+    ...(color ? { color } : undefined),
+  };
+  const itemStyle: React.CSSProperties = {
+    ...styles.listItem,
+    ...(display ? styles.paragraphDisplay : undefined),
+    ...(color ? { color } : undefined),
+  };
 
   return (
     <div style={styles.prose}>
       {blocks.map((block, index) =>
         block.kind === "p" ? (
-          <p key={index} style={styles.paragraph}>
+          <p key={index} style={paraStyle}>
             {block.text}
           </p>
         ) : (
           <ul key={index} style={styles.list}>
             {block.items.map((item, itemIndex) => (
-              <li key={itemIndex} style={styles.listItem}>
+              <li key={itemIndex} style={itemStyle}>
                 {item}
               </li>
             ))}
@@ -93,6 +109,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "var(--font-size-base)",
     lineHeight: 1.7,
     overflowWrap: "anywhere",
+  },
+  paragraphDisplay: {
+    fontFamily: "var(--mp-font-display)",
+    fontSize: "var(--font-size-md)",
+    lineHeight: 1.62,
   },
   list: {
     margin: 0,

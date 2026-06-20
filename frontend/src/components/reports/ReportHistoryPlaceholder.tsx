@@ -119,12 +119,12 @@ function ThreadRow({ thread }: { thread: ReportThreadRead }) {
 
 function statusConfig(status: string): { icon: string; color: string } {
   switch (status) {
-    case "completed": return { icon: "●", color: "var(--color-live)" };
-    case "running":   return { icon: "◑", color: "var(--color-accent)" };
-    case "failed":    return { icon: "⚠", color: "var(--color-error)" };
-    case "cancelled": return { icon: "○", color: "var(--color-text-muted)" };
+    case "completed": return { icon: "●", color: "var(--mp-live)" };
+    case "running":   return { icon: "◑", color: "var(--mp-accent)" };
+    case "failed":    return { icon: "⚠", color: "var(--mp-block)" };
+    case "cancelled": return { icon: "○", color: "var(--mp-mute)" };
     case "draft":
-    default:          return { icon: "○", color: "var(--color-unknown)" };
+    default:          return { icon: "○", color: "var(--mp-mute)" };
   }
 }
 
@@ -133,9 +133,9 @@ function statusConfig(status: string): { icon: string; color: string } {
 const styles: Record<string, React.CSSProperties> = {
   agentBadge: {
     fontSize: "var(--font-size-xs)",
-    color: "var(--color-accent)",
-    backgroundColor: "var(--color-accent-dim)",
-    border: "1px solid var(--color-accent)",
+    color: "var(--mp-accent)",
+    backgroundColor: "var(--mp-accent-soft)",
+    border: "1px solid var(--mp-accent)",
     borderRadius: "var(--radius-sm)",
     padding: "1px 7px",
     letterSpacing: "0.06em",
@@ -151,26 +151,26 @@ const styles: Record<string, React.CSSProperties> = {
   },
   emptyIcon: {
     fontSize: 32,
-    color: "var(--color-text-muted)",
+    color: "var(--mp-mute)",
     lineHeight: 1,
   },
   emptyTitle: {
     fontSize: "var(--font-size-md)",
     fontWeight: 600,
-    color: "var(--color-text-secondary)",
+    color: "var(--mp-ink-2)",
   },
   emptyBody: {
     fontSize: "var(--font-size-sm)",
-    color: "var(--color-text-muted)",
+    color: "var(--mp-mute)",
     lineHeight: 1.7,
     maxWidth: 520,
   },
   emptyNote: {
     fontSize: "var(--font-size-xs)",
-    color: "var(--color-text-muted)",
+    color: "var(--mp-mute)",
     lineHeight: 1.6,
     maxWidth: 480,
-    borderTop: "1px solid var(--color-border-subtle)",
+    borderTop: "1px solid var(--mp-rule)",
     paddingTop: "var(--space-3)",
     marginTop: "var(--space-2)",
   },
@@ -181,7 +181,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   listNote: {
     fontSize: "var(--font-size-xs)",
-    color: "var(--color-text-muted)",
+    color: "var(--mp-mute)",
     fontStyle: "italic",
     marginBottom: "var(--space-2)",
   },
@@ -190,8 +190,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "space-between",
     padding: "var(--space-3) var(--space-4)",
-    backgroundColor: "var(--color-surface-2)",
-    border: "1px solid var(--color-border-subtle)",
+    backgroundColor: "var(--mp-card-2)",
+    border: "1px solid var(--mp-rule)",
     borderRadius: "var(--radius-sm)",
     gap: "var(--space-4)",
     flexWrap: "wrap",
@@ -206,11 +206,11 @@ const styles: Record<string, React.CSSProperties> = {
   rowTitle: {
     fontSize: "var(--font-size-sm)",
     fontWeight: 600,
-    color: "var(--color-text-primary)",
+    color: "var(--mp-ink)",
   },
   rowMeta: {
     fontSize: "var(--font-size-xs)",
-    color: "var(--color-text-muted)",
+    color: "var(--mp-mute)",
   },
   rowRight: {
     display: "flex",

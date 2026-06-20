@@ -211,7 +211,7 @@ function MarketProvenance({
 }) {
   if (snapshot === null) {
     return (
-      <section style={{ ...styles.card, borderLeft: "3px solid var(--color-stale)" }}>
+      <section style={{ ...styles.card, boxShadow: "inset 3px 0 0 var(--color-stale)" }}>
         <div style={styles.cardHead}>
           <span style={styles.cardTitle}>Market Input Provenance</span>
           <span style={styles.scopeBadge}>scope: market_quote</span>
@@ -297,7 +297,9 @@ const styles: Record<string, React.CSSProperties> = {
     gap: "var(--space-4)",
     alignItems: "flex-start",
     backgroundColor: "var(--color-surface)",
-    border: "1px solid var(--color-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--color-border)",
     borderLeftWidth: 4,
     borderRadius: "var(--radius-md)",
     padding: "var(--space-4) var(--space-6)",
@@ -327,7 +329,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   card: {
     backgroundColor: "var(--color-surface)",
-    border: "1px solid var(--color-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--color-border)",
     borderRadius: "var(--radius-md)",
     padding: "var(--space-4) var(--space-6)",
     display: "flex",
@@ -396,7 +400,8 @@ const styles: Record<string, React.CSSProperties> = {
   sevChip: {
     fontSize: "var(--font-size-xs)",
     padding: "1px 6px",
-    border: "1px solid",
+    borderWidth: 1,
+    borderStyle: "solid",
     borderRadius: "var(--radius-sm)",
     fontWeight: 700,
   },

@@ -1,5 +1,9 @@
 # Changelog
 
+- 2026-06-19: Closed Phase 29B through P29B-T7 and pushed checkpoint `381183f`.
+  Archived the detailed active-plan snapshot, compacted the current plan and
+  roadmap, and routed the seven known backend-suite failures to Codex C as a
+  separate maintenance task before the next public-evidence sourcing phase.
 - 2026-06-19: Added the P29B-T7E synthetic/private-safe connected Skyframe smoke
   fixture overlay. `POA_SKYFRAME_FIXTURES=1` plus a local/dev/test `APP_ENV`, a
   valid `X-Local-Access-Token`, and `X-Skyframe-Fixture: private-safe-v1`

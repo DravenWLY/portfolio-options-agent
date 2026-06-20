@@ -89,7 +89,7 @@ Functional internal-demo context.
 
 ## Next Recommended Work
 
-### Phase 29B - Public Agent Evidence
+### Phase 29B - Public Agent Evidence And Skyframe Closeout
 
 The Phase 29A saved-review foundation is now in place:
 
@@ -109,22 +109,27 @@ What is complete:
 - Backend report-generation timestamp and replace-only regeneration semantics
   are implemented; frontend P29A-T7 has passed visual/UX and
   contract/privacy/safety closeout.
-- Phase 29B public-evidence backend and agentic wiring is complete through
-  P29B-T3: generation-time public evidence is persisted/read back, public role
-  projections are role-scoped, public analyst roles degrade honestly from
-  unreviewed/unavailable evidence, and package-aware validation prevents citing
-  unavailable public sections.
+- Phase 29B is complete through P29B-T7. Generation-time public evidence is
+  persisted/read back, public role projections are role-scoped, public analyst
+  roles degrade honestly, and package-aware validation prevents unavailable
+  evidence from being cited.
+- Reports Direction A is accepted as the analyst-memo reference experience.
+- Portfolio Copilot Skyframe is the shared app-wide style standard. Reports and
+  the reviewed low-risk route shells use the shared surface primitive and token
+  guard, with private-safe connected verification where required.
+- The accepted P29B checkpoint was committed and pushed to `main` at `381183f`.
 
 What should happen next:
 
-- Commit and push the accepted P29B-T3A/T3B backend/agentic work.
-- Start P29B-T5 Skyframe token unification and Reports sky-surface prototype.
-  P29B-T4 Direction A is accepted as the Reports reference direction; future
-  Reports styling should cite `STYLE.md` / Portfolio Copilot Skyframe and
-  preserve the medium-high contrast standard ("calm sky atmosphere, crisp
-  analyst structure").
-- Track the 7 unrelated full-backend-suite failures as a separate Codex C
-  backend maintenance/regression task; they are not blockers for P29B-T3.
+1. Codex C owns a separate maintenance task for the seven known full-backend-
+   suite failures: model-column expectation drift, economic-calendar cache
+   sensitivity, and SnapTrade short-call mapping expectation drift.
+2. After maintenance triage, propose the next architecture phase for production-
+   reviewed public evidence sourcing, rights, provider policy, freshness, and
+   generation-time persistence. No provider integration starts before founder
+   source/rights direction and Codex B architecture/privacy review.
+3. Keep Account Details and Agent Console outside routine Skyframe rollout.
+   Either surface requires its own narrow privacy-safe plan and review gates.
 
 Architecture references:
 

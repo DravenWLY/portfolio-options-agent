@@ -17,7 +17,11 @@ def test_cash_balance_model_columns() -> None:
     assert set(columns.keys()) == {
         "id",
         "account_id",
+        "sync_run_id",
         "total_cash",
+        "available_cash",
+        "buying_power",
+        "currency",
         "reserved_collateral_cash",
         "free_cash",
         "premium_income_cash",
@@ -29,7 +33,11 @@ def test_cash_balance_model_columns() -> None:
         "created_at",
     }
     assert columns["account_id"].nullable is False
+    assert columns["sync_run_id"].nullable is True
     assert columns["total_cash"].nullable is False
+    assert columns["available_cash"].nullable is True
+    assert columns["buying_power"].nullable is True
+    assert columns["currency"].nullable is False
     assert columns["free_cash"].nullable is False
     assert columns["source"].nullable is False
     assert columns["source_ref"].nullable is True

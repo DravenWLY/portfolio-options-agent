@@ -128,6 +128,12 @@ Detailed verification history is archived in:
     account data. Tests must remain offline/synthetic unless separately approved.
   - Completion: full backend suite passes, or any genuinely environment-gated
     residual is documented with a deterministic focused test and explicit owner.
+  - Status: done 2026-06-19; review-only Codex B PASS. The seven failures were
+    reconciled as migration-backed stale model-column expectations, an
+    economic-calendar test-isolation defect, and a stale SnapTrade short-call
+    fixture/assertion. No production code, schema, migration, provider behavior,
+    privacy boundary, or contract behavior changed. Full backend suite: `1045
+    passed`, `122` legitimate DB-gated skips, `3 deselected`.
 
 ## Coordination Checkpoint
 
@@ -136,15 +142,11 @@ private-safe fixture work was committed and pushed to `main` at `381183f` on
 2026-06-19. The active plan was then compacted; its pre-compaction snapshot is
 `docs/shared/implementation_plan_archive_2026-06-19.md`.
 
-Known unrelated test debt:
+Resolved maintenance debt:
 
-- Full backend suite runs continue to show 7 failures in unrelated
-  cash_balance / option_position / stock_position model-column tests,
-  economic_calendar, and SnapTrade adapter short-call mapping tests.
-- They predate the Skyframe/fixture closeout and do not invalidate the focused
-  P29B verification.
-- Next owner: Codex C, as a separate backend regression/maintenance task on the
-  clean post-checkpoint base.
+- `MAINT-BE-1` removed the seven previously known failures while preserving
+  production behavior; the default backend suite is clean apart from legitimate
+  DB-gated skips and configured deselections.
 
 ## Paused Or Deferred
 

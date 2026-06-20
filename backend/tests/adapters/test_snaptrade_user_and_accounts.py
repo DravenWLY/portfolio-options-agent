@@ -158,7 +158,7 @@ class _FakeSnapTradePositions:
                         "description": "HOOD 85 Call Jun 18 2026",
                     },
                     "units": -1,
-                    "price": 290,
+                    "price": "2.90",
                     "currency": {"code": "USD"},
                 },
             ]
@@ -181,7 +181,7 @@ class _FakeSnapTradeOptions:
                         "description": "HOOD 85 Call Jun 18 2026",
                     },
                     "units": -1,
-                    "price": 290,
+                    "price": "2.90",
                     "currency": {"code": "USD"},
                 }
             ]
@@ -279,8 +279,13 @@ def test_snaptrade_sdk_client_maps_short_call_option_holdings() -> None:
             "underlying_symbol": "HOOD",
             "position_side": "short",
             "quantity": "1",
-            "market_value": "290",
+            "market_value": "-290.00",
             "currency": "USD",
+            "market_price": "2.90",
+            "average_purchase_price": None,
+            "open_pnl": None,
+            "multiplier": "100",
+            "tax_lots": [],
             "sync_timestamp": option_positions[0]["sync_timestamp"],
             "received_at": option_positions[0]["received_at"],
             "sync_status": "succeeded",

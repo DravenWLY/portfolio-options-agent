@@ -17,17 +17,21 @@ def test_option_position_model_columns() -> None:
     assert set(columns.keys()) == {
         "id",
         "account_id",
+        "sync_run_id",
         "option_contract_id",
         "position_side",
         "quantity",
         "average_price",
         "market_price",
         "market_value",
+        "open_pnl",
+        "currency",
         "status",
         "source",
         "source_ref",
         "data_freshness_status",
         "raw_provider_payload",
+        "tax_lots",
         "as_of",
         "opened_at",
         "closed_at",
@@ -35,6 +39,10 @@ def test_option_position_model_columns() -> None:
         "updated_at",
     }
     assert columns["account_id"].nullable is False
+    assert columns["sync_run_id"].nullable is True
     assert columns["option_contract_id"].nullable is False
     assert columns["position_side"].nullable is False
     assert columns["quantity"].nullable is False
+    assert columns["open_pnl"].nullable is True
+    assert columns["currency"].nullable is False
+    assert columns["tax_lots"].nullable is True

@@ -3,8 +3,17 @@ from datetime import UTC, date, datetime
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.routes.economic_calendar import get_economic_calendar_current_date, get_economic_calendar_refresh_runner
-from app.services.economic_calendar import EconomicCalendarRefreshError, FredEconomicCalendarHttpClient, SyntheticEconomicCalendarProvider
+from app.api.routes.economic_calendar import (
+    get_economic_calendar_current_date,
+    get_economic_calendar_refresh_runner,
+    get_economic_calendar_service,
+)
+from app.services.economic_calendar import (
+    EconomicCalendarRefreshError,
+    EconomicCalendarService,
+    FredEconomicCalendarHttpClient,
+    SyntheticEconomicCalendarProvider,
+)
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 
 
@@ -12,9 +21,14 @@ pytestmark = [pytest.mark.api, pytest.mark.unit]
 
 
 @pytest.fixture(autouse=True)
-def _clear_fmp_api_key(monkeypatch):
+def _isolate_economic_calendar_service(app, monkeypatch):
     monkeypatch.delenv("FMP_API_KEY", raising=False)
     monkeypatch.delenv("FRED_API_KEY", raising=False)
+    app.dependency_overrides[get_economic_calendar_service] = lambda: EconomicCalendarService(
+        SyntheticEconomicCalendarProvider()
+    )
+    yield
+    app.dependency_overrides.pop(get_economic_calendar_service, None)
 
 
 def test_economic_calendar_events_route_returns_provider_neutral_shape(client: TestClient) -> None:

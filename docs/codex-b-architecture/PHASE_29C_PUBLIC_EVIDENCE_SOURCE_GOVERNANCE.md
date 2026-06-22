@@ -35,6 +35,243 @@ re-fetches current public data.
 Until a source category is approved, its sections remain `not_reviewed` or
 `not_available` and the corresponding role degrades honestly.
 
+## Real-Source Exploration Decision
+
+Synthetic evidence is a regression and fixture mechanism, not the product
+direction for public evidence. P29C should actively move toward a reviewed real
+source once the rights and retention record is complete.
+
+The preferred first source candidate for `public_company_profile` is an
+official, low-volatility, structured source category, with SEC EDGAR submissions
+as the initial architecture reference for U.S. public companies:
+
+- symbol-to-CIK/company lookup through SEC-published mapping or an approved
+  licensed resolver;
+- `data.sec.gov/submissions/CIK##########.json` for current company metadata;
+- bounded identity facts only, such as company name, ticker, exchange, SIC label
+  if reviewed, and fiscal year/end metadata if useful;
+- no filing bodies, business-description extraction, raw URLs, raw payloads,
+  broad fundamentals, or article/news text in the first slice.
+
+This source path is narrower than a commercial "company overview" endpoint, but
+it is a better first production candidate because it is official, structured,
+slow-moving, and avoids the text-rights and narrative risks that come with news
+or scraped profile descriptions.
+
+If the product needs richer sector/industry/profile summaries than SEC metadata
+provides, that becomes a second source-approval decision for a licensed company
+reference provider. Do not use yfinance/Yahoo-derived data for saved report
+evidence unless Yahoo data rights are separately reviewed and approved for this
+specific LLM, persistence, display, and retention use.
+
+TradingAgents is useful as a reference for provider routing, not as a source
+boundary to copy. It routes fundamental tools across yfinance and Alpha Vantage
+vendors and lets research agents request broad text/CSV outputs. Portfolio
+Copilot should borrow the adapter/fallback shape, but must reject runtime agent
+tool access, broad raw reports, and unnormalized provider output.
+
+## EDGAR Profile Integration Workflow
+
+The first integration workflow is `public_company_profile` from SEC EDGAR
+submissions metadata. It is deliberately narrow: prove the source-governed
+acquisition path with official structured identity facts before adding
+fundamentals, news, technical context, or richer commercial reference data.
+
+### Step 1 - Source policy and adapter boundary
+
+Codex C should define a backend-only public evidence source policy and adapter
+interface. The policy must make EDGAR explicitly disabled unless an approved
+runtime mode turns it on. Default tests and default runtime remain offline.
+
+Required concepts:
+
+- source key, such as `sec_edgar_submissions`;
+- section key, fixed to `public_company_profile` for the first slice;
+- allowed environments;
+- request budget and timeout;
+- user-agent requirement;
+- raw-response retention policy;
+- allowed normalized facts;
+- unavailable/error mapping.
+
+### Step 2 - Symbol-to-CIK resolution
+
+The adapter may resolve `symbol_or_underlying` to CIK through SEC-published
+company tickers data or an approved licensed resolver. Resolution output must
+not echo user, account, broker, portfolio, or report-scope data.
+
+If a symbol cannot be resolved confidently, return
+`public_company_profile.availability = "not_available"` with an explicit
+limitation. Do not guess the entity from search results.
+
+### Step 3 - Submissions metadata retrieval
+
+When enabled, the adapter may retrieve:
+
+`https://data.sec.gov/submissions/CIK##########.json`
+
+The request must be backend-only, rate-limited, bounded by timeout and response
+size, and sent with a declared user-agent. No frontend or Agent Team role may
+call EDGAR directly.
+
+### Step 4 - Bounded normalization
+
+Normalize only allowlisted identity fields into the existing
+`SavedPublicEvidenceSectionRead` / `SavedPublicEvidenceFactRead` shape.
+
+Initial allowed fact candidates:
+
+- `company_name`;
+- `ticker`;
+- `exchange`;
+- `cik_reference`;
+- `sic_label`, only if present and reviewed;
+- `fiscal_year_end`, only if useful and clearly labelled.
+
+The section should include:
+
+- `section_key = "public_company_profile"`;
+- `availability = "available"` or `"limited"` only when rights/status are
+  reviewed and at least one useful identity fact is present;
+- `freshness_category` derived from collection time and source policy;
+- `source_label`, such as `SEC EDGAR submissions metadata`;
+- `rights_status`, according to the source approval record;
+- `collected_at`;
+- optional `as_of` only if the source supplies a meaningful source timestamp;
+- limitations and caveat codes for missing/partial profile data.
+
+### Step 5 - Validation and saved evidence freeze
+
+The normalized section must pass the existing public-evidence safety validators
+before it is attached to a saved evidence package. The same
+`SavedEvidencePackageRead` instance must then be used for:
+
+- role-scoped public evidence projection;
+- package-aware report-output validation;
+- saved artifact persistence.
+
+Opening a saved report must read the saved normalized profile. It must never
+re-fetch EDGAR or recompute profile evidence from current source state.
+
+### Step 6 - Agentic use
+
+Only after Codex B reviews the normalized sample package may Claude E refine the
+fundamentals analyst behavior for `public_company_profile`. The role may cite
+the section as company/instrument identity context only. It must not infer
+valuation, trade timing, suitability, or actionability from the profile.
+
+### Exclusions From The First EDGAR Slice
+
+- SEC filing bodies, HTML, accession document text, exhibits, or long excerpts;
+- XBRL company facts and financial statement concepts;
+- insider transactions;
+- current quote/market data;
+- news, press releases, or event interpretation;
+- sector/industry enrichment from unapproved commercial sources;
+- frontend EDGAR calls;
+- Agent Team runtime tools or web search.
+
+## Codex A Source-Rights Decision - P29C-T2A
+
+Status: approved with limits on 2026-06-20.
+
+Codex A approved SEC EDGAR submissions metadata as the first real public
+evidence source for `public_company_profile`, under strict local/internal use
+limits.
+
+Approved environments:
+
+- local developer live smoke;
+- internal test/demo;
+- internal saved-report evidence generation.
+
+Not approved:
+
+- production or public SaaS retrieval at scale;
+- automated background crawling;
+- bulk ingestion;
+- filing-body extraction;
+- frontend EDGAR calls;
+- Agent Team runtime EDGAR tools or web search.
+
+Approved normalized content:
+
+- `company_name`;
+- `ticker`;
+- `exchange`;
+- `cik_reference`;
+- `sic_label`, if present and reviewed;
+- `fiscal_year_end`, if useful and clearly labelled;
+- source label;
+- freshness/as-of;
+- `collected_at`;
+- limitations and caveats.
+
+Approved uses:
+
+- backend-only local/internal live smoke;
+- normalized `public_company_profile` evidence;
+- Agent Team public roles may receive normalized public company identity
+  metadata only;
+- saved reports may persist normalized metadata, source label, `collected_at`,
+  freshness, and caveats for report reproducibility.
+
+Required display/attribution wording:
+
+- Full wording: "Source: SEC EDGAR submissions metadata. Company identity and
+  listing metadata only. Not investment advice or a trading signal."
+- Short label: "SEC EDGAR metadata - company profile only"
+- Caveat: "EDGAR metadata may lag company changes and does not include financial
+  analysis, filing text, or investment conclusions."
+
+Retention and cache limits:
+
+- raw SEC payload must not be persisted;
+- raw response may exist only transiently during normalization;
+- normalized metadata may be cached for local/internal use;
+- suggested TTL is 7 days;
+- saved reports may retain normalized metadata indefinitely as historical report
+  evidence.
+
+Refresh limits:
+
+- no background crawler;
+- no broad scheduled refresh;
+- fetch only when needed for a saved review/report evidence path;
+- cache by CIK/ticker;
+- conservative request rate, ideally 1 request/second process-wide or stricter;
+- tiny per-run request budget, ideally one company-profile lookup per
+  underlying;
+- failures degrade to `not_available` / provider unavailable without breaking
+  report generation.
+
+Screenshots and exports:
+
+- allowed for internal/demo and saved-report views if they contain only
+  normalized metadata plus attribution/caveat;
+- no raw SEC payload, filing body, raw URL, source trace, or SEC endorsement
+  implication.
+
+Explicitly prohibited:
+
+- SEC filing bodies;
+- HTML filing text;
+- accession document text;
+- exhibits;
+- long excerpts;
+- XBRL company facts;
+- insider transactions;
+- filing/event interpretation;
+- news interpretation;
+- raw URLs;
+- raw payload persistence;
+- frontend EDGAR calls;
+- Agent Team runtime EDGAR tools or web search;
+- broker/account/portfolio/private data;
+- trading-action language;
+- buy/sell/hold conclusions;
+- SEC endorsement wording.
+
 ## Existing Contract Is The Default
 
 P29C should reuse the shipped fields unless implementation proves a concrete gap:
@@ -190,7 +427,7 @@ Before Codex C receives a production adapter task, the founder must approve:
 5. Whether unavailable provider behavior should leave the role skipped or allow
    another separately approved source category.
 
-The recommended first slice is one low-volatility structured section, not news.
+The preferred first slice is one low-volatility structured section, not news.
 News carries the highest text-rights, excerpt, timeliness, and attribution risk.
 
 ## Proposed Task Sequence
@@ -208,9 +445,15 @@ Owner: Codex B and founder.
 Owner: Codex C. Reviewer: Codex B.
 
 - Implement only after T0 approval.
-- Define the fail-closed source policy boundary and fake adapter.
+- Define the fail-closed source policy boundary and the provider-neutral adapter
+  interface for the approved source candidate.
+- Include deterministic fake/replay implementations only for tests and local
+  verification; they are not the product source path.
 - Preserve the existing `SavedPublicEvidencePackageRead` contract by default.
 - Make no external calls in tests or default runtime.
+- For the SEC-first path, implement symbol/CIK resolution and submissions
+  normalization behind disabled-by-default gates until source approval and
+  access policy are recorded.
 
 ### P29C-T2 - Approved single-source acquisition slice
 

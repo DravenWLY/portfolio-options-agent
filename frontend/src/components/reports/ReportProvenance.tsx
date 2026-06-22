@@ -10,14 +10,21 @@
 import { MpIcon } from "../shared/mp";
 import Timestamp from "../shared/Timestamp";
 import ReportScopeSummary from "./ReportScopeSummary";
+import ReportPublicEvidenceAttribution from "./ReportPublicEvidenceAttribution";
 import type { ReportScopeMetadataRead } from "../../types/tradeReview";
-import type { AgentTeamReportStatus, SavedAgentTeamSummaryRead } from "../../types/api";
+import type {
+  AgentTeamReportStatus,
+  ReportPublicEvidenceAttributionRead,
+  SavedAgentTeamSummaryRead,
+} from "../../types/api";
 import { evidenceKeyLabel, humanizeCode } from "./reportStatus";
 
 interface ReportProvenanceProps {
   status: AgentTeamReportStatus;
   scope: ReportScopeMetadataRead | null;
   agentSummary: SavedAgentTeamSummaryRead | null;
+  /** Sanitized SEC EDGAR company-profile attribution, or null. Backend-owned. */
+  publicEvidenceAttribution: ReportPublicEvidenceAttributionRead | null;
   /** Source snapshot saved time (immutable). */
   createdAt: string;
   /** Saved-record last-updated time (technical). */
@@ -28,6 +35,7 @@ export default function ReportProvenance({
   status,
   scope,
   agentSummary,
+  publicEvidenceAttribution,
   createdAt,
   updatedAt,
 }: ReportProvenanceProps) {
@@ -63,6 +71,8 @@ export default function ReportProvenance({
           </ul>
         </div>
       )}
+
+      <ReportPublicEvidenceAttribution attribution={publicEvidenceAttribution} />
 
       <details className="mp-disclosure" style={styles.details}>
         <summary style={styles.summary}>

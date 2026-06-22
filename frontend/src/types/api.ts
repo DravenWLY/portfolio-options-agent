@@ -240,6 +240,24 @@ export interface SavedAgentTeamSummaryRead {
   evidence_references: string[];
 }
 
+/* ── Phase 29C-T4A saved public-evidence attribution (read side) ─────────────
+ * Mirrors backend `ReportPublicEvidenceAttributionRead`. A sanitized, keys-only
+ * projection of the frozen `public_company_profile` saved section: it carries
+ * only provider-neutral source identity, availability, and a SIC-presence flag —
+ * never the literal SIC value, CIK, fiscal-year-end, company name, ticker,
+ * exchange, facts, URLs, or payloads. It is the ONLY field the frontend may use
+ * to decide whether SEC EDGAR attribution chrome renders (P29C-T4); the source
+ * must never be inferred from role prose, evidence_references, the section key,
+ * the report title, or any other fallback. Null when no reviewed EDGAR
+ * company-profile evidence is attached. */
+export interface ReportPublicEvidenceAttributionRead {
+  section_key: "public_company_profile";
+  source_key: "sec_edgar_submissions";
+  source_label: "SEC EDGAR metadata - company profile only";
+  availability: "available" | "limited";
+  has_sic_label: boolean;
+}
+
 export interface ReportThreadRead {
   id: string;
   user_id: string;
@@ -254,6 +272,8 @@ export interface ReportThreadRead {
   /** Phase 29A: saved Agent Team analysis, or null for a deterministic-only
    *  source snapshot that has not had a report generated yet. */
   agent_summary: SavedAgentTeamSummaryRead | null;
+  /** Phase 29C-T4A: sanitized SEC EDGAR company-profile attribution, or null. */
+  public_evidence_attribution: ReportPublicEvidenceAttributionRead | null;
 }
 
 export interface ReportMessageRead {

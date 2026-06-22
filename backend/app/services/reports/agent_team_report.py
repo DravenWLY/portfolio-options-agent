@@ -20,6 +20,8 @@ from app.services.agent_team.report_output_safety import validate_agent_team_rep
 from app.services.agent_team.roles import role_registry
 from app.services.reports.crud import saved_review_artifact_for_thread
 from app.services.reports.public_evidence import (
+    EdgarCompanyProfileClient,
+    EdgarCompanyProfileSourcePolicy,
     build_public_evidence_projection,
     build_public_role_evidence_projection,
 )
@@ -84,6 +86,8 @@ def generate_agent_team_report_for_thread(
     thread_id: UUID,
     *,
     mode: AgentTeamReportGenerationMode = "deterministic_template",
+    edgar_policy: EdgarCompanyProfileSourcePolicy | None = None,
+    edgar_client: EdgarCompanyProfileClient | None = None,
 ) -> SavedAgentTeamSummaryRead | None:
     """Persist a sanitized Agent Team report summary for an existing saved artifact."""
 
@@ -104,7 +108,9 @@ def generate_agent_team_report_for_thread(
             evidence = evidence.model_copy(
                 update={
                     "public_evidence": build_public_evidence_projection(
-                        symbol_or_underlying=evidence.trade_intent_summary.symbol_or_underlying
+                        symbol_or_underlying=evidence.trade_intent_summary.symbol_or_underlying,
+                        edgar_policy=edgar_policy,
+                        edgar_client=edgar_client,
                     )
                 }
             )
@@ -168,12 +174,7 @@ def build_agent_team_summary_from_evidence(
         else "partially_completed"
     )
 
-    public_clause = (
-        " Validated public analyst context is included as analysis-only background "
-        "where reviewed public evidence was available."
-        if public_completed
-        else ""
-    )
+    public_clause = _public_synthesis_clause(evidence, public_completed)
     synthesis = (
         "Agent Team analysis is generated from the saved evidence package." + public_clause + " "
         "Deterministic backend services own all calculations; scope, freshness, and caveats remain attached for audit."
@@ -256,6 +257,9 @@ def _public_role_summary(
 
 def _public_role_markdown(role_name: str, projection, *, limited: bool) -> str:
     citable = set(projection.citable_section_keys)
+    if role_name == "fundamentals_analyst" and "public_company_profile" in citable:
+        return _fundamentals_company_profile_markdown(projection, limited=limited)
+
     sections_phrase = ", ".join(
         section.section_label for section in projection.sections if section.section_key in citable
     )
@@ -264,6 +268,69 @@ def _public_role_markdown(role_name: str, projection, *, limited: bool) -> str:
     if limited:
         markdown = f"{markdown} {_PUBLIC_ROLE_LIMITED_CAVEAT}"
     return markdown
+
+
+def _fundamentals_company_profile_markdown(projection, *, limited: bool) -> str:
+    citable = set(projection.citable_section_keys)
+    profile = next(
+        section for section in projection.sections if section.section_key == "public_company_profile"
+    )
+    fact_keys = {fact.fact_key for fact in profile.facts if fact.value_label}
+    present_facts = [
+        label
+        for key, label in (
+            ("company_name", "company name"),
+            ("ticker", "ticker"),
+            ("exchange", "listing exchange"),
+            ("cik_reference", "CIK reference"),
+            ("sic_label", "SEC SIC regulatory classification metadata"),
+            ("fiscal_year_end", "fiscal year-end metadata"),
+        )
+        if key in fact_keys
+    ]
+    fact_phrase = ", ".join(present_facts) if present_facts else "company identity metadata"
+    unavailable_sections = tuple(
+        section.section_label
+        for section in projection.sections
+        if section.section_key in {"public_fundamentals_snapshot", "public_events_calendar"}
+        and section.section_key not in citable
+    )
+    unavailable_sentence = (
+        f" {', '.join(unavailable_sections)} remains not reviewed in this saved evidence package."
+        if unavailable_sections
+        else ""
+    )
+    sic_sentence = (
+        " SEC SIC metadata is source-specific regulatory metadata and may be broad, legacy, "
+        "and may lag company changes."
+        if "sic_label" in fact_keys
+        else ""
+    )
+    limited_sentence = f" {_PUBLIC_ROLE_LIMITED_CAVEAT}" if limited else ""
+    return (
+        "Fundamentals analyst summary. Reviewed SEC EDGAR metadata - company profile only "
+        f"is available as company identity and listing context. Present structured facts include {fact_phrase}."
+        f"{sic_sentence}{unavailable_sentence}{limited_sentence} This context is background only; "
+        "deterministic backend services own all calculations."
+    )
+
+
+def _public_synthesis_clause(
+    evidence: SavedEvidencePackageRead,
+    public_completed: tuple[SavedAgentTeamRoleSummaryRead, ...],
+) -> str:
+    if not public_completed:
+        return ""
+    profile = evidence.public_evidence.public_company_profile if evidence.public_evidence is not None else None
+    if profile is not None and profile.availability in {"available", "limited"}:
+        return (
+            " Saved company identity and listing context is included as analysis-only "
+            "background where reviewed profile evidence was available."
+        )
+    return (
+        " Validated public analyst context is included as analysis-only background "
+        "where reviewed public evidence was available."
+    )
 
 
 def _portfolio_role_summary(

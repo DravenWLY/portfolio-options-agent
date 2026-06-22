@@ -36,6 +36,7 @@ SavedPublicEvidenceSectionKey = Literal[
     "public_technical_context",
     "public_market_context",
 ]
+SavedPublicEvidenceSourceKey = Literal["sec_edgar_submissions"]
 AgentTeamPublicRoleName = Literal["fundamentals_analyst", "news_analyst", "technical_analyst"]
 AgentTeamReportStatus = Literal[
     "source_snapshot",
@@ -217,6 +218,21 @@ class ReportThreadCreate(BaseModel):
     status: ReportThreadStatus = "draft"
 
 
+class ReportPublicEvidenceAttributionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    section_key: Literal["public_company_profile"]
+    source_key: Literal["sec_edgar_submissions"]
+    source_label: Literal["SEC EDGAR metadata - company profile only"]
+    availability: Literal["available", "limited"]
+    has_sic_label: bool
+
+    @model_validator(mode="after")
+    def attribution_must_be_safe(self) -> "ReportPublicEvidenceAttributionRead":
+        validate_public_evidence_payload(self.model_dump(mode="python"))
+        return self
+
+
 class ReportThreadRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -231,6 +247,7 @@ class ReportThreadRead(BaseModel):
     deleted_at: datetime | None
     scope_metadata: ReportScopeMetadataRead | None = None
     agent_summary: "SavedAgentTeamSummaryRead | None" = None
+    public_evidence_attribution: ReportPublicEvidenceAttributionRead | None = None
 
 
 class ReportMessageCreate(BaseModel):
@@ -519,6 +536,7 @@ class SavedPublicEvidenceSectionRead(BaseModel):
     freshness_category: SavedPublicEvidenceFreshnessCategory
     freshness_label: str
     source_label: str
+    source_key: SavedPublicEvidenceSourceKey | None = None
     rights_status: SavedPublicEvidenceRightsStatus
     as_of: datetime | None = None
     collected_at: datetime | None = None

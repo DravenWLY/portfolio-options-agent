@@ -60,3 +60,37 @@ class ReportThread(Base):
             return None
         summary = self.saved_artifact_json.get("agent_summary")
         return summary if isinstance(summary, dict) else None
+
+    @property
+    def public_evidence_attribution(self) -> dict | None:
+        if not isinstance(self.saved_artifact_json, dict):
+            return None
+        public_evidence = self.saved_artifact_json.get("public_evidence")
+        if not isinstance(public_evidence, dict):
+            return None
+        profile = public_evidence.get("public_company_profile")
+        if not isinstance(profile, dict):
+            return None
+        if profile.get("section_key") != "public_company_profile":
+            return None
+        if profile.get("source_key") != "sec_edgar_submissions":
+            return None
+        if profile.get("source_label") != "SEC EDGAR metadata - company profile only":
+            return None
+        availability = profile.get("availability")
+        if availability not in {"available", "limited"}:
+            return None
+        facts = profile.get("facts")
+        has_sic_label = any(
+            isinstance(fact, dict)
+            and fact.get("fact_key") == "sic_label"
+            and bool(fact.get("value_label"))
+            for fact in (facts if isinstance(facts, list) else [])
+        )
+        return {
+            "section_key": "public_company_profile",
+            "source_key": "sec_edgar_submissions",
+            "source_label": "SEC EDGAR metadata - company profile only",
+            "availability": availability,
+            "has_sic_label": has_sic_label,
+        }

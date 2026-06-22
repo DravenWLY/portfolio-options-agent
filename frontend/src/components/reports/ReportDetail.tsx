@@ -261,6 +261,7 @@ function ReportBody({
         status={reportStatus}
         scope={detail.scope_metadata}
         agentSummary={summary}
+        publicEvidenceAttribution={detail.public_evidence_attribution}
         createdAt={detail.created_at}
         updatedAt={detail.updated_at}
       />

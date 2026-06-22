@@ -123,10 +123,16 @@ What should happen next:
 
 1. MAINT-BE-1 is complete; the full backend suite is clean apart from legitimate
    DB-gated skips and configured deselections.
-2. Review P29C-T0, the proposed source-governance architecture for production-
-   reviewed public evidence. The founder must choose one initial section/source
-   category and approve LLM, persistence, display, attribution, retention, and
-   environment uses before Codex C receives a provider task.
+2. Ask founder/Codex A for the next public-evidence product decision. P29C-T5
+   closed the approved-with-limits EDGAR `public_company_profile` vertical slice:
+   source governance, local/internal source seam, generation-time persistence,
+   public-role behavior, read-contract attribution, and frontend provenance
+   chrome have all passed their review gates. The next decision is whether to
+   pause public-evidence expansion or choose the next reviewed source/category.
+   Production/public SaaS retrieval at scale, background crawling, bulk
+   ingestion, filing-body extraction, frontend EDGAR calls, Agent Team runtime
+   EDGAR tools, raw payload persistence, inferred sector/industry labels,
+   classification-driven rules, and trading-action language remain prohibited.
 3. Keep Account Details and Agent Console outside routine Skyframe rollout.
    Either surface requires its own narrow privacy-safe plan and review gates.
 

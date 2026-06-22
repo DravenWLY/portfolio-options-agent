@@ -14,6 +14,7 @@ from app.schemas.reports import (
     ReportMessageCreate,
     ReportThreadCreate,
     ReportThreadRead,
+    ReportPublicEvidenceAttributionRead,
     SavedAgentTeamRoleSummaryRead,
     SavedAgentTeamSummaryRead,
     SavedDeterministicReviewSummaryRead,
@@ -37,6 +38,10 @@ from app.services.reports.agent_team_report import (
     build_validation_failed_summary_for_test,
 )
 from app.services.reports.public_evidence import (
+    EdgarCompanyProfileHttpClient,
+    EdgarCompanyProfileSourcePolicy,
+    EdgarSourceUnavailableError,
+    build_edgar_company_profile_live_smoke_projection,
     build_public_evidence_projection,
     build_public_role_evidence_projection,
 )
@@ -450,6 +455,148 @@ def test_saved_review_artifact_for_thread_reads_public_evidence_from_saved_json(
     assert evidence.public_evidence.public_company_profile.availability == "available"
 
 
+def test_report_thread_read_projects_edgar_public_evidence_attribution_only_from_saved_source_key() -> None:
+    generated = datetime.now(UTC)
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=_ReplayEdgarProfileClient(),
+    )
+    report_thread = ReportThread(
+        id=uuid4(),
+        user_id=uuid4(),
+        account_id=None,
+        title="Saved reviewed report",
+        report_type="trade_review",
+        status="completed",
+        created_at=generated,
+        updated_at=generated,
+        deleted_at=None,
+        saved_artifact_json={
+            "artifact_reference": "svrev_savedreview1",
+            "source_kind": "trade_review_workspace",
+            "source_reference": "workspace_savedreview1",
+            "scope_metadata": _saved_scope_metadata().model_dump(mode="json"),
+            "deterministic_summary": _saved_deterministic_summary().model_dump(mode="json"),
+            "agent_summary": None,
+            "public_evidence": public_evidence.model_dump(mode="json"),
+            "generated_at": generated.isoformat(),
+            "saved_at": generated.isoformat(),
+            "review_pipeline_label": "Portfolio Copilot review pipeline",
+            "limitations": ("Generated from reviewed data available at the time.",),
+            "caveat_codes": ("selected_context_scope",),
+        },
+    )
+
+    read = ReportThreadRead.model_validate(report_thread)
+
+    assert read.public_evidence_attribution is not None
+    assert read.public_evidence_attribution.model_dump(mode="python") == {
+        "section_key": "public_company_profile",
+        "source_key": "sec_edgar_submissions",
+        "source_label": "SEC EDGAR metadata - company profile only",
+        "availability": "available",
+        "has_sic_label": True,
+    }
+    rendered = repr(read.model_dump(mode="python")).lower()
+    assert "security brokers" not in rendered
+    assert "cik 0000001234" not in rendered
+    assert "12/31" not in rendered
+    assert "example public test company" not in rendered
+    assert "investment advice" not in rendered
+
+
+def test_report_thread_read_public_evidence_attribution_is_null_without_saved_source_key() -> None:
+    generated = datetime.now(UTC)
+    public_evidence = SavedPublicEvidencePackageRead.not_reviewed("HOOD").model_copy(
+        update={
+            "public_evidence_mode": "synthetic_demo",
+            "public_company_profile": _reviewed_public_section(
+                "public_company_profile",
+                "Public company profile",
+                "Reviewed synthetic company profile attached at generation time.",
+            ),
+        }
+    )
+    report_thread = ReportThread(
+        id=uuid4(),
+        user_id=uuid4(),
+        account_id=None,
+        title="Saved reviewed report",
+        report_type="trade_review",
+        status="completed",
+        created_at=generated,
+        updated_at=generated,
+        deleted_at=None,
+        saved_artifact_json={
+            "artifact_reference": "svrev_savedreview1",
+            "source_kind": "trade_review_workspace",
+            "source_reference": "workspace_savedreview1",
+            "scope_metadata": _saved_scope_metadata().model_dump(mode="json"),
+            "deterministic_summary": _saved_deterministic_summary().model_dump(mode="json"),
+            "agent_summary": None,
+            "public_evidence": public_evidence.model_dump(mode="json"),
+            "generated_at": generated.isoformat(),
+            "saved_at": generated.isoformat(),
+            "review_pipeline_label": "Portfolio Copilot review pipeline",
+            "limitations": ("Generated from reviewed data available at the time.",),
+            "caveat_codes": ("selected_context_scope",),
+        },
+    )
+
+    read = ReportThreadRead.model_validate(report_thread)
+
+    assert read.public_evidence_attribution is None
+
+
+def test_report_thread_read_projects_limited_edgar_attribution_without_literal_sic() -> None:
+    generated = datetime.now(UTC)
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=_ReplayEdgarProfileClient(
+            submissions={
+                "name": "Example Public Test Company, Inc.",
+                "tickers": ["EXMP"],
+            }
+        ),
+    )
+    report_thread = ReportThread(
+        id=uuid4(),
+        user_id=uuid4(),
+        account_id=None,
+        title="Saved reviewed report",
+        report_type="trade_review",
+        status="completed",
+        created_at=generated,
+        updated_at=generated,
+        deleted_at=None,
+        saved_artifact_json={
+            "artifact_reference": "svrev_savedreview1",
+            "source_kind": "trade_review_workspace",
+            "source_reference": "workspace_savedreview1",
+            "scope_metadata": _saved_scope_metadata().model_dump(mode="json"),
+            "deterministic_summary": _saved_deterministic_summary().model_dump(mode="json"),
+            "agent_summary": None,
+            "public_evidence": public_evidence.model_dump(mode="json"),
+            "generated_at": generated.isoformat(),
+            "saved_at": generated.isoformat(),
+            "review_pipeline_label": "Portfolio Copilot review pipeline",
+            "limitations": ("Generated from reviewed data available at the time.",),
+            "caveat_codes": ("selected_context_scope",),
+        },
+    )
+
+    read = ReportThreadRead.model_validate(report_thread)
+
+    assert read.public_evidence_attribution is not None
+    assert read.public_evidence_attribution.availability == "limited"
+    assert read.public_evidence_attribution.has_sic_label is False
+    rendered = repr(read.model_dump(mode="python")).lower()
+    assert "sic label" not in rendered
+    assert "cik 0000001234" not in rendered
+
+
 def test_saved_public_evidence_package_defaults_to_not_reviewed_sections() -> None:
     public_evidence = SavedPublicEvidencePackageRead.not_reviewed("HOOD")
 
@@ -482,6 +629,371 @@ def test_public_evidence_projection_default_provider_is_not_reviewed_and_offline
     assert public_evidence.symbol_or_underlying == "HOOD"
     assert public_evidence.public_news_snapshot.availability == "not_reviewed"
     assert public_evidence.public_technical_context.source_label == "No reviewed public source attached"
+
+
+def test_edgar_company_profile_policy_disabled_fails_closed_without_client_call() -> None:
+    client = _ReplayEdgarProfileClient(raise_on_call=True)
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=False),
+        edgar_client=client,
+    )
+
+    assert client.calls == ()
+    assert public_evidence.public_company_profile.availability == "not_available"
+    assert public_evidence.public_company_profile.caveat_codes == ("edgar_source_disabled",)
+    assert public_evidence.public_fundamentals_snapshot.availability == "not_reviewed"
+
+
+def test_edgar_company_profile_invalid_live_user_agent_policy_fails_closed_without_client_call() -> None:
+    client = _ReplayEdgarProfileClient(raise_on_call=True)
+    policy = EdgarCompanyProfileSourcePolicy(
+        enabled=True,
+        external_access_enabled=True,
+        runtime_environment="local",
+        declared_user_agent=None,
+    )
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=policy,
+        edgar_client=client,
+    )
+
+    assert policy.live_client_ready() is False
+    assert client.calls == ()
+    assert public_evidence.public_company_profile.availability == "not_available"
+    assert public_evidence.public_company_profile.caveat_codes == ("edgar_live_policy_not_ready",)
+
+
+def test_edgar_company_profile_valid_live_policy_is_readiness_only_for_future_client() -> None:
+    policy = EdgarCompanyProfileSourcePolicy(
+        enabled=True,
+        external_access_enabled=True,
+        runtime_environment="local",
+        declared_user_agent="Portfolio Copilot local demo contact engineering@example.test",
+        request_timeout_seconds=3.0,
+        response_size_cap_bytes=100_000,
+        request_budget_per_run=2,
+    )
+
+    assert policy.live_client_ready() is True
+
+
+def test_edgar_company_profile_http_client_requires_live_ready_policy() -> None:
+    with pytest.raises(EdgarSourceUnavailableError):
+        EdgarCompanyProfileHttpClient(
+            policy=EdgarCompanyProfileSourcePolicy(enabled=True, external_access_enabled=True),
+            transport=_FakeEdgarHttpTransport(),
+        )
+
+
+def test_edgar_company_profile_http_client_uses_injected_transport_without_network() -> None:
+    policy = _live_ready_edgar_policy()
+    client = EdgarCompanyProfileHttpClient(policy=policy, transport=_FakeEdgarHttpTransport())
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=policy,
+        edgar_client=client,
+    )
+
+    profile = public_evidence.public_company_profile
+    facts = {fact.fact_key: fact.value_label for fact in profile.facts}
+    assert profile.availability == "available"
+    assert facts["company_name"] == "Example Public Test Company, Inc."
+    assert facts["cik_reference"] == "CIK 0000001234"
+    assert client.request_count == 2
+
+
+def test_edgar_company_profile_http_client_enforces_request_budget() -> None:
+    policy = _live_ready_edgar_policy(request_budget_per_run=2)
+    client = EdgarCompanyProfileHttpClient(policy=policy, transport=_FakeEdgarHttpTransport())
+
+    client.fetch_company_tickers()
+    client.fetch_submissions("CIK 0000001234")
+
+    with pytest.raises(EdgarSourceUnavailableError):
+        client.fetch_company_tickers()
+
+
+def test_edgar_company_profile_live_smoke_helper_uses_explicit_policy_and_fake_transport() -> None:
+    public_evidence = build_edgar_company_profile_live_smoke_projection(
+        symbol_or_underlying="EXMP",
+        declared_user_agent="Portfolio Copilot local demo contact engineering@example.test",
+        runtime_environment="local",
+        transport=_FakeEdgarHttpTransport(),
+    )
+
+    profile = public_evidence.public_company_profile
+    facts = {fact.fact_key: fact.value_label for fact in profile.facts}
+    assert public_evidence.public_evidence_mode == "provider_reference"
+    assert profile.availability == "available"
+    assert profile.source_label == "SEC EDGAR metadata - company profile only"
+    assert profile.limitations == (
+        "SEC EDGAR profile evidence is limited to structured company identity metadata.",
+        "Normalized identity facts only; raw EDGAR payloads are not retained.",
+        "SEC SIC metadata may be broad, legacy, and may lag company changes; EDGAR metadata does not include financial analysis, filing text, or investment conclusions.",
+    )
+    assert facts["company_name"] == "Example Public Test Company, Inc."
+    assert facts["ticker"] == "EXMP"
+
+
+def test_edgar_company_profile_replay_success_normalizes_profile_section() -> None:
+    client = _ReplayEdgarProfileClient()
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="exmp",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=client,
+    )
+
+    profile = public_evidence.public_company_profile
+    facts = {fact.fact_key: fact.value_label for fact in profile.facts}
+    assert public_evidence.public_evidence_mode == "provider_reference"
+    assert profile.availability == "available"
+    assert profile.rights_status == "reviewed"
+    assert profile.source_key == "sec_edgar_submissions"
+    assert profile.source_label == "SEC EDGAR metadata - company profile only"
+    assert facts == {
+        "company_name": "Example Public Test Company, Inc.",
+        "ticker": "EXMP",
+        "exchange": "Nasdaq",
+        "cik_reference": "CIK 0000001234",
+        "sic_label": "Security Brokers, Dealers & Flotation Companies",
+        "fiscal_year_end": "12/31",
+    }
+    assert client.calls == ("fetch_company_tickers", "fetch_submissions:CIK 0000001234")
+
+
+def test_edgar_company_profile_keeps_sic_label_source_specific_not_normalized_classification() -> None:
+    client = _ReplayEdgarProfileClient(
+        submissions={
+            "name": "Example Semiconductor Test Company, Inc.",
+            "tickers": ["EXMP"],
+            "exchanges": ["Nasdaq"],
+            "sicDescription": "Semiconductors & Related Devices",
+            "fiscalYearEnd": "1231",
+            "sector": "Technology",
+            "industry": "Semiconductors",
+            "subindustry": "Graphics Processors",
+            "peer_group": "Chipmakers",
+        }
+    )
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=client,
+    )
+
+    profile = public_evidence.public_company_profile
+    facts = {fact.fact_key: fact.value_label for fact in profile.facts}
+    assert profile.availability == "available"
+    assert facts["sic_label"] == "Semiconductors & Related Devices"
+    assert "sector" not in facts
+    assert "industry" not in facts
+    assert "subindustry" not in facts
+    assert "peer_group" not in facts
+    assert "Technology" not in repr(public_evidence)
+    assert "Graphics Processors" not in repr(public_evidence)
+    assert (
+        "SEC SIC metadata may be broad, legacy, and may lag company changes; EDGAR metadata does not include financial analysis, filing text, or investment conclusions."
+        in profile.limitations
+    )
+
+
+def test_edgar_company_profile_duplicate_ticker_rows_fail_closed_without_guessing_identity() -> None:
+    client = _ReplayEdgarProfileClient(
+        company_tickers={
+            "0": {"cik_str": 1234, "ticker": "EXMP", "title": "Example Public Test Company, Inc."},
+            "1": {"cik_str": 5678, "ticker": "EXMP", "title": "Example Duplicate Test Company, Inc."},
+        }
+    )
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=client,
+    )
+
+    profile = public_evidence.public_company_profile
+    assert profile.availability == "not_available"
+    assert profile.facts == ()
+    assert profile.caveat_codes == ("edgar_symbol_unresolved",)
+    assert client.calls == ("fetch_company_tickers",)
+
+
+def test_edgar_company_profile_invalid_cik_fails_closed() -> None:
+    client = _ReplayEdgarProfileClient(
+        company_tickers={"0": {"cik_str": "not-a-cik", "ticker": "EXMP", "title": "Example Test Company"}}
+    )
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=client,
+    )
+
+    profile = public_evidence.public_company_profile
+    assert profile.availability == "not_available"
+    assert profile.facts == ()
+    assert profile.caveat_codes == ("edgar_cik_unavailable",)
+    assert client.calls == ("fetch_company_tickers",)
+
+
+def test_edgar_company_profile_overlong_numeric_cik_fails_before_submissions_fetch() -> None:
+    client = _ReplayEdgarProfileClient(
+        company_tickers={"0": {"cik_str": "12345678901", "ticker": "EXMP", "title": "Example Test Company"}}
+    )
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=client,
+    )
+
+    profile = public_evidence.public_company_profile
+    assert profile.availability == "not_available"
+    assert profile.facts == ()
+    assert profile.caveat_codes == ("edgar_cik_unavailable",)
+    assert client.calls == ("fetch_company_tickers",)
+
+
+def test_edgar_company_profile_client_exception_fails_closed_without_raw_content() -> None:
+    client = _ReplayEdgarProfileClient(
+        exception_message="https://data.sec.gov/submissions/CIK0000001234.json raw_payload api_key=secret"
+    )
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=client,
+    )
+
+    rendered = repr(public_evidence.model_dump(mode="python")).lower()
+    assert public_evidence.public_company_profile.availability == "not_available"
+    assert public_evidence.public_company_profile.caveat_codes == ("edgar_replay_unavailable",)
+    assert "data.sec.gov" not in rendered
+    assert "raw_payload" not in rendered
+    assert "api_key" not in rendered
+    assert "secret" not in rendered
+
+
+def test_edgar_company_profile_replay_unresolved_symbol_does_not_guess_identity() -> None:
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXM",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=_ReplayEdgarProfileClient(),
+    )
+
+    profile = public_evidence.public_company_profile
+    assert profile.availability == "not_available"
+    assert profile.facts == ()
+    assert profile.caveat_codes == ("edgar_symbol_unresolved",)
+    assert "Example Public Test Company" not in repr(profile)
+
+
+def test_edgar_company_profile_missing_optional_fields_is_limited_without_fabrication() -> None:
+    client = _ReplayEdgarProfileClient(
+        submissions={
+            "name": "Example Public Test Company, Inc.",
+            "tickers": ["EXMP"],
+        }
+    )
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=client,
+    )
+
+    profile = public_evidence.public_company_profile
+    facts = {fact.fact_key: fact.value_label for fact in profile.facts}
+    assert profile.availability == "limited"
+    assert profile.caveat_codes == ("edgar_profile_partial_metadata",)
+    assert facts["company_name"] == "Example Public Test Company, Inc."
+    assert facts["ticker"] == "EXMP"
+    assert facts["cik_reference"] == "CIK 0000001234"
+    assert "exchange" not in facts
+    assert "sic_label" not in facts
+
+
+def test_edgar_company_profile_missing_required_metadata_is_not_available() -> None:
+    client = _ReplayEdgarProfileClient(
+        company_tickers={"0": {"cik_str": 1234, "ticker": "EXMP"}},
+        submissions={"tickers": ["EXMP"]},
+    )
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=client,
+    )
+
+    profile = public_evidence.public_company_profile
+    assert profile.availability == "not_available"
+    assert profile.facts == ()
+    assert profile.caveat_codes == ("edgar_profile_metadata_incomplete",)
+
+
+def test_edgar_company_profile_discards_raw_payload_fields_and_private_context() -> None:
+    client = _ReplayEdgarProfileClient(
+        submissions={
+            "name": "Example Public Test Company, Inc.",
+            "tickers": ["EXMP"],
+            "exchanges": ["Nasdaq"],
+            "sicDescription": "Security Brokers, Dealers & Flotation Companies",
+            "fiscalYearEnd": "1231",
+            "source_url": "https://example.test/should-not-appear",
+            "raw_payload": {"account_id": "acct_private"},
+            "filings": {"recent": {"accessionNumber": ["0000000000-00-000000"]}},
+        }
+    )
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=client,
+    )
+
+    rendered = repr(public_evidence.model_dump(mode="python")).lower()
+    assert public_evidence.public_company_profile.availability == "available"
+    assert "source_url" not in rendered
+    assert "raw_payload" not in rendered
+    assert "acct_private" not in rendered
+    assert "accession" not in rendered
+
+
+def test_edgar_company_profile_public_evidence_supports_package_aware_validation() -> None:
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=_ReplayEdgarProfileClient(),
+    )
+    evidence = _evidence_with_public_sections(
+        {"public_company_profile": public_evidence.public_company_profile}
+    )
+
+    projection = build_public_role_evidence_projection(evidence, role_name="fundamentals_analyst")
+    payload = {
+        "role_summaries": (
+            {
+                "role_name": "fundamentals_analyst",
+                "display_name": "Fundamentals Analyst",
+                "role_status": "completed",
+                "provider_status": "ok",
+                "summary_markdown": "Company identity context is available from reviewed public evidence.",
+                "evidence_references": ("trade_intent_summary", "public_company_profile"),
+                "warning_codes": (),
+            },
+        ),
+        "evidence_references": ("trade_intent_summary", "public_company_profile"),
+    }
+
+    assert projection.citable_section_keys == ("public_company_profile",)
+    validate_agent_team_report_output(payload, label="agent-team saved report", evidence_package=evidence)
 
 
 def test_public_role_evidence_projection_narrows_sections_to_role_boundary() -> None:
@@ -962,6 +1474,169 @@ def test_public_roles_skip_honestly_for_default_not_reviewed_evidence() -> None:
     )
 
 
+def test_fundamentals_uses_available_edgar_profile_as_identity_context_only() -> None:
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=_ReplayEdgarProfileClient(
+            submissions={
+                "name": "Support.com Target Company, Inc.",
+                "tickers": ["EXMP"],
+                "exchanges": ["Nasdaq"],
+                "sicDescription": "Semiconductors & Related Devices",
+                "fiscalYearEnd": "1231",
+            }
+        ),
+    )
+    evidence = _evidence_with_public_sections(
+        {"public_company_profile": public_evidence.public_company_profile}
+    )
+
+    summary = build_agent_team_summary_from_evidence(
+        evidence, report_generated_at=datetime(2026, 6, 16, 16, 0, tzinfo=UTC)
+    )
+
+    by_role = {s.role_name: s for s in summary.role_summaries}
+    fundamentals = by_role["fundamentals_analyst"]
+    news = by_role["news_analyst"]
+    technical = by_role["technical_analyst"]
+    markdown = fundamentals.summary_markdown or ""
+    assert fundamentals.role_status == "completed"
+    assert fundamentals.evidence_references == ("trade_intent_summary", "public_company_profile")
+    assert "SEC EDGAR metadata - company profile only" in markdown
+    assert "company name" in markdown
+    assert "ticker" in markdown
+    assert "listing exchange" in markdown
+    assert "CIK reference" in markdown
+    assert "SEC SIC regulatory classification metadata" in markdown
+    assert "fiscal year-end metadata" in markdown
+    assert "broad, legacy" in markdown
+    assert "0000001234" not in markdown
+    assert "12/31" not in markdown
+    assert "Support.com" not in markdown
+    assert "Semiconductors & Related Devices" not in markdown
+    assert "sector" not in markdown.lower()
+    assert "industry" not in markdown.lower()
+    assert news.role_status == "skipped"
+    assert "public_company_profile" not in news.evidence_references
+    assert technical.role_status == "skipped"
+    assert "public_company_profile" not in technical.evidence_references
+    assert "company identity and listing context" in (summary.final_synthesis_markdown or "")
+    assert "sector" not in (summary.final_synthesis_markdown or "").lower()
+    validate_agent_team_report_output(
+        summary.model_dump(mode="python"), label="agent-team saved report", evidence_package=evidence
+    )
+
+
+def test_fundamentals_uses_limited_edgar_profile_without_sic_statement_when_sic_absent() -> None:
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=_ReplayEdgarProfileClient(
+            submissions={
+                "name": "Example Public Test Company, Inc.",
+                "tickers": ["EXMP"],
+            }
+        ),
+    )
+    evidence = _evidence_with_public_sections(
+        {"public_company_profile": public_evidence.public_company_profile}
+    )
+
+    summary = build_agent_team_summary_from_evidence(
+        evidence, report_generated_at=datetime(2026, 6, 16, 16, 30, tzinfo=UTC)
+    )
+
+    fundamentals = next(s for s in summary.role_summaries if s.role_name == "fundamentals_analyst")
+    markdown = fundamentals.summary_markdown or ""
+    assert public_evidence.public_company_profile.availability == "limited"
+    assert fundamentals.role_status == "completed"
+    assert "public_evidence_limited" in fundamentals.warning_codes
+    assert "SEC SIC" not in markdown
+    assert "broad, legacy" not in markdown
+    assert "limited or stale" in markdown
+    validate_agent_team_report_output(
+        summary.model_dump(mode="python"), label="agent-team saved report", evidence_package=evidence
+    )
+
+
+def test_fundamentals_uses_limited_edgar_profile_with_sic_caveat_when_sic_present() -> None:
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=_ReplayEdgarProfileClient(
+            submissions={
+                "name": "Example Public Test Company, Inc.",
+                "tickers": ["EXMP"],
+                "sicDescription": "Semiconductors & Related Devices",
+            }
+        ),
+    )
+    evidence = _evidence_with_public_sections(
+        {"public_company_profile": public_evidence.public_company_profile}
+    )
+
+    summary = build_agent_team_summary_from_evidence(
+        evidence, report_generated_at=datetime(2026, 6, 16, 17, 0, tzinfo=UTC)
+    )
+
+    fundamentals = next(s for s in summary.role_summaries if s.role_name == "fundamentals_analyst")
+    markdown = fundamentals.summary_markdown or ""
+    assert public_evidence.public_company_profile.availability == "limited"
+    assert fundamentals.role_status == "completed"
+    assert "public_evidence_limited" in fundamentals.warning_codes
+    assert "SEC SIC regulatory classification metadata" in markdown
+    assert "broad, legacy" in markdown
+    assert "Semiconductors & Related Devices" not in markdown
+    validate_agent_team_report_output(
+        summary.model_dump(mode="python"), label="agent-team saved report", evidence_package=evidence
+    )
+
+
+def test_fundamentals_skips_when_edgar_profile_not_available() -> None:
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=_ReplayEdgarProfileClient(exception_message="raw_payload data.sec.gov account_id"),
+    )
+    evidence = _evidence_with_public_sections(
+        {"public_company_profile": public_evidence.public_company_profile}
+    )
+
+    summary = build_agent_team_summary_from_evidence(
+        evidence, report_generated_at=datetime(2026, 6, 16, 17, 30, tzinfo=UTC)
+    )
+
+    fundamentals = next(s for s in summary.role_summaries if s.role_name == "fundamentals_analyst")
+    assert public_evidence.public_company_profile.availability == "not_available"
+    assert fundamentals.role_status == "skipped"
+    assert fundamentals.summary_markdown is None
+    assert fundamentals.unavailable_reason == "public_evidence_not_available"
+    validate_agent_team_report_output(
+        summary.model_dump(mode="python"), label="agent-team saved report", evidence_package=evidence
+    )
+
+
+def test_report_output_rejects_full_edgar_attribution_sentence() -> None:
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=_ReplayEdgarProfileClient(),
+    )
+    evidence = _evidence_with_public_sections(
+        {"public_company_profile": public_evidence.public_company_profile}
+    )
+    payload = _single_role_summary_payload(
+        "fundamentals_analyst",
+        "Fundamentals Analyst",
+        ("trade_intent_summary", "public_company_profile"),
+        "Source: SEC EDGAR submissions metadata. Company identity and listing metadata only. Not investment advice or a trading signal.",
+    )
+
+    with pytest.raises(ValueError):
+        validate_agent_team_report_output(payload, label="agent-team saved report", evidence_package=evidence)
+
+
 def test_public_roles_complete_from_reviewed_available_public_evidence() -> None:
     evidence = _evidence_with_public_sections(_all_reviewed_public_sections())
     report_generated_at = datetime(2026, 6, 15, 21, 0, tzinfo=UTC)
@@ -1239,6 +1914,7 @@ def test_report_and_agent_schemas_do_not_expose_secret_fields() -> None:
     schema_names = [
         ReportThreadCreate,
         ReportThreadRead,
+        ReportPublicEvidenceAttributionRead,
         ReportMessageCreate,
         SavedReviewArtifactCreateRequest,
         SavedReviewArtifactRead,
@@ -1462,3 +2138,90 @@ def _saved_evidence_with_unavailable_market_quote() -> SavedEvidencePackageRead:
             )
         }
     )
+
+
+class _ReplayEdgarProfileClient:
+    def __init__(
+        self,
+        *,
+        company_tickers: dict | None = None,
+        submissions: dict | None = None,
+        raise_on_call: bool = False,
+        exception_message: str | None = None,
+    ) -> None:
+        self.company_tickers = company_tickers or {
+            "0": {"cik_str": 1234, "ticker": "EXMP", "title": "Example Public Test Company, Inc."}
+        }
+        self.submissions = submissions or {
+            "name": "Example Public Test Company, Inc.",
+            "tickers": ["EXMP"],
+            "exchanges": ["Nasdaq"],
+            "sicDescription": "Security Brokers, Dealers & Flotation Companies",
+            "fiscalYearEnd": "1231",
+        }
+        self.raise_on_call = raise_on_call
+        self.exception_message = exception_message
+        self._calls: list[str] = []
+
+    @property
+    def calls(self) -> tuple[str, ...]:
+        return tuple(self._calls)
+
+    def fetch_company_tickers(self) -> dict:
+        self._calls.append("fetch_company_tickers")
+        if self.raise_on_call:
+            raise AssertionError("EDGAR replay client should not be called")
+        if self.exception_message is not None:
+            raise RuntimeError(self.exception_message)
+        return self.company_tickers
+
+    def fetch_submissions(self, cik_reference: str) -> dict:
+        self._calls.append(f"fetch_submissions:{cik_reference}")
+        if self.raise_on_call:
+            raise AssertionError("EDGAR replay client should not be called")
+        return self.submissions
+
+
+def _live_ready_edgar_policy(**updates: object) -> EdgarCompanyProfileSourcePolicy:
+    defaults = {
+        "enabled": True,
+        "external_access_enabled": True,
+        "runtime_environment": "local",
+        "declared_user_agent": "Portfolio Copilot local demo contact engineering@example.test",
+        "request_timeout_seconds": 3.0,
+        "response_size_cap_bytes": 100_000,
+        "request_budget_per_run": 3,
+    }
+    defaults.update(updates)
+    return EdgarCompanyProfileSourcePolicy(**defaults)
+
+
+class _FakeEdgarHttpTransport:
+    def __init__(self) -> None:
+        self.requests: list[dict[str, object]] = []
+
+    def fetch_json(
+        self,
+        endpoint_url: str,
+        *,
+        user_agent: str,
+        timeout_seconds: float,
+        response_size_cap_bytes: int,
+    ) -> dict:
+        self.requests.append(
+            {
+                "endpoint_url": endpoint_url,
+                "user_agent": user_agent,
+                "timeout_seconds": timeout_seconds,
+                "response_size_cap_bytes": response_size_cap_bytes,
+            }
+        )
+        if "company_tickers" in endpoint_url:
+            return {"0": {"cik_str": 1234, "ticker": "EXMP", "title": "Example Public Test Company, Inc."}}
+        return {
+            "name": "Example Public Test Company, Inc.",
+            "tickers": ["EXMP"],
+            "exchanges": ["Nasdaq"],
+            "sicDescription": "Security Brokers, Dealers & Flotation Companies",
+            "fiscalYearEnd": "1231",
+        }

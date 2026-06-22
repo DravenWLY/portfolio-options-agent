@@ -1,5 +1,120 @@
 # Changelog
 
+- 2026-06-21: Closed P29C-T5 as an architecture/product checkpoint. The EDGAR
+  `public_company_profile` vertical slice is complete through saved-report
+  display: source governance, disabled-by-default source seam, local/internal
+  smoke boundary, classification semantics hardening, generation-time
+  persistence, public-role behavior and deterministic narrative, read-contract
+  attribution, and frontend provenance chrome all passed review. Next decision:
+  founder/Codex A should choose whether to pause public-evidence expansion or
+  select the next reviewed source/category.
+- 2026-06-21: Closed P29C-T4 with Claude B visual/Skyframe PASS and Codex B
+  attribution/privacy/safety wording + contract-fidelity PASS. Saved report
+  provenance now renders frontend-only SEC EDGAR attribution chrome gated solely
+  by backend-owned `public_evidence_attribution`; it does not infer source from
+  role prose, section keys, titles, or fallback text. The full attribution
+  sentence containing "investment advice" remains fixed frontend display
+  boilerplate only and is not persisted, generated, or sent to backend/agent
+  fields. The completed EDGAR `public_company_profile` vertical slice should now
+  move to P29C-T5 architecture/product closeout before starting another public
+  evidence source.
+- 2026-06-21: Closed P29C-T4A with Codex B PASS. Report thread reads now expose
+  a minimal `public_evidence_attribution` projection from frozen saved EDGAR
+  `public_company_profile` evidence only: section key, source key, source label,
+  availability, and boolean SIC presence. The projection returns null unless the
+  saved profile is reviewed EDGAR and available/limited, and it exposes no facts,
+  literal SIC, CIK, fiscal year-end, company name, ticker, exchange, raw URLs,
+  raw payloads, or full attribution sentence. Claude A may resume P29C-T4
+  frontend attribution chrome using that field only.
+- 2026-06-21: Closed P29C-T3C with Codex B PASS. Deterministic public-role
+  report generation now lets the fundamentals analyst use saved EDGAR
+  `public_company_profile` evidence as company identity/listing context only,
+  while keeping literal CIK/fiscal-year/company/SIC values in structured facts
+  rather than generated prose. PM synthesis may reference saved identity/listing
+  context only as analysis-only background; news and technical remain excluded.
+  The full attribution sentence containing "investment advice" remains routed to
+  P29C-T4 frontend display chrome only, not backend saved/generated fields.
+- 2026-06-21: Closed P29C-T3B with Codex B PASS. The public-role behavior design
+  confirms EDGAR company-profile metadata is context only, SIC is
+  source-specific regulatory metadata with broad/legacy/may-lag caveats, the
+  full Codex-A attribution sentence must be frontend display chrome because it
+  collides with backend/report prohibited-phrase validators, and existing report
+  fields are sufficient.
+- 2026-06-21: Closed P29C-T3A with Codex B PASS. Saved Agent Team report
+  generation can now attach injected, reviewed EDGAR `public_company_profile`
+  evidence to the same `SavedEvidencePackageRead` used for role projection,
+  package-aware validation, and saved-artifact persistence. Default API behavior
+  remains offline/no EDGAR; report detail does not expose new public-evidence
+  read fields; regeneration reuses saved public evidence and does not refetch;
+  unavailable EDGAR degrades safely. Added P29C-T3B for Claude E design of
+  public-role behavior around saved normalized EDGAR company-profile evidence.
+- 2026-06-21: Closed P29C-T2C with Codex B PASS. EDGAR `sic_label` remains
+  source-specific SEC SIC regulatory metadata inside `public_company_profile`;
+  no normalized sector/industry/subindustry/peer-group, exposure, eligibility,
+  portfolio-rule, or trade-gating fields were added. Added P29C-T3A as the next
+  Codex C backend slice to attach reviewed EDGAR `public_company_profile`
+  evidence during explicit local/internal saved Agent Team report generation,
+  disabled by default and with no raw SEC payload persistence.
+- 2026-06-20: Implemented P29C-T2B live-smoke helper and rate-limit boundary,
+  then ran the first bounded local/internal EDGAR smoke with an explicit
+  user-supplied User-Agent/contact value. The sandbox probe failed closed
+  without network access; the approved network smoke returned
+  `provider_reference`, `availability=available`, `freshness_category=fresh`,
+  and normalized identity facts only (`company_name`, `ticker`, `exchange`,
+  `cik_reference`, `sic_label`, `fiscal_year_end`). No raw SEC payload was
+  printed or persisted. Codex B contract/privacy/safety review PASSed the smoke
+  boundary; separate reviewed tasks are still required before any Agent
+  Team/public-role updates, saved-report generation with live EDGAR data, or
+  broader live-source rollout.
+- 2026-06-20: Recorded Codex A's P29C-T2A EDGAR source-rights decision as
+  approved with limits. SEC EDGAR submissions metadata may be used only for
+  backend local developer live smoke, internal test/demo, and internal
+  saved-report evidence generation of normalized `public_company_profile`
+  identity metadata. Production/public SaaS retrieval at scale, background
+  crawling, bulk ingestion, filing-body extraction, frontend EDGAR calls, Agent
+  Team runtime EDGAR tools, raw payload persistence, filing bodies, XBRL facts,
+  news interpretation, broker/private data, and trading-action language remain
+  prohibited. Added P29C-T2B as the next Codex C local/internal live-smoke
+  handoff.
+- 2026-06-20: Closed Codex B review for P29C-T2 with PASS. The EDGAR HTTP
+  acquisition seam remains disabled by default and uses fake/injected transport
+  in tests only. Live EDGAR smoke and saved-report generation with live EDGAR
+  data remain blocked pending P29C-T2A source-rights/product owner approval.
+- 2026-06-19: Implemented P29C-T2 as a disabled-by-default EDGAR acquisition
+  seam with no live smoke. Added a policy-gated `EdgarCompanyProfileHttpClient`
+  and small dependency-free transport behind injected tests only; default public
+  evidence projection remains offline unless a caller explicitly supplies a
+  live-ready policy and client. Added tests for live-policy rejection, synthetic
+  injected-transport success, request-budget enforcement, and existing replay
+  validation. Live EDGAR source use remains blocked pending Codex B and
+  source-rights/product review.
+- 2026-06-19: Closed P29C-T1B with Codex B contract/privacy/safety PASS after
+  fixing overlong CIK validation. The EDGAR boundary now has explicit
+  disabled-by-default live-readiness controls for external access, runtime
+  allowlisting, declared user-agent, timeout, response-size cap, and request
+  budget, plus replay-only tests for duplicate tickers, invalid/overlong CIKs,
+  invalid live policy, sanitized client exceptions, and package-aware
+  validation. Added P29C-T2 as a gated next slice pending source-rights/product
+  owner approval and a specific implementation prompt.
+- 2026-06-19: Closed P29C-T1A with Codex B contract/privacy/safety PASS. The
+  offline replay-backed `sec_edgar_submissions` boundary normalizes exact
+  symbol-to-CIK matches into existing `public_company_profile` fields without
+  default external calls, frontend fields/endpoints, storage changes, raw
+  payloads, filing bodies, XBRL facts, news, Agent Team runtime tools, or
+  private account/portfolio data. Added P29C-T1B as the next Codex C slice for
+  live-client readiness hardening before any live EDGAR smoke.
+- 2026-06-19: Added the P29C EDGAR profile integration workflow and created the
+  P29C-T1A Codex C handoff. The first real-source path is backend-only
+  `public_company_profile` from SEC EDGAR submissions metadata, with replay/fake
+  tests only, no default external calls, no filing bodies/XBRL/news, and Codex B
+  review required before any live EDGAR smoke.
+- 2026-06-19: Tightened P29C source-governance direction after Codex B
+  exploration. Synthetic/replay public evidence is now documented as the test
+  harness only. The preferred first real-source path is
+  `public_company_profile` from an official structured source category, using
+  SEC EDGAR submissions as the initial architecture reference for U.S. public
+  companies and rejecting yfinance/Yahoo-derived saved evidence unless rights are
+  separately approved.
 - 2026-06-19: Drafted P29C-T0 public-evidence source governance. The proposed
   architecture preserves the P29B saved evidence contract and adds a fail-closed
   approval/acquisition boundary: no source or provider is authorized until the

@@ -59,6 +59,8 @@ in the archives and logs listed below.
   policy, honest report timestamps, and frontend generation UX.
 - Phase 29B reviewed public evidence, Reports, and Skyframe work is complete
   through P29B-T7 and reviewed PASS.
+- Phase 29C EDGAR `public_company_profile` vertical slice is complete through
+  saved-report provenance display and reviewed PASS.
 
 Reference docs:
 
@@ -67,6 +69,7 @@ Reference docs:
 - `docs/codex-b-architecture/PHASE_29A_AGENT_TEAM_REPORT_ARCHITECTURE.md`
 - `docs/codex-b-architecture/PHASE_29B_PUBLIC_AGENT_EVIDENCE_CONTRACT.md`
 - `docs/codex-b-architecture/PHASE_29C_PUBLIC_EVIDENCE_SOURCE_GOVERNANCE.md`
+- `docs/codex-b-architecture/PHASE_30A_GOLDEN_PATH_REVIEW_DESK_CONTRACT.md`
 - `docs/claude-e-agentic/PHASE_29A_T2_AGENT_TEAM_REPORT_OUTPUT_CONTRACT.md`
 - `docs/claude-e-agentic/PHASE_29A_T5_REPORT_GENERATION_UX_POLICY.md`
 - `docs/claude-e-agentic/PHASE_29B_T2_PUBLIC_ROLE_AGENTIC_DESIGN.md`
@@ -116,6 +119,134 @@ Detailed verification history is archived in:
   backend suite clean (`1045 passed`, `122 skipped`, `3 deselected`).
 
 ## Next Handoff
+
+### Phase 30A - Golden Path Review Desk Prototype
+
+- `P30A-T0` - Golden path contract and acceptance criteria.
+  - Owner: Codex B. Reviewer: founder / Codex A for product direction.
+  - Architecture reference:
+    `docs/codex-b-architecture/PHASE_30A_GOLDEN_PATH_REVIEW_DESK_CONTRACT.md`.
+  - Status: done 2026-06-22 by Codex B. Product direction is accepted as a
+    read-only specialist review desk for busy self-directed investors. P30A
+    should answer "What would I be ignoring if I acted manually now?", not
+    whether a user should make a trade. The phase must use existing approved
+    evidence, preserve manual decision-support posture, and avoid new providers,
+    runtime tools, frontend math, auto-generation, Agent Console composer work,
+    and broker/order flows.
+
+- `P30A-T1` - Backend golden-path gap audit.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Scope: verify one stock/ETF flow and one simple options flow travel end to
+    end through portfolio-backed Trade Review, saved review source, saved
+    artifact, `SavedEvidencePackageRead`, explicit Agent Team generation,
+    report list/detail readback, and regeneration/retry behavior. Identify gaps
+    before implementing new fields.
+  - Hard boundary: audit first; no new backend fields, endpoints, migrations,
+    storage writes, providers, public sources, frontend work, Agent runtime
+    tools, broker/API calls, raw private data, or trading-action language unless
+    a gap is documented and separately approved.
+  - Acceptance criteria: exact endpoints and schemas are named; stock/ETF and
+    options flow support is confirmed or gap-listed; saved scope immutability and
+    no-hidden-recompute semantics are verified; privacy/safety risks are listed;
+    Codex C recommends either "no backend contract change needed" or a smallest
+    reviewed contract slice.
+  - Next implementation owner: Codex C.
+
+- `P30A-T2` - Agent Team briefing shape.
+  - Owner: Claude E. Reviewer: Codex B.
+  - Design: `docs/claude-e-agentic/PHASE_30A_T2_AGENT_TEAM_BRIEFING_SHAPE.md`.
+  - Status: design PASS 2026-06-22 by Codex B (architecture/privacy/safety,
+    review-only). Briefing reshapes the deterministic-template generation around
+    "What would I be ignoring if I acted manually now?" using existing
+    `SavedAgentTeamSummaryRead` fields only; no new field for P30A-T2. Two
+    within-existing-field behavior notes are approved for the implementation
+    slice and must be re-reviewed at implementation: (1) populate
+    `final_synthesis_markdown` for the `blocked_*`/`deterministic_draft` case;
+    (2) carry the manual verification checklist in synthesis prose. The future
+    additive `manual_verification_checklist` field stays deferred and requires a
+    separate Codex B contract/privacy review before any implementation.
+  - Implementation status: P30A-T2A done 2026-06-22 by Codex C; Codex B
+    contract/privacy/safety review PASS 2026-06-22. Backend
+    deterministic-template wording now frames the saved Agent Team briefing
+    around "What would I be ignoring if I acted manually now?", including the
+    blocked `deterministic_draft` synthesis and manual verification checklist
+    prose inside existing fields. No schema/endpoint/storage/frontend/provider/
+    LLM/TradingAgents changes. Verification: focused report schema/API and
+    agent suites passed; `git diff --check` clean.
+
+- `P30A-T3` - Trade Review golden-path UX.
+  - Owner: Claude A. Reviewer: Claude B; Codex B re-review only if contracts or
+    privacy/safety semantics changed.
+  - Status: done 2026-06-22 by Claude A; Claude B visual/safety review PASS
+    2026-06-22. Frontend-only `SaveReviewSnapshot` handoff copy now frames
+    saving as freezing a read-only evidence package for later explicit Reports
+    briefing generation. No backend/API/schema/storage/read-field/calculation
+    change, no report-generation semantic change, no inferred report id/status/
+    scope/provenance, and no private-data exposure. Codex B contract/privacy
+    re-review not required.
+
+- `P30A-T4` - Saved Report briefing polish.
+  - Owner: Claude A. Reviewers: Claude B and Codex B.
+  - Status: done 2026-06-22 by Claude A; Claude B visual/safety review PASS and
+    Codex B contract/privacy/report-state review PASS 2026-06-22. `ReportDetail`
+    now presents backend-owned final synthesis as the flagship saved specialist
+    briefing while keeping deterministic facts/provenance beneath it. The
+    deterministic-draft banner is suppressed only when a saved
+    `deterministic_draft` already carries backend-owned synthesis prose; report
+    state remains visible in the header. No read-contract/status/schema/backend
+    change.
+
+- `P30A-T5A` - Private-safe Reports fixture fidelity.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-06-22 by Codex C; Codex B fixture contract/privacy/safety
+    review PASS 2026-06-22. The read-only Skyframe fixture now includes a
+    synthetic `deterministic_draft` report with incomplete-review briefing prose
+    and updates the `full_agent_report` fixture to the P30A four-bucket briefing
+    shape. GET/read-only boundary and activation gates remain intact.
+
+- `P30A-T5B` - Private-safe interactive golden-path fixture coverage.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-06-22 by Codex C; review-only subagent PASS and Codex B
+    accepted PASS. Fixture-only POST coverage now exists for
+    `POST /trade-reviews/portfolio-preview`,
+    `POST /users/{uid}/reports/from-trade-review`, and
+    `POST /users/{uid}/reports/{thread_id}/agent-team-report`. Fixtures are
+    stateless, private-safe, synthetic-only, explicitly gated, and do not echo
+    incoming user ids, report ids, account refs, context refs, unsupported
+    source refs, or test symbols. No production route behavior, schema,
+    endpoint definition, storage, migration, frontend, provider, DB, LLM,
+    EDGAR, TradingAgents, web, or MCP change.
+
+- `P30A-T5C` - Private-safe connected golden-path smoke.
+  - Owner: Claude A. Reviewer: Claude B.
+  - Status: done 2026-06-22 by Claude A; Claude B visual/safety review PASS.
+    Connected private-safe smoke passed with reviewed fixtures for stock/ETF and
+    `cash_secured_put` interactive flows. The smoke verified Trade Review
+    portfolio-backed result, save snapshot idle/saved states, Reports manual
+    generation, source snapshot, full Agent Team report, deterministic draft,
+    agent unavailable, and validation failed states across 1024/1280/1440 in
+    light and dark. No horizontal overflow, no console errors except known
+    React Router future-flag warnings, no unsafe wording, no raw private refs or
+    save refs (`trrev_`/`svrev_`) rendered, no auto-generation, and no frontend
+    faking. Transient smoke files and the user-authorized `frontend/.env.local`
+    were removed after teardown.
+
+- `P30A-T6` - Founder acceptance and closeout.
+  - Owner: Codex B and Codex A.
+  - Status: done 2026-06-22 by Codex A/founder. P30A is accepted as the first
+    coherent Golden Path Review Desk Prototype. The accepted loop covers one
+    stock/ETF flow and one `cash_secured_put` flow from portfolio-backed Trade
+    Review through saved evidence snapshot, explicit Agent Team briefing
+    generation, and reopened saved report. Acceptance preserves the product
+    framing "What would I be ignoring if I acted manually now?", no
+    advice/execution posture, no new provider/source expansion, and frozen
+    historical report evidence.
+
+### Closed Context - Phase 29C Public Evidence
+
+The EDGAR `public_company_profile` vertical slice is closed through P29C-T5.
+The detailed entries below are retained as recent history only; do not treat
+them as the next active handoff unless Codex A reopens public-evidence expansion.
 
 - `P29C-T0` - Public evidence source governance and founder decision.
   - Owner: Codex B and founder.

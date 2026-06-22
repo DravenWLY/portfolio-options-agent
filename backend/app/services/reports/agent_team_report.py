@@ -49,25 +49,22 @@ _PORTFOLIO_ROLE_EVIDENCE = (
 # advice-phrase guard cannot trip on generated output.
 _PUBLIC_ROLE_TEMPLATES: dict[str, str] = {
     "fundamentals_analyst": (
-        "Fundamentals analyst summary for {symbol}. Summarizes reviewed public "
-        "company and fundamentals evidence only ({sections}). States what is "
-        "available and what is unknown as qualitative, analysis-only context, with "
-        "no invented valuations or directional conclusions. Deterministic backend "
-        "services own all calculations."
+        "Fundamentals analyst briefing for {symbol}: public company context you "
+        "might overlook. It summarizes reviewed public company and fundamentals "
+        "evidence only ({sections}), states what is missing as qualitative context, "
+        "and leaves all calculations to deterministic backend services."
     ),
     "news_analyst": (
-        "News analyst summary for {symbol}. Summarizes reviewed public news and "
-        "event context only ({sections}). Notes what is known, unknown, stale, or "
-        "unavailable as analysis-only context for manual verification, with no "
-        "price-movement predictions or event-timing directives. Deterministic "
-        "backend services own all calculations."
+        "News analyst briefing for {symbol}: public event context you might "
+        "overlook. It summarizes reviewed public news and event evidence only "
+        "({sections}) and notes unavailable context without price-movement "
+        "predictions or event-timing directives."
     ),
     "technical_analyst": (
-        "Technical analyst summary for {symbol}. Summarizes reviewed public market "
-        "and technical context only ({sections}). Provides non-directional, "
-        "qualitative framing and freshness notes, with no invented indicator "
-        "values, support or resistance levels, or directional calls. Deterministic "
-        "backend services own all calculations."
+        "Technical analyst briefing for {symbol}: reviewed public market context "
+        "you might overlook. It summarizes reviewed public technical evidence only "
+        "({sections}) using non-directional qualitative framing, without invented "
+        "indicator values or directional calls."
     ),
 }
 _PUBLIC_ROLE_LIMITED_CAVEAT = (
@@ -174,11 +171,8 @@ def build_agent_team_summary_from_evidence(
         else "partially_completed"
     )
 
-    public_clause = _public_synthesis_clause(evidence, public_completed)
-    synthesis = (
-        "Agent Team analysis is generated from the saved evidence package." + public_clause + " "
-        "Deterministic backend services own all calculations; scope, freshness, and caveats remain attached for audit."
-    )
+    evidence_references = _portfolio_role_evidence_references(evidence)
+    synthesis = _portfolio_manager_synthesis_markdown(evidence, public_summaries, public_completed)
     return SavedAgentTeamSummaryRead(
         run_status=run_status,
         provider_mode="deterministic_template",
@@ -189,7 +183,7 @@ def build_agent_team_summary_from_evidence(
         final_synthesis_markdown=synthesis,
         final_synthesis_authored_by="deterministic_template",
         evidence_schema_version=evidence.evidence_schema_version,
-        evidence_references=_PORTFOLIO_ROLE_EVIDENCE,
+        evidence_references=evidence_references,
     )
 
 
@@ -308,8 +302,8 @@ def _fundamentals_company_profile_markdown(projection, *, limited: bool) -> str:
     )
     limited_sentence = f" {_PUBLIC_ROLE_LIMITED_CAVEAT}" if limited else ""
     return (
-        "Fundamentals analyst summary. Reviewed SEC EDGAR metadata - company profile only "
-        f"is available as company identity and listing context. Present structured facts include {fact_phrase}."
+        "Fundamentals analyst briefing. Reviewed SEC EDGAR metadata - company profile only "
+        f"is available as company identity and listing context you might overlook. Present structured facts include {fact_phrase}."
         f"{sic_sentence}{unavailable_sentence}{limited_sentence} This context is background only; "
         "deterministic backend services own all calculations."
     )
@@ -340,18 +334,12 @@ def _portfolio_role_summary(
     *,
     coverage_code: str,
 ) -> SavedAgentTeamRoleSummaryRead:
+    evidence_references = _portfolio_role_evidence_references(evidence)
     if role_name == "risk_management_agent":
-        markdown = (
-            "Risk review uses the saved deterministic evidence package only. "
-            "It highlights the saved actionability mode, freshness labels, and caveats for manual review."
-        )
+        markdown = _risk_manager_markdown(evidence)
         warning_codes: tuple[str, ...] = tuple(evidence.caveat_codes)
     else:
-        markdown = (
-            "Portfolio synthesis uses validated role summaries and the saved evidence package only, "
-            "treating any public analyst context as analysis-only background. "
-            "Deterministic backend services own all calculations."
-        )
+        markdown = _portfolio_manager_role_markdown(evidence, coverage_code=coverage_code)
         warning_codes = (coverage_code,)
     return SavedAgentTeamRoleSummaryRead(
         role_name=role_name,
@@ -359,9 +347,87 @@ def _portfolio_role_summary(
         role_status="completed",
         provider_status="ok",
         summary_markdown=markdown,
-        evidence_references=_PORTFOLIO_ROLE_EVIDENCE,
+        evidence_references=evidence_references,
         warning_codes=warning_codes,
     )
+
+
+def _portfolio_role_evidence_references(evidence: SavedEvidencePackageRead) -> tuple[str, ...]:
+    references: list[str] = []
+    for reference in _PORTFOLIO_ROLE_EVIDENCE:
+        if reference == "market_quote_freshness" and evidence.market_quote_freshness.availability == "not_available":
+            continue
+        references.append(reference)
+    return tuple(references)
+
+
+def _risk_manager_markdown(evidence: SavedEvidencePackageRead) -> str:
+    return (
+        "Risk Manager briefing: what could be overlooked if acting from memory. "
+        "It uses saved deterministic risk flags, freshness categories, scope caveats, "
+        "liquidity and collateral caveats, and option-exposure caveats only."
+        f"{_account_feasibility_sentence(evidence)}"
+        f"{_market_quote_gap_sentence(evidence)} "
+        "Deterministic backend services own all calculations."
+    )
+
+
+def _portfolio_manager_role_markdown(
+    evidence: SavedEvidencePackageRead,
+    *,
+    coverage_code: str,
+) -> str:
+    return (
+        "Portfolio Manager briefing: synthesis of what the saved package does and does not cover. "
+        "It groups deterministic risk flags, data freshness gaps, scope and feasibility caveats, "
+        "and public context gaps as background for manual review."
+        f"{_account_feasibility_sentence(evidence)} "
+        f"{_public_context_gap_sentence(coverage_code)} Scope, freshness, and caveats remain attached for audit."
+    )
+
+
+def _portfolio_manager_synthesis_markdown(
+    evidence: SavedEvidencePackageRead,
+    public_summaries: tuple[SavedAgentTeamRoleSummaryRead, ...],
+    public_completed: tuple[SavedAgentTeamRoleSummaryRead, ...],
+) -> str:
+    coverage_code = _public_coverage_code(public_summaries, public_completed)
+    return (
+        "What you would be ignoring if you acted manually now: "
+        "deterministic risk flags from the saved review; data freshness and availability gaps; "
+        "scope and feasibility caveats; and context not reviewed in the saved package."
+        f"{_market_quote_gap_sentence(evidence)}"
+        f"{_account_feasibility_sentence(evidence)} "
+        f"{_public_context_gap_sentence(coverage_code)}"
+        f"{_public_synthesis_clause(evidence, public_completed)} "
+        "Manual verification checklist: review the saved scope, freshness categories, feasibility caveats, "
+        "option-leg mechanics, and any missing public context before acting on your own. "
+        "This is read-only context for manual review, not an instruction or judgment about whether to act. "
+        "Deterministic backend services own all calculations."
+    )
+
+
+def _account_feasibility_sentence(evidence: SavedEvidencePackageRead) -> str:
+    if evidence.scope_state.account_level_feasibility_evaluated:
+        return ""
+    return " Account-level feasibility was not evaluated in the saved scope."
+
+
+def _market_quote_gap_sentence(evidence: SavedEvidencePackageRead) -> str:
+    if evidence.market_quote_freshness.availability == "not_available":
+        return " Market quote freshness is unavailable in the saved evidence."
+    label = (evidence.market_quote_freshness.summary_label or "").lower()
+    if "stale" in label or "unavailable" in label or "unknown" in label:
+        return " Market quote freshness is flagged for manual review in the saved evidence."
+    return ""
+
+
+def _public_context_gap_sentence(coverage_code: str) -> str:
+    if coverage_code == "public_evidence_roles_included":
+        return "Reviewed public-role context is attached as secondary background."
+    if coverage_code == "public_evidence_partial_coverage":
+        return "Some public-role context is attached; missing public checks remain a context gap."
+    return "No reviewed fundamentals, news, or technical context was attached to this saved package."
 
 
 def _deterministic_draft_summary(
@@ -369,6 +435,17 @@ def _deterministic_draft_summary(
     *,
     report_generated_at: datetime,
 ) -> SavedAgentTeamSummaryRead:
+    evidence_references = _portfolio_role_evidence_references(evidence)
+    synthesis = (
+        "What you would be ignoring if you acted manually now: the saved deterministic review did not complete "
+        "because the actionability gate stopped the specialist briefing. Deterministic evidence remains attached "
+        "for audit."
+        f"{_market_quote_gap_sentence(evidence)}"
+        f"{_account_feasibility_sentence(evidence)} "
+        "Manual verification checklist: review freshness categories, scope caveats, feasibility caveats, "
+        "and option-leg mechanics in the saved evidence before acting on your own. "
+        "This is read-only context for manual review, not an instruction or judgment about whether to act."
+    )
     role_summaries = tuple(
         SavedAgentTeamRoleSummaryRead(
             role_name=role.role_name,
@@ -389,10 +466,10 @@ def _deterministic_draft_summary(
         role_summaries=role_summaries,
         warning_codes=("blocked_actionability_llm_roles_skipped",),
         report_status="deterministic_draft",
-        final_synthesis_markdown=None,
-        final_synthesis_authored_by=None,
+        final_synthesis_markdown=synthesis,
+        final_synthesis_authored_by="deterministic_template",
         evidence_schema_version=evidence.evidence_schema_version,
-        evidence_references=(),
+        evidence_references=evidence_references,
     )
 
 

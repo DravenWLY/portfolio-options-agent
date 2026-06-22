@@ -5,16 +5,18 @@ from app.api.routes import accounts as accounts_route
 from app.api.routes import economic_calendar as economic_calendar_route
 from app.api.routes import market_context as market_context_route
 from app.api.routes import reports as reports_route
+from app.api.routes import trade_reviews as trade_reviews_route
 from app.api.routes import users as users_route
 from app.schemas.account import AccountRead
 from app.schemas.economic_calendar import EconomicCalendarEventListRead
 from app.schemas.market_mood import MarketMoodDetailRead, MarketMoodRead
-from app.schemas.reports import ReportThreadDetailRead, ReportThreadRead
+from app.schemas.reports import ReportThreadDetailRead, ReportThreadRead, SavedReviewArtifactRead
 from app.schemas.trade_review_workspace import (
     DashboardAccountSummaryRead,
     PortfolioContextListRead,
     ReviewReadinessRead,
     RiskAlertListRead,
+    TradeReviewWorkspaceRead,
     TradeReviewListRead,
 )
 from app.schemas.user import UserRead
@@ -22,10 +24,12 @@ from app.services.skyframe_fixtures import (
     SKYFRAME_DEMO_ACCOUNT_ID,
     SKYFRAME_DEMO_USER_ID,
     SKYFRAME_DASHBOARD_STATE_HEADER,
+    SKYFRAME_DRAFT_REPORT_ID,
     SKYFRAME_FAILED_REPORT_ID,
     SKYFRAME_FIXTURE_HEADER,
     SKYFRAME_FIXTURE_HEADER_VALUE,
     SKYFRAME_FULL_REPORT_ID,
+    SKYFRAME_GOLDEN_SOURCE_REFERENCE,
     SKYFRAME_SOURCE_REPORT_ID,
     SKYFRAME_UNAVAILABLE_REPORT_ID,
 )
@@ -153,10 +157,22 @@ def test_skyframe_fixture_reports_use_fixed_synthetic_identifiers(
     assert {item["user_id"] for item in payload} == {SKYFRAME_DEMO_USER_ID}
     assert incoming_user_id not in repr(payload)
     assert {item["agent_summary"]["report_status"] for item in payload if item["agent_summary"]} == {
+        "deterministic_draft",
         "full_agent_report",
         "agent_unavailable",
         "validation_failed",
     }
+    by_status = {item["agent_summary"]["report_status"]: item["agent_summary"] for item in payload if item["agent_summary"]}
+    full_synthesis = by_status["full_agent_report"]["final_synthesis_markdown"]
+    draft_synthesis = by_status["deterministic_draft"]["final_synthesis_markdown"]
+    assert "What you would be ignoring if you acted manually now" in full_synthesis
+    assert "deterministic risk flags" in full_synthesis
+    assert "data freshness and availability gaps" in full_synthesis
+    assert "scope and feasibility caveats" in full_synthesis
+    assert "context not reviewed" in full_synthesis
+    assert "Manual verification checklist" in full_synthesis
+    assert "What you would be ignoring if you acted manually now" in draft_synthesis
+    assert "blocked_actionability_llm_roles_skipped" in by_status["deterministic_draft"]["warning_codes"]
 
 
 def test_skyframe_fixture_accounts_use_canonical_fixed_synthetic_identifiers(
@@ -266,11 +282,151 @@ def test_skyframe_fixture_report_generation_posts_fail_closed_before_real_handle
     )
 
     for response in responses:
-        assert response.status_code == 405
+        assert response.status_code == 404
         payload = response.json()
         assert payload["data_mode"] == "synthetic_demo"
         assert incoming_user_id not in repr(payload)
         assert incoming_report_id not in repr(payload)
+
+
+def test_skyframe_fixture_portfolio_preview_posts_return_canonical_workspace_without_real_handler(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_fixtures(monkeypatch)
+
+    def fail_if_called(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("real trade review builder must not be called for skyframe fixtures")
+
+    monkeypatch.setattr(trade_reviews_route, "build_trade_review_workspace_portfolio_preview", fail_if_called)
+    incoming_context_ref = "ctx_incoming_private_context"
+    incoming_account_ref = "acctref_incoming_private_ref"
+    stock_response = client.post(
+        "/trade-reviews/portfolio-preview",
+        headers=_fixture_headers(),
+        json={
+            "supported_flow": "stock_buy",
+            "symbol": "ABC",
+            "quantity": "9",
+            "price_assumption": "11",
+            "portfolio_context_selection": {"mode": "selected_context", "context_reference": incoming_context_ref},
+            "review_account_selection": {
+                "mode": "selected_account",
+                "account_reference": incoming_account_ref,
+            },
+        },
+    )
+    option_response = client.post(
+        "/trade-reviews/portfolio-preview",
+        headers=_fixture_headers(),
+        json={
+            "supported_flow": "cash_secured_put",
+            "option_leg": {
+                "underlying_symbol": "XYZ",
+                "option_type": "put",
+                "leg_action": "sell_to_open",
+                "expiration_date": "2026-09-18",
+                "strike": "42",
+                "quantity": "1",
+                "premium": "1",
+            },
+            "portfolio_context_selection": {"mode": "selected_context", "context_reference": incoming_context_ref},
+        },
+    )
+
+    for response, expected_flow in ((stock_response, "stock_buy"), (option_response, "cash_secured_put")):
+        assert response.status_code == 200
+        payload = response.json()
+        workspace = TradeReviewWorkspaceRead.model_validate(payload)
+        assert workspace.supported_flow == expected_flow
+        assert workspace.saved_review_source_reference == SKYFRAME_GOLDEN_SOURCE_REFERENCE
+        assert workspace.scope_metadata is not None
+        assert workspace.actionability.broker_snapshot.freshness_scope == "broker_snapshot"
+        assert workspace.actionability.market_quotes.freshness_scope == "market_quote"
+        rendered = repr(payload)
+        assert incoming_context_ref not in rendered
+        assert incoming_account_ref not in rendered
+        assert "ABC" not in rendered
+        assert "XYZ" not in rendered
+
+
+def test_skyframe_fixture_save_and_generate_posts_are_explicit_stateless_and_canonical(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_fixtures(monkeypatch)
+    incoming_user_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    incoming_title = "Incoming private title"
+
+    def fail_if_called(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("real report service must not be called for skyframe fixtures")
+
+    monkeypatch.setattr(reports_route.report_service, "create_saved_review_artifact", fail_if_called)
+    monkeypatch.setattr(reports_route, "generate_agent_team_report_for_thread", fail_if_called)
+    monkeypatch.setattr(reports_route.report_service, "get_report_thread", fail_if_called)
+
+    save_response = client.post(
+        f"/users/{incoming_user_id}/reports/from-trade-review",
+        headers=_fixture_headers(),
+        json={
+            "source_kind": "trade_review_workspace",
+            "source_reference": SKYFRAME_GOLDEN_SOURCE_REFERENCE,
+            "title": incoming_title,
+            "report_type": "saved_review_artifact",
+        },
+    )
+    assert save_response.status_code == 201
+    saved = save_response.json()
+    saved_artifact = SavedReviewArtifactRead.model_validate(saved)
+    assert saved_artifact.agent_summary is None
+    assert incoming_user_id not in repr(saved)
+    assert incoming_title not in repr(saved)
+
+    generate_response = client.post(
+        f"/users/{incoming_user_id}/reports/{SKYFRAME_SOURCE_REPORT_ID}/agent-team-report",
+        headers=_fixture_headers(),
+        json={},
+    )
+    assert generate_response.status_code == 201
+    generated = generate_response.json()
+    generated_artifact = SavedReviewArtifactRead.model_validate(generated)
+    assert generated_artifact.agent_summary is not None
+    assert generated_artifact.agent_summary.report_status == "full_agent_report"
+    assert "What you would be ignoring if you acted manually now" in (
+        generated_artifact.agent_summary.final_synthesis_markdown or ""
+    )
+    assert incoming_user_id not in repr(generated)
+
+
+def test_skyframe_fixture_save_post_rejects_unknown_source_without_echo(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _enable_fixtures(monkeypatch)
+    incoming_user_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    incoming_source_ref = "trrev_incoming_private_ref"
+
+    def fail_if_called(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("real report service must not be called for skyframe fixtures")
+
+    monkeypatch.setattr(reports_route.report_service, "create_saved_review_artifact", fail_if_called)
+
+    response = client.post(
+        f"/users/{incoming_user_id}/reports/from-trade-review",
+        headers=_fixture_headers(),
+        json={
+            "source_kind": "trade_review_workspace",
+            "source_reference": incoming_source_ref,
+            "title": "Unsupported fixture source",
+            "report_type": "saved_review_artifact",
+        },
+    )
+
+    assert response.status_code == 404
+    payload = response.json()
+    assert payload["data_mode"] == "synthetic_demo"
+    assert incoming_user_id not in repr(payload)
+    assert incoming_source_ref not in repr(payload)
 
 
 def test_skyframe_fixture_refresh_posts_fail_closed_before_real_runners(
@@ -318,13 +474,19 @@ def test_skyframe_fixture_supported_payloads_validate_against_canonical_schemas(
 
     reports_payload = client.get(f"/users/{incoming_user_id}/reports", headers=_fixture_headers()).json()
     validated_reports = [ReportThreadRead.model_validate(item) for item in reports_payload]
-    assert {summary.role_summaries[0].role_name for report in validated_reports if (summary := report.agent_summary)} == {
-        "portfolio_manager_agent"
+    role_names = {
+        role.role_name
+        for report in validated_reports
+        if report.agent_summary is not None
+        for role in report.agent_summary.role_summaries
     }
+    assert "portfolio_manager_agent" in role_names
+    assert "risk_management_agent" in role_names
 
     for report_id in (
         SKYFRAME_SOURCE_REPORT_ID,
         SKYFRAME_FULL_REPORT_ID,
+        SKYFRAME_DRAFT_REPORT_ID,
         SKYFRAME_UNAVAILABLE_REPORT_ID,
         SKYFRAME_FAILED_REPORT_ID,
     ):

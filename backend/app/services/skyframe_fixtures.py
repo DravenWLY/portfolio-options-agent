@@ -22,8 +22,11 @@ SKYFRAME_DEMO_USER_ID = "11111111-1111-4111-8111-111111111111"
 SKYFRAME_DEMO_ACCOUNT_ID = "66666666-6666-4666-8666-666666666666"
 SKYFRAME_SOURCE_REPORT_ID = "22222222-2222-4222-8222-222222222222"
 SKYFRAME_FULL_REPORT_ID = "33333333-3333-4333-8333-333333333333"
+SKYFRAME_DRAFT_REPORT_ID = "77777777-7777-4777-8777-777777777777"
 SKYFRAME_UNAVAILABLE_REPORT_ID = "44444444-4444-4444-8444-444444444444"
 SKYFRAME_FAILED_REPORT_ID = "55555555-5555-4555-8555-555555555555"
+SKYFRAME_GOLDEN_SOURCE_REFERENCE = "trrev_skyframe_demo_review"
+SKYFRAME_GOLDEN_ARTIFACT_REFERENCE = "svrev_skyframe_demo_review"
 
 _ALLOWED_APP_ENVS = {"local", "dev", "development", "test", "testing"}
 _ALLOWED_DASHBOARD_STATES = {"unavailable", "populated", "empty"}
@@ -35,13 +38,13 @@ class SkyframeFixtureMiddleware(BaseHTTPMiddleware):
     """Serve fixed synthetic payloads for explicitly gated connected smoke runs."""
 
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[no-untyped-def]
-        fixture_response = skyframe_fixture_response(request, get_settings())
+        fixture_response = await skyframe_fixture_response(request, get_settings())
         if fixture_response is not None:
             return fixture_response
         return await call_next(request)
 
 
-def skyframe_fixture_response(request: Request, settings: Settings) -> JSONResponse | None:
+async def skyframe_fixture_response(request: Request, settings: Settings) -> JSONResponse | None:
     """Return a fixture response when the explicit private-safe smoke gates are satisfied."""
 
     if not _fixture_active(request, settings):
@@ -62,6 +65,9 @@ def skyframe_fixture_response(request: Request, settings: Settings) -> JSONRespo
         return None
 
     if request.method != "GET":
+        post_response = await _fixture_post_response_for_path(request, path)
+        if post_response is not None:
+            return post_response
         if _is_smoke_surface(path):
             return JSONResponse(
                 {
@@ -87,6 +93,54 @@ def skyframe_fixture_response(request: Request, settings: Settings) -> JSONRespo
             status_code=404,
         )
     return None
+
+
+async def _fixture_post_response_for_path(request: Request, path: str) -> JSONResponse | None:
+    if path == "/trade-reviews/portfolio-preview":
+        body = await _safe_json_body(request)
+        payload = _portfolio_preview_fixture(body)
+        if payload is None:
+            return _fixture_not_found("Skyframe fixture trade review source is not available.")
+        return JSONResponse(payload)
+
+    parts = path.strip("/").split("/")
+    if len(parts) == 4 and parts[0] == "users" and parts[2:] == ["reports", "from-trade-review"]:
+        body = await _safe_json_body(request)
+        payload = _saved_review_artifact_fixture(body, include_agent_summary=False)
+        if payload is None:
+            return _fixture_not_found("Skyframe fixture saved review source is not available.")
+        return JSONResponse(payload, status_code=201)
+
+    if (
+        len(parts) == 5
+        and parts[0] == "users"
+        and parts[2] == "reports"
+        and parts[4] == "agent-team-report"
+    ):
+        if parts[3] not in {SKYFRAME_SOURCE_REPORT_ID, SKYFRAME_FULL_REPORT_ID}:
+            return _fixture_not_found("Skyframe fixture saved report is not available.")
+        return JSONResponse(_saved_review_artifact_fixture({}, include_agent_summary=True), status_code=201)
+
+    return None
+
+
+async def _safe_json_body(request: Request) -> dict[str, Any] | None:
+    try:
+        body = await request.json()
+    except Exception:
+        return None
+    return body if isinstance(body, dict) else None
+
+
+def _fixture_not_found(detail: str) -> JSONResponse:
+    return JSONResponse(
+        {
+            "detail": detail,
+            "data_mode": "synthetic_demo",
+            "demo_notice": SKYFRAME_DEMO_NOTICE,
+        },
+        status_code=404,
+    )
 
 
 def _fixture_active(request: Request, settings: Settings) -> bool:
@@ -136,8 +190,12 @@ def _fixture_payload_for_path(path: str, dashboard_state: str) -> Any | None:
 
 
 def _is_smoke_surface(path: str) -> bool:
-    return path == "/users" or path.startswith("/users/") or path.startswith("/market-context/") or path.startswith(
-        "/economic-calendar/"
+    return (
+        path == "/users"
+        or path.startswith("/users/")
+        or path.startswith("/market-context/")
+        or path.startswith("/economic-calendar/")
+        or path.startswith("/trade-reviews")
     )
 
 
@@ -169,10 +227,257 @@ def _account() -> dict[str, Any]:
     }
 
 
+def _portfolio_preview_fixture(body: dict[str, Any] | None) -> dict[str, Any] | None:
+    if body is None:
+        return None
+    supported_flow = body.get("supported_flow")
+    if supported_flow in {"stock_buy", "stock_sell_trim", "etf_buy", "etf_sell_trim"}:
+        if not body.get("symbol") or body.get("quantity") is None or body.get("price_assumption") is None:
+            return None
+        return _trade_review_workspace("stock_buy")
+    if supported_flow in {"cash_secured_put", "covered_call"} and isinstance(body.get("option_leg"), dict):
+        return _trade_review_workspace("cash_secured_put")
+    return None
+
+
+def _trade_review_workspace(flow: str) -> dict[str, Any]:
+    is_option = flow == "cash_secured_put"
+    trade_intent = (
+        {
+            "intent_id": "intent_skyframe_option",
+            "supported_flow": "cash_secured_put",
+            "asset_class": "option",
+            "intent_type": "cash_secured_put",
+            "status": "analysis_only",
+            "symbol": None,
+            "action": None,
+            "quantity": None,
+            "price_assumption": None,
+            "strategy_type": "cash_secured_put",
+            "underlying_symbol": "SPY",
+            "legs": [
+                {
+                    "underlying_symbol": "SPY",
+                    "option_type": "put",
+                    "leg_action": "sell_to_open",
+                    "expiration_date": "2026-09-18",
+                    "strike": "400",
+                    "quantity": "1",
+                    "premium": "1",
+                    "multiplier": "100",
+                    "occ_symbol": None,
+                    "support_status": "manual_review_required",
+                    "unsupported_reason": None,
+                }
+            ],
+        }
+        if is_option
+        else {
+            "intent_id": "intent_skyframe_equity",
+            "supported_flow": "stock_buy",
+            "asset_class": "stock",
+            "intent_type": "stock_buy",
+            "status": "analysis_only",
+            "symbol": "SPY",
+            "action": "buy_to_review",
+            "quantity": "1",
+            "price_assumption": "100",
+            "strategy_type": None,
+            "underlying_symbol": None,
+            "legs": [],
+        }
+    )
+    return {
+        "review_reference": "trv_skyframe_demo_review",
+        "saved_review_source_reference": SKYFRAME_GOLDEN_SOURCE_REFERENCE,
+        "generated_at": _NOW,
+        "calculation_version": "skyframe-fixture-v1",
+        "supported_flow": trade_intent["supported_flow"],
+        "trade_intent_summary": trade_intent,
+        "portfolio_context": _portfolio_context_summary(),
+        "scope_metadata": _scope_metadata(),
+        "actionability": _actionability_decision(),
+        "deterministic_review": _deterministic_review(is_option=is_option),
+        "agent_orchestration": {
+            "run_reference": "agentrun_skyframe_demo",
+            "workflow_version": "skyframe-fixture-v1",
+            "review_actionability_status": "manual_confirmation_required",
+            "stage_order": ["deterministic_review", "agent_team_report"],
+            "stage_statuses": {
+                "deterministic_review": "completed",
+                "agent_team_report": "manual_generation_pending",
+            },
+            "unavailable_stages": {},
+            "source_agent_names": ["deterministic_template"],
+            "report_composed": False,
+        },
+        "report_output": {
+            "title": "Skyframe synthetic review snapshot",
+            "content_markdown": "Synthetic fixture review snapshot for private-safe smoke.",
+            "deterministic_sections": ["scope", "freshness", "caveats"],
+            "llm_generated_sections": [],
+            "source_agent_names": ["deterministic_template"],
+        },
+        "caveats": _workspace_caveats(is_option=is_option),
+    }
+
+
+def _portfolio_context_summary() -> dict[str, Any]:
+    return {
+        "context_reference": "ctx_skyframe_demo",
+        "context_source": "synthetic_mock",
+        "selection_mode": "latest_available",
+        "summary_as_of": _NOW,
+        "latest_snapshot_as_of": _NOW,
+        "broker_snapshot": _broker_snapshot(),
+        "stock_position_count": 0,
+        "option_position_count": 0,
+        "cash_state": "not_exposed",
+        "label": "Skyframe synthetic context",
+    }
+
+
+def _broker_snapshot() -> dict[str, Any]:
+    return {
+        "source": "synthetic_mock",
+        "freshness_scope": "broker_snapshot",
+        "freshness_status": "fresh",
+        "sync_status": "fixture",
+        "as_of": _NOW,
+        "received_at": _NOW,
+        "last_successful_sync_at": _NOW,
+        "provider_status": "not_applicable",
+        "sanitized_error_code": None,
+        "retryable": None,
+    }
+
+
+def _market_quotes() -> dict[str, Any]:
+    return {
+        "freshness_scope": "market_quote",
+        "freshness_status": "fresh",
+        "data_mode": "manual",
+        "actionability_status": "manual_review_required",
+        "as_of_min": _NOW,
+        "as_of_max": _NOW,
+        "received_at_min": _NOW,
+        "received_at_max": _NOW,
+        "provider_status": "not_applicable",
+        "sanitized_error_code": None,
+        "retryable": None,
+    }
+
+
+def _actionability_decision() -> dict[str, Any]:
+    return {
+        "policy_version": "skyframe-fixture-v1",
+        "evaluated_at": _NOW,
+        "review_actionability_status": "manual_confirmation_required",
+        "can_run_deterministic_review": True,
+        "can_run_agent_explanation": True,
+        "requires_user_confirmation": True,
+        "language_tier": "analysis_only",
+        "broker_snapshot": _broker_snapshot(),
+        "market_quotes": _market_quotes(),
+        "reasons": [
+            {
+                "code": "synthetic_fixture_manual_review",
+                "scope": "review",
+                "severity": "info",
+                "message": "Synthetic fixture requires manual review.",
+            }
+        ],
+        "user_confirmation": {
+            "state": "unconfirmed",
+            "confirmed_at": None,
+            "expires_at": None,
+            "confirmation_scope": "review",
+        },
+    }
+
+
+def _deterministic_review(*, is_option: bool) -> dict[str, Any]:
+    return {
+        "highest_severity": "info",
+        "has_blocker": False,
+        "portfolio_impact": {
+            "broker_freshness_status": "fresh",
+            "market_freshness_status": "fresh",
+            "market_manual_review_required": True,
+            "concentration_symbol": "SPY",
+            "notes": ["Synthetic fixture portfolio impact is for smoke review only."],
+        },
+        "cash_collateral_impact": {
+            "estimated_trade_cash_change": None,
+            "estimated_premium_cash_change": None,
+            "estimated_collateral_requirement_change": None,
+            "projected_free_cash_state": "not_exposed",
+            "notes": ["Synthetic fixture does not expose liquidity amounts."],
+        },
+        "concentration_allocation_impact": {
+            "concentration_symbol": "SPY",
+            "estimated_concentration_value_change": None,
+            "allocation_drift_status": "not_modelled_in_phase_18a",
+            "notes": ["Synthetic fixture does not model allocation drift."],
+        },
+        "options_exposure": {
+            "underlying_symbol": "SPY" if is_option else None,
+            "assignment_share_delta": "not_exposed",
+            "exercise_share_delta": "not_exposed",
+            "covered_call_coverage_model": "not_applicable",
+            "cash_secured_put_collateral_model": "generic_rule_only" if is_option else "not_applicable",
+            "notes": ["Synthetic fixture option exposure remains caveated."],
+        },
+        "risk_rule_violations": [],
+        "missing_data_warnings": [
+            {
+                "code": "synthetic_fixture_manual_review",
+                "scope": "review",
+                "severity": "info",
+                "message": "Synthetic fixture has no private brokerage data.",
+            }
+        ],
+        "scenario_payoff_summary": {
+            "points": [],
+            "max_loss": None,
+            "max_gain": None,
+            "calculation_notes": ["Synthetic fixture omits payoff amounts."],
+        },
+    }
+
+
+def _workspace_caveats(*, is_option: bool) -> list[dict[str, Any]]:
+    caveats = [
+        {
+            "code": "synthetic_fixture",
+            "severity": "info",
+            "applies_to": "review",
+            "message": "Synthetic fixture payload for private-safe smoke only.",
+        },
+        {
+            "code": "account_level_feasibility_not_evaluated",
+            "severity": "info",
+            "applies_to": "scope",
+            "message": "Account-level feasibility is not evaluated in this fixture.",
+        },
+    ]
+    if is_option:
+        caveats.append(
+            {
+                "code": "csp_collateral_unverified",
+                "severity": "info",
+                "applies_to": "options",
+                "message": "Option collateral remains unverified in this fixture.",
+            }
+        )
+    return caveats
+
+
 def _reports_list() -> list[dict[str, Any]]:
     return [
         _report_thread(SKYFRAME_SOURCE_REPORT_ID, "Saved source snapshot", None),
         _report_thread(SKYFRAME_FULL_REPORT_ID, "Agent Team report", _agent_summary("full_agent_report")),
+        _report_thread(SKYFRAME_DRAFT_REPORT_ID, "Deterministic draft report", _agent_summary("deterministic_draft")),
         _report_thread(SKYFRAME_UNAVAILABLE_REPORT_ID, "Agent unavailable report", _agent_summary("agent_unavailable")),
         _report_thread(SKYFRAME_FAILED_REPORT_ID, "Validation failed report", _agent_summary("validation_failed")),
     ]
@@ -184,6 +489,49 @@ def _report_detail(thread_id: str) -> dict[str, Any] | None:
     if report is None:
         return None
     return {**report, "messages": []}
+
+
+def _saved_review_artifact_fixture(
+    body: dict[str, Any] | None,
+    *,
+    include_agent_summary: bool,
+) -> dict[str, Any] | None:
+    if body is None:
+        return None
+    if not include_agent_summary and not body:
+        return None
+    if body:
+        allowed_body = {
+            "source_kind": "trade_review_workspace",
+            "source_reference": SKYFRAME_GOLDEN_SOURCE_REFERENCE,
+            "title": body.get("title"),
+            "report_type": body.get("report_type", "saved_review_artifact"),
+        }
+        if body != allowed_body or not isinstance(body.get("title"), str):
+            return None
+    return {
+        "artifact_reference": SKYFRAME_GOLDEN_ARTIFACT_REFERENCE,
+        "source_kind": "trade_review_workspace",
+        "source_reference": SKYFRAME_GOLDEN_SOURCE_REFERENCE,
+        "status": "saved",
+        "report": {
+            "report_reference": SKYFRAME_GOLDEN_ARTIFACT_REFERENCE,
+            "title": "Skyframe synthetic saved review",
+            "report_type": "saved_review_artifact",
+            "status": "completed",
+            "created_at": _NOW,
+            "updated_at": _NOW,
+        },
+        "scope_metadata": _scope_metadata(),
+        "deterministic_summary": _deterministic_summary(),
+        "agent_summary": _agent_summary("full_agent_report") if include_agent_summary else None,
+        "public_evidence": None,
+        "generated_at": _NOW,
+        "saved_at": _NOW,
+        "review_pipeline_label": "Portfolio Copilot review pipeline",
+        "limitations": ["Synthetic fixture saved review artifact for private-safe smoke only."],
+        "caveat_codes": ["synthetic_fixture", "account_feasibility_not_evaluated"],
+    }
 
 
 def _report_thread(thread_id: str, title: str, agent_summary: dict[str, Any] | None) -> dict[str, Any]:
@@ -202,47 +550,113 @@ def _report_thread(thread_id: str, title: str, agent_summary: dict[str, Any] | N
     }
 
 
+def _deterministic_summary() -> dict[str, Any]:
+    return {
+        "supported_flow": "cash_secured_put",
+        "review_flow_label": "Cash-secured put review",
+        "symbol_or_underlying": "SPY",
+        "review_actionability_status": "manual_confirmation_required",
+        "actionability_label": "Manual confirmation required",
+        "highest_severity": "info",
+        "report_status": "generated",
+        "broker_snapshot_freshness_label": "Synthetic fixture broker snapshot",
+        "market_quote_freshness_label": "Synthetic fixture market context",
+        "caveat_codes": ["synthetic_fixture", "account_feasibility_not_evaluated"],
+    }
+
+
 def _agent_summary(report_status: str) -> dict[str, Any]:
     if report_status == "full_agent_report":
         run_status = "completed"
-        role_status = "completed"
-        summary = "Synthetic smoke synthesis rendered from fixed fixture evidence."
-        final = "Synthetic smoke synthesis. Broad context only; not a trading signal."
+        role_summaries = [
+            _agent_role_summary(
+                "risk_management_agent",
+                "Risk Manager",
+                "completed",
+                "Risk Manager briefing: synthetic deterministic risk flags, freshness categories, scope caveats, and option-exposure caveats are visible for smoke review.",
+                ("trade_intent_summary", "scope_state", "actionability", "freshness"),
+            ),
+            _agent_role_summary(
+                "portfolio_manager_agent",
+                "Portfolio Manager",
+                "completed",
+                "Portfolio Manager briefing: synthetic smoke content groups deterministic risk flags, data freshness gaps, scope and feasibility caveats, and context not reviewed.",
+                ("trade_intent_summary", "scope_state", "actionability", "freshness"),
+            ),
+        ]
+        final = (
+            "What you would be ignoring if you acted manually now: deterministic risk flags from the synthetic saved review; "
+            "data freshness and availability gaps; scope and feasibility caveats; and context not reviewed in this private-safe fixture. "
+            "Manual verification checklist: review the saved scope, freshness categories, feasibility caveats, option-leg mechanics, "
+            "and missing public context before acting on your own. This is read-only fixture context for visual smoke."
+        )
         evidence_refs: tuple[str, ...] = ("trade_intent_summary", "scope_state", "actionability")
+        warning_codes: list[str] = []
+    elif report_status == "deterministic_draft":
+        run_status = "failed"
+        role_summaries = [
+            _agent_role_summary(role_name, display_name, "gated", None, ())
+            for role_name, display_name in (
+                ("fundamentals_analyst", "Fundamentals Analyst"),
+                ("news_analyst", "News Analyst"),
+                ("technical_analyst", "Technical Analyst"),
+                ("risk_management_agent", "Risk Manager"),
+                ("portfolio_manager_agent", "Portfolio Manager"),
+            )
+        ]
+        final = (
+            "What you would be ignoring if you acted manually now: the synthetic deterministic review did not complete because the actionability gate stopped the specialist briefing. "
+            "Deterministic fixture evidence remains attached for audit. Manual verification checklist: review freshness categories, scope caveats, feasibility caveats, "
+            "and option-leg mechanics in the saved fixture evidence before acting on your own. This is read-only fixture context for visual smoke."
+        )
+        evidence_refs = ("trade_intent_summary", "scope_state", "actionability")
+        warning_codes = ["blocked_actionability_llm_roles_skipped"]
     elif report_status == "validation_failed":
         run_status = "failed"
-        role_status = "validation_failed"
-        summary = None
+        role_summaries = [_agent_role_summary("portfolio_manager_agent", "Portfolio Manager", "validation_failed", None, ())]
         final = None
         evidence_refs = ()
+        warning_codes = ["fixture_degraded_state"]
     else:
         run_status = "failed"
-        role_status = "unavailable"
-        summary = None
+        role_summaries = [_agent_role_summary("portfolio_manager_agent", "Portfolio Manager", "unavailable", None, ())]
         final = None
         evidence_refs = ()
+        warning_codes = ["fixture_degraded_state"]
     return {
         "run_status": run_status,
         "provider_mode": "synthetic_fixture",
         "report_generated_at": _NOW,
-        "role_summaries": [
-            {
-                "role_name": "portfolio_manager_agent",
-                "display_name": "Portfolio Manager",
-                "role_status": role_status,
-                "provider_status": "synthetic_fixture",
-                "summary_markdown": summary,
-                "evidence_references": list(evidence_refs),
-                "warning_codes": [] if summary else ["fixture_degraded_state"],
-                "unavailable_reason": None if summary else "fixture_degraded_state",
-            }
-        ],
-        "warning_codes": [] if report_status == "full_agent_report" else ["fixture_degraded_state"],
+        "role_summaries": role_summaries,
+        "warning_codes": warning_codes,
         "report_status": report_status,
         "final_synthesis_markdown": final,
         "final_synthesis_authored_by": "deterministic_template",
         "evidence_schema_version": "p29a_saved_evidence_v1",
         "evidence_references": list(evidence_refs),
+    }
+
+
+def _agent_role_summary(
+    role_name: str,
+    display_name: str,
+    role_status: str,
+    summary_markdown: str | None,
+    evidence_references: tuple[str, ...],
+) -> dict[str, Any]:
+    degraded = summary_markdown is None
+    warning_codes = ["blocked_actionability_llm_roles_skipped"] if role_status == "gated" else []
+    if degraded and role_status != "gated":
+        warning_codes = ["fixture_degraded_state"]
+    return {
+        "role_name": role_name,
+        "display_name": display_name,
+        "role_status": role_status,
+        "provider_status": "synthetic_fixture" if role_status == "completed" else "skipped",
+        "summary_markdown": summary_markdown,
+        "evidence_references": list(evidence_references),
+        "warning_codes": warning_codes,
+        "unavailable_reason": None if not degraded else warning_codes[0],
     }
 
 

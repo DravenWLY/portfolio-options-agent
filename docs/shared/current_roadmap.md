@@ -89,52 +89,51 @@ Functional internal-demo context.
 
 ## Next Recommended Work
 
-### Phase 29B - Public Agent Evidence And Skyframe Closeout
+### Phase 30A - Golden Path Review Desk Prototype
 
-The Phase 29A saved-review foundation is now in place:
+Codex A has shifted the product framing from a narrow "pre-trade review" surface
+to a read-only specialist review desk for busy self-directed investors.
 
-`select scope -> run review -> save source snapshot -> generate Agent Team report -> revisit the exact historical scope and analysis`
+The product should not answer "Should I make this trade?" It should answer:
 
-What is complete:
+`What would I be ignoring if I acted manually now?`
 
-- Saved review snapshots persist immutable generation-time scope, caveats,
+P30A should stop horizontal expansion and make one complete loop feel real:
+
+`select review account/scope -> enter proposed trade -> run deterministic review -> save evidence snapshot -> explicitly generate Agent Team briefing -> reopen the exact historical report`
+
+What is already available:
+
+- Trade Review supports stock/ETF and simple options review inputs.
+- Portfolio-backed Trade Review records a backend-owned saved-source reference
+  when reviewed scope metadata is available.
+- Saved review artifacts persist immutable generation-time scope, caveats,
   freshness, and deterministic summary data.
-- Agent Team report generation now runs on demand from a saved evidence package,
+- Agent Team report generation runs explicitly from a saved evidence package,
   not from current account state.
-- Reports has been redesigned around saved analysis, with deterministic evidence
-  and provenance moved into supporting sections.
-- Guided-manual report generation is the accepted architecture recommendation:
-  generation is an explicit user action, `generating` is frontend-only, and
-  source snapshot time is distinct from Agent Team report-generation time.
-- Backend report-generation timestamp and replace-only regeneration semantics
-  are implemented; frontend P29A-T7 has passed visual/UX and
-  contract/privacy/safety closeout.
-- Phase 29B is complete through P29B-T7. Generation-time public evidence is
-  persisted/read back, public role projections are role-scoped, public analyst
-  roles degrade honestly, and package-aware validation prevents unavailable
-  evidence from being cited.
-- Reports Direction A is accepted as the analyst-memo reference experience.
-- Portfolio Copilot Skyframe is the shared app-wide style standard. Reports and
-  the reviewed low-risk route shells use the shared surface primitive and token
-  guard, with private-safe connected verification where required.
-- The accepted P29B checkpoint was committed and pushed to `main` at `381183f`.
+- Reports is the accepted analyst-memo surface, with saved scope, timestamps,
+  deterministic provenance, Agent Team synthesis, and EDGAR company-profile
+  attribution when reviewed evidence exists.
+- Phase 29B Skyframe rollout and P29C EDGAR `public_company_profile` vertical
+  slice are complete and reviewed.
 
 What should happen next:
 
-1. MAINT-BE-1 is complete; the full backend suite is clean apart from legitimate
-   DB-gated skips and configured deselections.
-2. Ask founder/Codex A for the next public-evidence product decision. P29C-T5
-   closed the approved-with-limits EDGAR `public_company_profile` vertical slice:
-   source governance, local/internal source seam, generation-time persistence,
-   public-role behavior, read-contract attribution, and frontend provenance
-   chrome have all passed their review gates. The next decision is whether to
-   pause public-evidence expansion or choose the next reviewed source/category.
-   Production/public SaaS retrieval at scale, background crawling, bulk
-   ingestion, filing-body extraction, frontend EDGAR calls, Agent Team runtime
-   EDGAR tools, raw payload persistence, inferred sector/industry labels,
-   classification-driven rules, and trading-action language remain prohibited.
-3. Keep Account Details and Agent Console outside routine Skyframe rollout.
-   Either surface requires its own narrow privacy-safe plan and review gates.
+1. Use `docs/codex-b-architecture/PHASE_30A_GOLDEN_PATH_REVIEW_DESK_CONTRACT.md`
+   as the P30A contract.
+2. P30A is accepted as the first coherent Golden Path Review Desk Prototype.
+   It is complete through connected private-safe smoke for one stock/ETF flow
+   and one `cash_secured_put` flow. Backend spine, Agent Team briefing wording,
+   Trade Review handoff, Report Detail briefing polish, read-only Reports
+   fixtures, interactive fixture coverage, and browser smoke all passed their
+   review gates.
+3. The next recommended phase is P30B - Golden Path Prototype Hardening And
+   Demo Readiness: DB-enabled integration tests for the saved-review/report
+   generation path, fixture cleanup, stable demo seed path, and a founder-demo
+   script for one stock/ETF flow plus one CSP/covered-call flow.
+4. Dashboard expansion, new public evidence, new providers, Agent Console
+   composer work, Account Details redesign, and broader Skyframe rollout should
+   pause unless they directly unblock the golden path.
 
 Architecture references:
 
@@ -142,6 +141,7 @@ Architecture references:
 - `docs/claude-e-agentic/PHASE_29A_T2_AGENT_TEAM_REPORT_OUTPUT_CONTRACT.md`
 - `docs/codex-b-architecture/PHASE_29B_PUBLIC_AGENT_EVIDENCE_CONTRACT.md`
 - `docs/codex-b-architecture/PHASE_29C_PUBLIC_EVIDENCE_SOURCE_GOVERNANCE.md`
+- `docs/codex-b-architecture/PHASE_30A_GOLDEN_PATH_REVIEW_DESK_CONTRACT.md`
 
 ### Deferred Scope Management
 

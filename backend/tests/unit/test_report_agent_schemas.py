@@ -1266,7 +1266,13 @@ def test_agent_team_report_deterministic_draft_summary_records_generation_time()
                         )
                     }
                 )
-            ).actionability
+            ).actionability,
+            "market_quote_freshness": SavedEvidenceSectionRead(
+                section_key="market_quote_freshness",
+                section_label="Market quote freshness",
+                availability="available",
+                summary_label="stale market quote",
+            ),
         }
     )
     report_generated_at = datetime(2026, 6, 15, 19, 30, tzinfo=UTC)
@@ -1276,6 +1282,76 @@ def test_agent_team_report_deterministic_draft_summary_records_generation_time()
     assert summary.report_status == "deterministic_draft"
     assert summary.report_generated_at == report_generated_at
     assert {role.role_status for role in summary.role_summaries} == {"gated"}
+    assert summary.final_synthesis_markdown is not None
+    assert summary.final_synthesis_authored_by == "deterministic_template"
+    assert "What you would be ignoring if you acted manually now" in summary.final_synthesis_markdown
+    assert "Manual verification checklist" in summary.final_synthesis_markdown
+    assert "Market quote freshness is flagged for manual review" in summary.final_synthesis_markdown
+    validate_agent_team_report_output(
+        summary.model_dump(mode="python"), label="agent-team saved report", evidence_package=evidence
+    )
+
+
+def test_agent_team_report_p30a_briefing_frames_analysis_only_gaps() -> None:
+    scope = _saved_scope_metadata().model_copy(update={"account_level_feasibility_evaluated": False})
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(
+        _saved_review_artifact().model_copy(update={"scope_metadata": scope})
+    )
+
+    summary = build_agent_team_summary_from_evidence(
+        evidence, report_generated_at=datetime(2026, 6, 15, 19, 45, tzinfo=UTC)
+    )
+
+    by_role = {role.role_name: role for role in summary.role_summaries}
+    synthesis = summary.final_synthesis_markdown or ""
+    assert summary.report_status == "full_agent_report"
+    assert "What you would be ignoring if you acted manually now" in synthesis
+    assert "deterministic risk flags" in synthesis
+    assert "data freshness and availability gaps" in synthesis
+    assert "scope and feasibility caveats" in synthesis
+    assert "context not reviewed" in synthesis
+    assert "Manual verification checklist" in synthesis
+    assert "Account-level feasibility was not evaluated" in synthesis
+    assert "Risk Manager briefing: what could be overlooked" in (by_role["risk_management_agent"].summary_markdown or "")
+    assert "Portfolio Manager briefing: synthesis of what the saved package does and does not cover" in (
+        by_role["portfolio_manager_agent"].summary_markdown or ""
+    )
+    validate_agent_team_report_output(
+        summary.model_dump(mode="python"), label="agent-team saved report", evidence_package=evidence
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "label"),
+    (
+        ("normal_review", "Normal review"),
+        ("manual_confirmation_required", "Manual confirmation required"),
+        ("analysis_only", "Analysis-only review"),
+    ),
+)
+def test_agent_team_report_p30a_briefing_supports_review_modes(status: str, label: str) -> None:
+    artifact = _saved_review_artifact().model_copy(
+        update={
+            "deterministic_summary": _saved_deterministic_summary().model_copy(
+                update={
+                    "review_actionability_status": status,
+                    "actionability_label": label,
+                }
+            )
+        }
+    )
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
+
+    summary = build_agent_team_summary_from_evidence(
+        evidence, report_generated_at=datetime(2026, 6, 15, 19, 50, tzinfo=UTC)
+    )
+
+    assert summary.report_status == "full_agent_report"
+    assert summary.provider_mode == "deterministic_template"
+    assert "What you would be ignoring if you acted manually now" in (summary.final_synthesis_markdown or "")
+    validate_agent_team_report_output(
+        summary.model_dump(mode="python"), label="agent-team saved report", evidence_package=evidence
+    )
 
 
 def test_agent_team_report_validator_accepts_safe_summary_shape_references() -> None:
@@ -1405,15 +1481,36 @@ def test_public_role_evidence_references_accept_reviewed_available_public_sectio
     validate_agent_team_report_output(payload, label="agent-team saved report", evidence_package=evidence)
 
 
-def test_agent_team_report_generation_falls_back_when_summary_references_unavailable_evidence() -> None:
+def test_agent_team_report_generation_handles_unavailable_market_quote_without_invalid_reference() -> None:
     evidence = _saved_evidence_with_unavailable_market_quote()
     report_generated_at = datetime(2026, 6, 15, 20, 0, tzinfo=UTC)
 
     summary = build_agent_team_summary_from_evidence(evidence, report_generated_at=report_generated_at)
+
+    assert summary.report_status == "full_agent_report"
+    assert summary.report_generated_at == report_generated_at
+    assert "Market quote freshness is unavailable" in (summary.final_synthesis_markdown or "")
+    assert "market_quote_freshness" not in summary.evidence_references
+    for role in summary.role_summaries:
+        if role.role_name in {"risk_management_agent", "portfolio_manager_agent"}:
+            assert "market_quote_freshness" not in role.evidence_references
+    validate_agent_team_report_output(
+        summary.model_dump(mode="python"), label="agent-team saved report", evidence_package=evidence
+    )
+
+
+def test_agent_team_report_validation_failure_still_falls_back_for_unavailable_evidence_reference() -> None:
+    evidence = _saved_evidence_with_unavailable_market_quote()
+    report_generated_at = datetime(2026, 6, 15, 20, 5, tzinfo=UTC)
+    unsafe_payload = _single_role_summary_payload(
+        "risk_management_agent",
+        "Risk Manager",
+        ("trade_intent_summary", "market_quote_freshness"),
+        "Risk summary cites unavailable market quote evidence.",
+    )
+
     fallback = build_validation_failed_summary_for_test(
-        evidence,
-        summary.model_dump(mode="python"),
-        report_generated_at=report_generated_at,
+        evidence, unsafe_payload, report_generated_at=report_generated_at
     )
 
     assert fallback.report_status == "validation_failed"

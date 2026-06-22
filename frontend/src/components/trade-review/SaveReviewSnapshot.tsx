@@ -5,7 +5,8 @@ import { ApiRequestError } from "../../api/client";
 import { MpIcon } from "../shared/mp";
 
 /**
- * SaveReviewSnapshot — Phase 28A compact "Save review snapshot" action.
+ * SaveReviewSnapshot — Phase 28A "Save review snapshot" action, with the
+ * Phase 30A golden-path handoff framing.
  *
  * Renders only when the backend has exposed an opaque, app-owned
  * `saved_review_source_reference` (e.g. `trrev_…`) for a completed review. The
@@ -17,7 +18,15 @@ import { MpIcon } from "../shared/mp";
  * account/provider/broker/holdings/position/balance data. The backend resolves
  * the reviewed source server-side and builds the immutable artifact.
  *
- * Wording stays quiet and report-like — no advice, recommendation, buy/sell,
+ * P30A choreography: this is the bridge between the deterministic Trade Review
+ * above and the later, explicit Agent Team briefing in Reports. The copy frames
+ * the save as freezing the evidence package and points — optionally, without
+ * auto-generating anything — to Reports to generate the briefing on "what you
+ * might be overlooking before acting". Generation stays manual and lives in
+ * Reports; nothing here runs the Agent Team, infers a report id/status, or
+ * deep-links to a specific report. It links to Reports generally.
+ *
+ * Wording stays quiet and read-only — no advice, recommendation, buy/sell,
  * safe/ready-to-trade, order, or execution language. The opaque source
  * reference is used in the request body but is never rendered.
  */
@@ -61,38 +70,39 @@ export default function SaveReviewSnapshot({
 
   if (state === "saved") {
     return (
-      <section style={styles.wrap} aria-label="Review snapshot saved" role="status">
+      <section style={styles.wrap} aria-label="Evidence snapshot saved" role="status">
         <span style={{ ...styles.icon, color: "var(--mp-live)" }}>
           <MpIcon name="check" size={16} />
         </span>
         <div style={styles.body}>
-          <p style={styles.title}>Review snapshot saved</p>
+          <p style={styles.title}>Evidence snapshot saved</p>
           <p style={styles.sub}>
-            A read-only snapshot of this review was saved from the data available at
-            the time. When you want it, you can generate an Agent Team report from
-            this snapshot in Reports — analysis only, and entirely optional.{" "}
-            <Link to="/reports" style={styles.link}>
-              View in Reports
-              <MpIcon
-                name="arrow-r"
-                size={11}
-                style={{ verticalAlign: "middle", marginLeft: 3 }}
-              />
-            </Link>
+            This review is frozen as a read-only evidence package — the same scope,
+            freshness, and caveats shown here. Open it in Reports to generate the
+            Agent Team briefing on what you might be overlooking before acting;
+            nothing is generated until you ask.
           </p>
+          <Link to="/reports" style={styles.cta}>
+            Open in Reports
+            <MpIcon
+              name="arrow-r"
+              size={13}
+              style={{ verticalAlign: "middle", marginLeft: 4 }}
+            />
+          </Link>
         </div>
       </section>
     );
   }
 
   return (
-    <section style={styles.wrap} aria-label="Save review snapshot">
+    <section style={styles.wrap} aria-label="Save evidence snapshot">
       <span style={{ ...styles.icon, color: "var(--mp-mute)" }}>
         <MpIcon name="reports" size={16} />
       </span>
       <div style={styles.body}>
         <div style={styles.row}>
-          <p style={styles.title}>Save review snapshot</p>
+          <p style={styles.title}>Save evidence snapshot</p>
           <button
             type="button"
             onClick={handleSave}
@@ -116,8 +126,9 @@ export default function SaveReviewSnapshot({
           </button>
         </div>
         <p style={styles.sub}>
-          Keep a read-only record of this review and the scope used, as a historical
-          reference in Reports.
+          Freeze this review — its scope, freshness, and caveats — as a read-only
+          evidence package. Later, open it in Reports to generate the Agent Team
+          briefing on what you might be overlooking before acting.
         </p>
         {state === "error" && (
           <p style={styles.errorMsg} role="status">
@@ -168,7 +179,22 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
   },
   buttonBusy: { opacity: 0.6, cursor: "progress" },
-  link: { color: "var(--mp-accent)", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" },
+  cta: {
+    alignSelf: "flex-start",
+    maxWidth: "100%",
+    display: "inline-flex",
+    alignItems: "center",
+    marginTop: "var(--space-1)",
+    fontSize: "var(--font-size-xs)",
+    fontWeight: 700,
+    padding: "var(--space-1) var(--space-4)",
+    border: "1px solid var(--mp-accent)",
+    borderRadius: "var(--radius-sm)",
+    backgroundColor: "transparent",
+    color: "var(--mp-accent)",
+    textDecoration: "none",
+    whiteSpace: "nowrap",
+  },
   errorMsg: {
     fontSize: "var(--font-size-xs)",
     color: "var(--mp-ink-2)",

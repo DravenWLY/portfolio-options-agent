@@ -197,6 +197,14 @@ function ReportBody({
   const { primary, context } = splitRoles(summary);
   const coverage = publicCoverage(summary);
   const hasRoles = (summary?.role_summaries.length ?? 0) > 0;
+  const hasBriefing = Boolean(summary?.final_synthesis_markdown);
+  // The state banner explains states that have no leading briefing (source
+  // snapshot, agent unavailable, narrative withheld). When a blocked
+  // deterministic draft now carries an incomplete-review briefing (P30A-T2A),
+  // the briefing's own "review incomplete" framing leads instead, so the
+  // generic "narrative was not generated" banner is suppressed to avoid a
+  // contradiction. The report state stays visible in the header label/badge.
+  const showStateBanner = !(reportStatus === "deterministic_draft" && hasBriefing);
 
   return (
     <div style={styles.body}>
@@ -207,7 +215,9 @@ function ReportBody({
         scope={detail.scope_metadata}
       />
 
-      <StateBanner reportStatus={reportStatus} description={statusDescription} />
+      {showStateBanner && (
+        <StateBanner reportStatus={reportStatus} description={statusDescription} />
+      )}
 
       {canGenerate && (
         <GenerateAgentTeamReport
@@ -226,7 +236,9 @@ function ReportBody({
         />
       )}
 
-      {summary?.final_synthesis_markdown && <FinalSynthesis summary={summary} />}
+      {summary?.final_synthesis_markdown && (
+        <FinalSynthesis summary={summary} reportStatus={reportStatus} />
+      )}
 
       {hasRoles && (
         <section style={styles.roles} aria-label="Analyst sections">
@@ -288,18 +300,37 @@ function BandHeader({ label, pill, tone }: { label: string; pill: string; tone: 
   );
 }
 
-function FinalSynthesis({ summary }: { summary: SavedAgentTeamSummaryRead }) {
+function FinalSynthesis({
+  summary,
+  reportStatus,
+}: {
+  summary: SavedAgentTeamSummaryRead;
+  reportStatus: AgentTeamReportStatus;
+}) {
   if (!summary.final_synthesis_markdown) return null;
+  // The briefing is the primary reading surface for the saved report; the
+  // deterministic scope/evidence/provenance sit beneath it as supporting audit.
+  // Framing is read-only and analysis-only — it surfaces what the review does
+  // not cover, never a verdict or instruction to act. The eyebrow notes when the
+  // underlying review did not complete (deterministic_draft) so the briefing is
+  // read honestly; the synthesis prose itself is backend-owned (P30A-T2A).
+  const eyebrow =
+    reportStatus === "deterministic_draft"
+      ? "Agent Team briefing · review incomplete · analysis only"
+      : "Agent Team briefing · analysis only";
   return (
-    <section style={styles.synthesis} aria-label="Final synthesis">
+    <section style={styles.synthesis} aria-label="Agent Team briefing">
       <div style={styles.synthesisHead}>
-        <span style={styles.synthesisEyebrow}>Final synthesis · Agent narrative · analysis only</span>
+        <span style={styles.synthesisEyebrow}>{eyebrow}</span>
         {summary.final_synthesis_authored_by && (
           <span style={styles.synthesisAuthor}>
             Authored by {humanizeCode(summary.final_synthesis_authored_by)}
           </span>
         )}
       </div>
+      <h3 className="mp-display" style={styles.synthesisHeadline}>
+        What you would be overlooking if you acted now
+      </h3>
       <div style={styles.synthesisProse}>
         <ReportProse text={summary.final_synthesis_markdown} display color="var(--mp-ink)" />
       </div>
@@ -422,6 +453,14 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     letterSpacing: "0.08em",
     textTransform: "uppercase",
+  },
+  synthesisHeadline: {
+    margin: 0,
+    color: "var(--mp-ink)",
+    fontSize: "var(--font-size-xl)",
+    fontWeight: 500,
+    lineHeight: 1.25,
+    overflowWrap: "anywhere",
   },
   synthesisAuthor: {
     color: "var(--mp-mute)",

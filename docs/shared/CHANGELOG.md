@@ -1,5 +1,35 @@
 # Changelog
 
+- 2026-06-22: Codex A/founder accepted P30A-T6. The Golden Path Review Desk
+  Prototype is now the first coherent internal prototype loop: proposed
+  stock/ETF and `cash_secured_put` reviews can move from portfolio-backed Trade
+  Review to saved evidence snapshot, explicit Agent Team briefing generation,
+  and reopened saved report without leaving the app. Next recommended phase:
+  P30B Golden Path Prototype Hardening And Demo Readiness, focused on
+  DB-enabled integration tests, fixture cleanup, stable demo seed path, and a
+  founder-demo script before reopening Dashboard, Account Details, public
+  evidence, provider, or Agent Console expansion.
+- 2026-06-22: P30A Golden Path Review Desk Prototype is ready for founder
+  acceptance. Backend spine audit, Agent Team briefing wording, Trade Review
+  save-to-Reports handoff, Report Detail briefing polish, read-only Reports
+  fixtures, interactive private-safe fixtures, and connected private-safe smoke
+  all passed their review gates. The smoke covered one stock/ETF flow and one
+  `cash_secured_put` flow end to end, with explicit manual report generation,
+  saved scope/freshness/caveats/provenance visible, no auto-generation, no raw
+  private/save refs rendered, and no unsafe trading/action wording. Next step:
+  Codex A/founder acceptance for P30A-T6, then one coherent P30A checkpoint
+  commit if accepted.
+- 2026-06-22: Opened P30A as the next architecture/product phase:
+  Golden Path Review Desk Prototype. Codex A's revised positioning is now the
+  active direction: Portfolio Copilot is a read-only specialist review desk for
+  busy self-directed investors, centered on "What would I be ignoring if I
+  acted manually now?" Added
+  `docs/codex-b-architecture/PHASE_30A_GOLDEN_PATH_REVIEW_DESK_CONTRACT.md`,
+  updated the roadmap, and set P30A-T1 as the next Codex C backend gap audit
+  across one stock/ETF flow and one simple options flow. Public-evidence
+  expansion, Dashboard expansion, Agent Console composer work, Account Details
+  redesign, new providers, runtime tools, frontend financial math, and any
+  broker/order flow remain deferred.
 - 2026-06-21: Closed P29C-T5 as an architecture/product checkpoint. The EDGAR
   `public_company_profile` vertical slice is complete through saved-report
   display: source governance, disabled-by-default source seam, local/internal

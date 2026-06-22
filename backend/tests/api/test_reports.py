@@ -453,7 +453,9 @@ def test_generate_agent_team_report_gates_blocked_actionability(
     saved = response.json()
     assert saved["agent_summary"]["report_status"] == "deterministic_draft"
     assert saved["agent_summary"]["report_generated_at"] == report_generated_at.isoformat().replace("+00:00", "Z")
-    assert saved["agent_summary"]["final_synthesis_markdown"] is None
+    assert saved["agent_summary"]["final_synthesis_markdown"] is not None
+    assert "What you would be ignoring if you acted manually now" in saved["agent_summary"]["final_synthesis_markdown"]
+    assert "Manual verification checklist" in saved["agent_summary"]["final_synthesis_markdown"]
     assert {role["role_status"] for role in saved["agent_summary"]["role_summaries"]} == {"gated"}
     assert "blocked_actionability_llm_roles_skipped" in saved["agent_summary"]["warning_codes"]
 

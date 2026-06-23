@@ -1,4 +1,10 @@
-"""Private-safe synthetic fixture overlay for connected Skyframe smoke tests."""
+"""Private-safe synthetic fixture overlay for connected Skyframe smoke tests.
+
+Boundary: this middleware is a stateless, header-gated UI smoke harness. It must
+not become canonical demo data, persist rows, call providers, or depend on the
+Golden Path DB seed. The route-driven founder demo belongs in
+``app.services.golden_path_demo_seed`` and real app storage.
+"""
 
 from __future__ import annotations
 

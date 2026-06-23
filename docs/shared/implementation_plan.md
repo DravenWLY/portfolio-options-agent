@@ -61,6 +61,8 @@ in the archives and logs listed below.
   through P29B-T7 and reviewed PASS.
 - Phase 29C EDGAR `public_company_profile` vertical slice is complete through
   saved-report provenance display and reviewed PASS.
+- Phase 30A Golden Path Review Desk Prototype is accepted as the first coherent
+  internal prototype loop and committed at `35f1d01`.
 
 Reference docs:
 
@@ -70,6 +72,7 @@ Reference docs:
 - `docs/codex-b-architecture/PHASE_29B_PUBLIC_AGENT_EVIDENCE_CONTRACT.md`
 - `docs/codex-b-architecture/PHASE_29C_PUBLIC_EVIDENCE_SOURCE_GOVERNANCE.md`
 - `docs/codex-b-architecture/PHASE_30A_GOLDEN_PATH_REVIEW_DESK_CONTRACT.md`
+- `docs/codex-b-architecture/PHASE_30B_GOLDEN_PATH_HARDENING_CONTRACT.md`
 - `docs/claude-e-agentic/PHASE_29A_T2_AGENT_TEAM_REPORT_OUTPUT_CONTRACT.md`
 - `docs/claude-e-agentic/PHASE_29A_T5_REPORT_GENERATION_UX_POLICY.md`
 - `docs/claude-e-agentic/PHASE_29B_T2_PUBLIC_ROLE_AGENTIC_DESIGN.md`
@@ -120,7 +123,147 @@ Detailed verification history is archived in:
 
 ## Next Handoff
 
-### Phase 30A - Golden Path Review Desk Prototype
+### Phase 30B - Golden Path Prototype Hardening And Demo Readiness
+
+- `P30B-T0` - Open hardening contract and task sequence.
+  - Owner: Codex B. Reviewer: Codex A/founder as needed.
+  - Architecture reference:
+    `docs/codex-b-architecture/PHASE_30B_GOLDEN_PATH_HARDENING_CONTRACT.md`.
+  - Status: done 2026-06-22 by Codex B. P30B is PASS to open. The active goal is
+    to make the accepted P30A golden path durable, reproducible, and
+    founder-demo-ready through DB-backed integration tests, clear fixture
+    boundaries, a stable synthetic demo seed, and a founder-demo script. No
+    Dashboard, Account Details, new public evidence, provider, Agent Console
+    composer, runtime-tool, broker/order, or broader product expansion should
+    begin unless it directly unblocks the golden path.
+
+- `P30B-T1` - DB-backed golden-path integration tests.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Scope: add backend integration tests that exercise the real route spine for
+    one stock/ETF flow and one simple options flow, preferably
+    `cash_secured_put`: `POST /trade-reviews/portfolio-preview` ->
+    `saved_review_source_reference` -> `POST /users/{uid}/reports/from-trade-review`
+    -> saved artifact/evidence package -> explicit
+    `POST /users/{uid}/reports/{thread_id}/agent-team-report` -> report
+    list/detail readback -> regeneration/retry.
+  - Required assertions: backend-owned saved source and scope are used; client-
+    supplied mutable scope/summary fields are ignored after source resolution;
+    saved reports do not silently recompute from current account selector state;
+    regeneration preserves saved source, scope, deterministic summary, saved
+    public evidence, and source timestamps; options-specific caveats remain
+    visible and honest; cross-user/malformed source refs fail closed; forbidden
+    private fields and unsafe trading/action wording cannot be persisted or
+    generated.
+  - Hard boundary: tests first. Do not add fields, endpoints, migrations, storage
+    behavior, providers, public sources, frontend work, live calls, LLM/
+    TradingAgents/runtime tools, broker/order flows, frontend math, raw private
+    data, logs, screenshots, or advice/action wording unless a specific gap is
+    documented and separately approved by Codex B.
+  - Status: done 2026-06-23 by Codex C; Codex B review PASS after one narrow
+    blocker fix. Added DB-backed golden-path integration coverage for
+    `stock_buy` and `cash_secured_put` through portfolio-preview,
+    saved-source reference, saved artifact/evidence package, explicit Agent
+    Team generation, report list/detail readback, and regeneration. The test
+    preserves reviewed opaque app-owned `account_reference` in saved scope while
+    keeping raw provider/account identifiers, raw payloads, buying power, unsafe
+    action wording, and forbidden keys out of saved/generated/readback payloads.
+    Local DB-marked cases skipped under the disposable-DB safety gate; a
+    disposable DB-enabled smoke later covered the route chain.
+
+- `P30B-T2` - Stable synthetic demo seed.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-06-23 by Codex C; Codex B contract/privacy/safety review
+    PASS. Added a backend-owned seed
+    helper and manual local/internal script:
+    `backend/app/services/golden_path_demo_seed.py` and
+    `backend/scripts/manual/seed_golden_path_demo.py`. The seed is separate from
+    the Skyframe fixture overlay, idempotently creates one synthetic demo user
+    plus one synthetic broker-account row, and can soft-reset saved
+    report/source rows for only that demo user. Invocation is dry-run by default;
+    writes require `python3 scripts/manual/seed_golden_path_demo.py --apply`,
+    with optional `--reset-saved-outputs`. Focused tests cover production-like
+    environment rejection, idempotency, route usability for `stock_buy` and
+    `cash_secured_put`, no raw synthetic provider identifiers in route payloads,
+    and reset behavior. Local verification: focused P30B seed/report/trade-review
+    suites passed with DB-backed cases skipped by the existing disposable-DB
+    safety gate; service/script compile check and `git diff --check` passed.
+    Disposable DB-enabled demo-readiness smoke later covered the seed path.
+
+- `P30B-T3` - Fixture boundary cleanup.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-06-23 by Codex C; Codex B contract/privacy/safety review
+    PASS. Added boundary docstrings to
+    `backend/app/services/skyframe_fixtures.py`,
+    `backend/app/services/golden_path_demo_seed.py`, and
+    `backend/scripts/manual/seed_golden_path_demo.py`: Skyframe remains a
+    stateless, header-gated private-safe smoke overlay, while the Golden Path
+    demo seed is a local/internal synthetic DB seed that uses real routes and
+    storage. Added static tests proving the Skyframe module does not import the
+    demo seed and the demo seed does not depend on Skyframe fixture headers.
+    Verification: focused fixture/seed suites passed with DB-backed seed tests
+    skipped by the existing disposable-DB safety gate; related report/
+    trade-review and agent suites remained green; `git diff --check` passed.
+
+- `P30B-T4` - Founder demo script and narrow UX polish.
+  - Owner: Claude A or Codex F. Reviewer: Claude B; Codex B if copy, privacy,
+    report-state, or read-contract semantics change.
+  - Status: done 2026-06-23 by Codex C for docs-only script; Codex B
+    contract/privacy/safety review PASS. Added
+    `docs/shared/PHASE_30B_FOUNDER_DEMO_SCRIPT.md`, covering setup with the
+    stable synthetic seed, one stock/ETF flow, one `cash_secured_put` flow,
+    explicit saved-report generation, historical readback, caveat talking
+    points, forbidden wording, and the P30B-T5 smoke checklist. No frontend or
+    production behavior changed. Any future UI polish remains owned by Claude
+    A/Codex F and should stay limited to clarifying the read-only review-desk
+    loop.
+
+- `P30B-T5` - Demo readiness smoke.
+  - Owner: Claude A or Codex F. Reviewers: Claude B and Codex B.
+  - Status: done 2026-06-23 by Claude A; Claude B visual/safety review PASS
+    2026-06-23 and Codex B contract/privacy/safety review PASS 2026-06-23.
+    Demo-readiness smoke passed against the stable synthetic seed on disposable
+    `gp-smoke` DB with no Skyframe fixtures for stock/ETF and
+    `cash_secured_put` selected-account flows: preview -> save evidence snapshot
+    -> Reports -> explicit Agent Team generation -> report detail/readback.
+    Verified no auto-generation, historical saved evidence, honest scope/
+    freshness/caveats/provenance/timestamps, no unsafe trading/action wording,
+    no private/raw IDs/values/payloads/prompts/traces/secrets, no overflow at
+    1024/1280/1440 light/dark, and console clean except known React Router v7
+    future warnings. Preview-only raw scope-note codes accepted for demo;
+    friendly labels deferred. `/portfolio-context` visible `ctx_` references
+    are outside the demo flow and non-blocking.
+
+- `P30B-T5A` - Backend fixes for Golden Path demo-readiness smoke blockers.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-06-23 by Codex C; Codex B contract/privacy/safety review
+    PASS. Fixed two backend smoke
+    blockers found by Claude A in a disposable DB run: the Golden Path seed email
+    now uses `golden-path-demo@example.com` and repairs legacy `.test` seed rows
+    so `GET /users` and `GET /users/{id}` serialize through `UserRead`; selected
+    review-account portfolio-preview now sanitizes saved-source scope caveats
+    before `SavedReviewArtifactCreateRequest`, keeping private liquidity tokens
+    such as `buying_power` out of saved source/report payloads while preserving
+    safe caveats like `liquidity_model_unverified` and
+    `account_feasibility_not_evaluated`. Future unsafe saved-source validation
+    failures return the workspace without a saved source reference instead of
+    surfacing a 500. Focused seed/report/trade-review tests and agent suites
+    passed locally, with DB-backed cases skipped by the disposable-DB safety gate;
+    py_compile and `git diff --check` passed.
+
+- `P30B-T6` - Founder demo acceptance and closeout.
+  - Owner: Codex B and Codex A/founder.
+  - Status: done 2026-06-23 by Codex A/founder. P30B is accepted for founder
+    demo readiness and preserved as the internal MVP validation loop. All
+    required hardening slices reviewed PASS: DB-backed route-spine tests, stable
+    synthetic demo seed, fixture/demo boundary cleanup, founder demo script,
+    backend smoke-blocker fixes, and disposable DB demo-readiness smoke for one
+    stock/ETF flow and one `cash_secured_put` flow. Non-blocking future polish:
+    replace preview-only raw scope-note codes with friendlier user labels, hide
+    or soften visible `ctx_` references on `/portfolio-context` before that page
+    enters a user demo, and continue tracking known React Router v7 future
+    warnings.
+
+### Closed Context - Phase 30A Golden Path Review Desk Prototype
 
 - `P30A-T0` - Golden path contract and acceptance criteria.
   - Owner: Codex B. Reviewer: founder / Codex A for product direction.

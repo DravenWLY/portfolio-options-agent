@@ -1,5 +1,30 @@
 # Changelog
 
+- 2026-06-23: Codex A/founder accepted P30B-T6. Golden Path Prototype
+  Hardening And Demo Readiness is now closed as the internal MVP validation
+  loop. Accepted coverage includes DB-backed route-spine tests, stable synthetic
+  demo seed, fixture/demo boundary cleanup, founder demo script, backend
+  smoke-blocker fixes, and disposable-DB demo-readiness smoke for selected-
+  account `stock_buy` and `cash_secured_put` flows with no Skyframe fixture
+  headers. Next recommendation: P31A Founder Demo Polish And Product Narrative,
+  focused on explaining the review-desk loop, friendlier scope/freshness/caveat
+  copy, and demo narrative polish before reopening Dashboard, Account Details,
+  public evidence, provider, or Agent Console expansion.
+- 2026-06-23: P30B is ready for founder acceptance. DB-backed golden-path
+  integration tests, stable synthetic demo seed, fixture/demo boundary cleanup,
+  founder demo script, backend smoke-blocker fixes, and demo-readiness smoke all
+  passed their review gates. The final smoke used the stable seed against a
+  disposable `gp-smoke` DB with no Skyframe fixtures and covered both selected-
+  account `stock_buy` and `cash_secured_put` flows from Trade Review preview to
+  saved evidence snapshot, explicit Agent Team report generation, and saved
+  report readback. P30B-T6 may now proceed with Codex A/founder closeout.
+- 2026-06-22: Opened P30B - Golden Path Prototype Hardening And Demo Readiness.
+  Added `docs/codex-b-architecture/PHASE_30B_GOLDEN_PATH_HARDENING_CONTRACT.md`,
+  updated the roadmap, and made P30B-T1 the active Codex C handoff. P30B is
+  PASS to open and should harden the accepted P30A loop through DB-backed
+  integration tests, clear fixture boundaries, a stable synthetic demo seed, a
+  founder-demo script, and demo-readiness smoke. Horizontal expansion remains
+  paused unless it directly unblocks the golden path.
 - 2026-06-22: Codex A/founder accepted P30A-T6. The Golden Path Review Desk
   Prototype is now the first coherent internal prototype loop: proposed
   stock/ETF and `cash_secured_put` reviews can move from portfolio-backed Trade

@@ -5,10 +5,11 @@ architecture document when a task only needs current direction.
 
 ## Product North Star
 
-Portfolio Copilot is a broker-aware, portfolio-aware trade review workspace for
-manual investors. It combines read-only broker state, market context,
+Portfolio Copilot is a read-only specialist review desk for busy
+self-directed investors. It combines read-only broker state, market context,
 deterministic trade-review/risk calculations, and bounded role-separated agent
-commentary. It is TradingAgents-inspired, not TradingAgents-centered.
+commentary to answer: "What would I be ignoring if I acted manually now?" It is
+TradingAgents-inspired, not TradingAgents-centered.
 
 The product is manual decision support. It does not place orders, automate broker
 actions, scrape brokers, bypass MFA, or present LLM output as financial advice.
@@ -89,18 +90,29 @@ Functional internal-demo context.
 
 ## Next Recommended Work
 
-### Phase 30A - Golden Path Review Desk Prototype
+### Phase 31A - Founder Demo Polish And Product Narrative
 
-Codex A has shifted the product framing from a narrow "pre-trade review" surface
-to a read-only specialist review desk for busy self-directed investors.
+P30A proved the first coherent internal prototype loop and P30B hardened it for
+founder demo readiness:
 
-The product should not answer "Should I make this trade?" It should answer:
+`select review account/scope -> enter proposed trade -> run deterministic review -> save evidence snapshot -> explicitly generate Agent Team briefing -> reopen the exact historical report`
+
+The product still should not answer "Should I make this trade?" It should
+answer:
 
 `What would I be ignoring if I acted manually now?`
 
-P30A should stop horizontal expansion and make one complete loop feel real:
+P30B is accepted as the internal MVP validation loop:
 
-`select review account/scope -> enter proposed trade -> run deterministic review -> save evidence snapshot -> explicitly generate Agent Team briefing -> reopen the exact historical report`
+- DB-enabled integration tests for the real saved-review/report-generation
+  route spine.
+- Fixture cleanup and clear smoke-overlay boundaries.
+- A stable synthetic demo seed path that does not use real brokerage data or
+  live providers.
+- A founder-demo script covering one stock/ETF flow and one simple options flow.
+- Demo-readiness smoke against a disposable `gp-smoke` DB with no Skyframe
+  fixture headers for one selected-account `stock_buy` flow and one
+  `cash_secured_put` flow.
 
 What is already available:
 
@@ -116,21 +128,21 @@ What is already available:
   attribution when reviewed evidence exists.
 - Phase 29B Skyframe rollout and P29C EDGAR `public_company_profile` vertical
   slice are complete and reviewed.
+- Phase 30A connected private-safe smoke proved one stock/ETF flow and one
+  `cash_secured_put` flow end to end.
+- Phase 30B DB-backed route-spine tests, stable synthetic demo seed, fixture
+  boundary cleanup, founder demo script, backend smoke-blocker fixes, and final
+  demo-readiness smoke are accepted.
 
 What should happen next:
 
-1. Use `docs/codex-b-architecture/PHASE_30A_GOLDEN_PATH_REVIEW_DESK_CONTRACT.md`
-   as the P30A contract.
-2. P30A is accepted as the first coherent Golden Path Review Desk Prototype.
-   It is complete through connected private-safe smoke for one stock/ETF flow
-   and one `cash_secured_put` flow. Backend spine, Agent Team briefing wording,
-   Trade Review handoff, Report Detail briefing polish, read-only Reports
-   fixtures, interactive fixture coverage, and browser smoke all passed their
-   review gates.
-3. The next recommended phase is P30B - Golden Path Prototype Hardening And
-   Demo Readiness: DB-enabled integration tests for the saved-review/report
-   generation path, fixture cleanup, stable demo seed path, and a founder-demo
-   script for one stock/ETF flow plus one CSP/covered-call flow.
+1. Open P31A as a narrow product/front-end polish phase around founder-demo
+   narrative, not horizontal expansion.
+2. Improve review-desk onboarding/copy, explain the Agent Team briefing in
+   plain language, and convert preview-only raw scope-note codes into friendlier
+   labels where existing contracts allow.
+3. Refine the founder-demo script and product positioning docs around the
+   accepted "specialist review desk" framing.
 4. Dashboard expansion, new public evidence, new providers, Agent Console
    composer work, Account Details redesign, and broader Skyframe rollout should
    pause unless they directly unblock the golden path.
@@ -142,6 +154,7 @@ Architecture references:
 - `docs/codex-b-architecture/PHASE_29B_PUBLIC_AGENT_EVIDENCE_CONTRACT.md`
 - `docs/codex-b-architecture/PHASE_29C_PUBLIC_EVIDENCE_SOURCE_GOVERNANCE.md`
 - `docs/codex-b-architecture/PHASE_30A_GOLDEN_PATH_REVIEW_DESK_CONTRACT.md`
+- `docs/codex-b-architecture/PHASE_30B_GOLDEN_PATH_HARDENING_CONTRACT.md`
 
 ### Deferred Scope Management
 

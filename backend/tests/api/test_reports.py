@@ -3,11 +3,15 @@ from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.broker_account import BrokerAccount
+from app.models.broker_connection import BrokerConnection
 from app.models.report_message import ReportMessage
 from app.models.saved_review_source import SavedReviewSource
-from app.schemas.reports import SavedReviewArtifactCreateRequest
+from app.schemas.reports import SavedEvidencePackageRead, SavedReviewArtifactCreateRequest, SavedReviewArtifactRead
+from app.schemas.trade_review_workspace import validate_trade_review_saved_source_reference
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.reports import agent_team_report as agent_team_report_service
 from app.services.reports import crud as report_service
@@ -233,6 +237,198 @@ def test_generate_agent_team_report_persists_summary_and_projects_on_reports(
         "deterministic_summary": regenerated["deterministic_summary"],
         "generated_at": regenerated["generated_at"],
     } == immutable_saved_source
+
+
+@pytest.mark.parametrize(
+    ("preview_payload", "expected_flow", "expected_symbol", "expected_preview_caveat"),
+    (
+        (
+            {
+                "supported_flow": "stock_buy",
+                "symbol": "XYZ",
+                "quantity": "3",
+                "price_assumption": "50",
+            },
+            "stock_buy",
+            "XYZ",
+            None,
+        ),
+        (
+            {
+                "supported_flow": "cash_secured_put",
+                "option_leg": {
+                    "underlying_symbol": "XYZ",
+                    "option_type": "put",
+                    "leg_action": "sell_to_open",
+                    "expiration_date": "2026-06-19",
+                    "strike": "50",
+                    "quantity": "1",
+                    "premium": "2",
+                },
+            },
+            "cash_secured_put",
+            "XYZ",
+            "cash_secured_put_collateral_generic",
+        ),
+    ),
+    ids=("stock-buy", "cash-secured-put"),
+)
+def test_db_backed_golden_path_preview_save_generate_readback_and_regenerate(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    preview_payload: dict,
+    expected_flow: str,
+    expected_symbol: str,
+    expected_preview_caveat: str,
+) -> None:
+    user_id, account_reference = _create_connected_broker_account_reference(client, db_session)
+    preview_response = client.post(
+        "/trade-reviews/portfolio-preview",
+        headers={"X-User-Id": user_id},
+        json={
+            **preview_payload,
+            "portfolio_context_selection": {"mode": "latest_available"},
+            "review_account_selection": {
+                "mode": "selected_account",
+                "account_reference": account_reference,
+            },
+        },
+    )
+
+    assert preview_response.status_code == 200
+    preview = preview_response.json()
+    assert preview["supported_flow"] == expected_flow
+    assert preview["deterministic_review"]["trade_intent"]["symbol_or_underlying"] == expected_symbol
+    assert "account_level_feasibility_not_evaluated" in preview["scope_metadata"]["scope_caveat_codes"]
+    if expected_preview_caveat is not None:
+        assert expected_preview_caveat in {caveat["code"] for caveat in preview["caveats"]}
+    source_reference = preview["saved_review_source_reference"]
+    assert source_reference is not None
+    assert validate_trade_review_saved_source_reference(source_reference) == source_reference
+    saved_source = db_session.scalar(
+        select(SavedReviewSource).where(
+            SavedReviewSource.user_id == UUID(user_id),
+            SavedReviewSource.source_reference == source_reference,
+            SavedReviewSource.deleted_at.is_(None),
+        )
+    )
+    assert saved_source is not None
+    assert saved_source.scope_metadata_json["scope_summary_label"] == preview["scope_metadata"]["scope_summary_label"]
+    assert saved_source.deterministic_summary_json["supported_flow"] == expected_flow
+    assert saved_source.deterministic_summary_json["symbol_or_underlying"] == expected_symbol
+
+    save_response = client.post(
+        f"/users/{user_id}/reports/from-trade-review",
+        json={
+            "source_kind": "trade_review_workspace",
+            "source_reference": source_reference,
+            "title": f"Saved {expected_flow} golden-path review",
+            "report_type": "trade_review",
+            "scope_metadata": _scope_metadata_payload("Client supplied scope must be ignored"),
+            "deterministic_summary": {
+                **_deterministic_summary_payload(),
+                "supported_flow": "covered_call",
+                "symbol_or_underlying": "MSFT",
+            },
+        },
+    )
+
+    assert save_response.status_code == 201
+    saved = save_response.json()
+    assert saved["source_reference"] == source_reference
+    assert saved["scope_metadata"] == preview["scope_metadata"]
+    assert saved["deterministic_summary"]["supported_flow"] == expected_flow
+    assert saved["deterministic_summary"]["symbol_or_underlying"] == expected_symbol
+    assert saved["public_evidence"] is None
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(SavedReviewArtifactRead.model_validate(saved))
+    assert evidence.source_snapshot.source_reference == source_reference
+    assert evidence.trade_intent_summary.supported_flow == expected_flow
+    assert evidence.trade_intent_summary.symbol_or_underlying == expected_symbol
+    assert evidence.scope_state.account_level_feasibility_evaluated is False
+
+    listed = client.get(f"/users/{user_id}/reports").json()
+    assert len(listed) == 1
+    thread_id = listed[0]["id"]
+    assert listed[0]["scope_metadata"] == saved["scope_metadata"]
+
+    first_generated_at = datetime(2026, 6, 22, 14, 0, tzinfo=UTC)
+    monkeypatch.setattr(agent_team_report_service, "_now_utc", lambda: first_generated_at)
+    generated_response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
+    assert generated_response.status_code == 201
+    generated = generated_response.json()
+    assert generated["agent_summary"]["report_generated_at"] == first_generated_at.isoformat().replace("+00:00", "Z")
+    assert generated["agent_summary"]["provider_mode"] == "deterministic_template"
+    assert generated["source_reference"] == saved["source_reference"]
+    assert generated["scope_metadata"] == saved["scope_metadata"]
+    assert generated["deterministic_summary"] == saved["deterministic_summary"]
+    assert generated["generated_at"] == saved["generated_at"]
+    assert generated["public_evidence"]["public_evidence_mode"] == "not_reviewed"
+
+    # Later mutable account state must not reinterpret the saved report scope or source snapshot.
+    later_account_response = client.post(
+        f"/users/{user_id}/accounts",
+        json={
+            "broker_name": "Later Broker",
+            "account_type": "taxable_individual",
+            "display_name": "Later Mutable Account",
+            "base_currency": "USD",
+        },
+    )
+    assert later_account_response.status_code == 201
+    detail_after_mutation = client.get(f"/users/{user_id}/reports/{thread_id}").json()
+    assert detail_after_mutation["scope_metadata"] == saved["scope_metadata"]
+    assert detail_after_mutation["agent_summary"] == generated["agent_summary"]
+
+    immutable_saved_source = {
+        "source_reference": generated["source_reference"],
+        "scope_metadata": generated["scope_metadata"],
+        "deterministic_summary": generated["deterministic_summary"],
+        "generated_at": generated["generated_at"],
+        "public_evidence": generated["public_evidence"],
+    }
+    second_generated_at = datetime(2026, 6, 22, 14, 5, tzinfo=UTC)
+    monkeypatch.setattr(agent_team_report_service, "_now_utc", lambda: second_generated_at)
+    regenerated_response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
+    assert regenerated_response.status_code == 201
+    regenerated = regenerated_response.json()
+    assert regenerated["agent_summary"]["report_generated_at"] == second_generated_at.isoformat().replace("+00:00", "Z")
+    assert {
+        "source_reference": regenerated["source_reference"],
+        "scope_metadata": regenerated["scope_metadata"],
+        "deterministic_summary": regenerated["deterministic_summary"],
+        "generated_at": regenerated["generated_at"],
+        "public_evidence": regenerated["public_evidence"],
+    } == immutable_saved_source
+
+    saved_rendered = repr(
+        {
+            "saved": saved,
+            "generated": generated,
+            "regenerated": regenerated,
+            "detail": detail_after_mutation,
+        }
+    ).lower()
+    assert generated["scope_metadata"]["review_account"]["account_reference"] == account_reference
+    assert regenerated["scope_metadata"]["review_account"]["account_reference"] == account_reference
+    for forbidden in (
+        "provider_account_id_secret",
+        "provider_connection_id_secret",
+        "taxable account ending",
+        "raw_payload",
+        "buying_power",
+        "safe to trade",
+        "ready to trade",
+        "guaranteed return",
+        "place order",
+        "submit order",
+        "execute trade",
+        "i recommend",
+    ):
+        assert forbidden not in saved_rendered
+    assert not find_forbidden_keys(saved, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+    assert not find_forbidden_keys(generated, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+    assert not find_forbidden_keys(regenerated, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
 
 
 def test_generate_agent_team_report_with_injected_edgar_profile_persists_and_reuses_saved_public_evidence(
@@ -718,6 +914,43 @@ def _deterministic_summary_payload() -> dict:
         "market_quote_freshness_label": "Market quote from generated review",
         "caveat_codes": ("selected_context_scope", "account_level_feasibility_not_evaluated"),
     }
+
+
+def _create_connected_broker_account_reference(client: TestClient, db_session: Session) -> tuple[str, str]:
+    user_response = client.post(
+        "/users",
+        json={"display_name": "Golden Path User", "email": "golden-path@example.com"},
+    )
+    assert user_response.status_code == 201
+    user_id = user_response.json()["id"]
+    connection = BrokerConnection(
+        user_id=UUID(user_id),
+        provider="snaptrade",
+        broker_name="Fidelity raw name should not render",
+        provider_connection_id="provider_connection_id_secret_golden",
+        connection_status="connected",
+        sync_status="idle",
+        data_freshness_status="fresh",
+    )
+    db_session.add(connection)
+    db_session.flush()
+    db_session.add(
+        BrokerAccount(
+            broker_connection_id=connection.id,
+            provider_account_id="provider_account_id_secret_golden",
+            display_name="Taxable account ending 1234 should not render",
+            account_type="taxable_individual",
+            sync_status="idle",
+            data_freshness_status="fresh",
+        )
+    )
+    db_session.commit()
+
+    account_details_response = client.get(f"/users/{user_id}/account-details")
+    assert account_details_response.status_code == 200
+    account_details = account_details_response.json()
+    assert account_details["accounts"]
+    return user_id, account_details["accounts"][0]["account_reference"]
 
 
 class _CountingEdgarProfileClient:

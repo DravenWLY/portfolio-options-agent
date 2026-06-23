@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+import app.services.skyframe_fixtures as skyframe_fixtures
 from app.api.routes import accounts as accounts_route
 from app.api.routes import economic_calendar as economic_calendar_route
 from app.api.routes import market_context as market_context_route
@@ -48,6 +49,12 @@ def _fixture_headers(*, dashboard_state: str | None = None) -> dict[str, str]:
     if dashboard_state is not None:
         headers[SKYFRAME_DASHBOARD_STATE_HEADER] = dashboard_state
     return headers
+
+
+def test_skyframe_fixture_module_does_not_import_golden_path_demo_seed() -> None:
+    """Skyframe remains a stateless smoke overlay, not a DB demo seed path."""
+
+    assert "golden_path_demo_seed" not in skyframe_fixtures.__dict__
 
 
 def _enable_fixtures(monkeypatch: pytest.MonkeyPatch, *, app_env: str = "local") -> None:

@@ -2,6 +2,7 @@ from uuid import UUID
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -10,6 +11,7 @@ from app.schemas.trade_review_workspace import (
     TradeReviewPortfolioPreviewRequest,
     TradeReviewWorkspacePreviewRequest,
     TradeReviewWorkspaceRead,
+    ReportScopeMetadataRead,
 )
 from app.services.reports import crud as report_service
 from app.services.trade_review.frontend_read import (
@@ -60,24 +62,44 @@ def _workspace_with_saved_review_source_reference(
 
     source_reference = f"trrev_{uuid4().hex}"
     caveat_codes = _saved_review_safe_caveat_codes(workspace)
-    source = report_service.record_saved_review_source(
-        db,
-        current_user_id,
-        SavedReviewArtifactCreateRequest(
+    try:
+        create_request = SavedReviewArtifactCreateRequest(
             source_kind="trade_review_workspace",
             source_reference=source_reference,
             title=f"{_review_flow_label(workspace.supported_flow)} snapshot",
             report_type="trade_review",
-            scope_metadata=workspace.scope_metadata,
+            scope_metadata=_saved_review_safe_scope_metadata(workspace.scope_metadata),
             deterministic_summary=_deterministic_summary_from_workspace(workspace, caveat_codes=caveat_codes),
             generated_at=workspace.generated_at,
             limitations=("Saved review source generated from reviewed backend workspace output.",),
             caveat_codes=caveat_codes,
-        ),
+        )
+    except (ValidationError, ValueError):
+        return workspace
+    source = report_service.record_saved_review_source(
+        db,
+        current_user_id,
+        create_request,
     )
     if source is None:
         return workspace
     return workspace.model_copy(update={"saved_review_source_reference": source.source_reference})
+
+
+def _saved_review_safe_scope_metadata(scope_metadata: ReportScopeMetadataRead) -> ReportScopeMetadataRead:
+    portfolio_scope = scope_metadata.portfolio_context_scope.model_copy(
+        update={
+            "caveat_codes": _saved_review_safe_caveat_code_tuple(
+                scope_metadata.portfolio_context_scope.caveat_codes
+            )
+        }
+    )
+    return scope_metadata.model_copy(
+        update={
+            "portfolio_context_scope": portfolio_scope,
+            "scope_caveat_codes": _saved_review_safe_caveat_code_tuple(scope_metadata.scope_caveat_codes),
+        }
+    )
 
 
 def _deterministic_summary_from_workspace(
@@ -100,10 +122,14 @@ def _deterministic_summary_from_workspace(
 
 
 def _saved_review_safe_caveat_codes(workspace: TradeReviewWorkspaceRead) -> tuple[str, ...]:
+    return _saved_review_safe_caveat_code_tuple(tuple(caveat.code for caveat in workspace.caveats))
+
+
+def _saved_review_safe_caveat_code_tuple(caveat_codes: tuple[str, ...]) -> tuple[str, ...]:
     codes: list[str] = []
     seen: set[str] = set()
-    for caveat in workspace.caveats:
-        safe_code = _saved_review_safe_caveat_code(caveat.code)
+    for caveat_code in caveat_codes:
+        safe_code = _saved_review_safe_caveat_code(caveat_code)
         if safe_code in seen:
             continue
         seen.add(safe_code)

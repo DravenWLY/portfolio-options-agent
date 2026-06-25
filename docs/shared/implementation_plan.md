@@ -63,6 +63,8 @@ in the archives and logs listed below.
   saved-report provenance display and reviewed PASS.
 - Phase 30A Golden Path Review Desk Prototype is accepted as the first coherent
   internal prototype loop and committed at `35f1d01`.
+- Phase 30B Golden Path Prototype Hardening And Demo Readiness is accepted as
+  the internal MVP validation loop and committed at `df47a1b`.
 
 Reference docs:
 
@@ -73,6 +75,7 @@ Reference docs:
 - `docs/codex-b-architecture/PHASE_29C_PUBLIC_EVIDENCE_SOURCE_GOVERNANCE.md`
 - `docs/codex-b-architecture/PHASE_30A_GOLDEN_PATH_REVIEW_DESK_CONTRACT.md`
 - `docs/codex-b-architecture/PHASE_30B_GOLDEN_PATH_HARDENING_CONTRACT.md`
+- `docs/codex-b-architecture/PHASE_31A_FOUNDER_DEMO_POLISH_CONTRACT.md`
 - `docs/claude-e-agentic/PHASE_29A_T2_AGENT_TEAM_REPORT_OUTPUT_CONTRACT.md`
 - `docs/claude-e-agentic/PHASE_29A_T5_REPORT_GENERATION_UX_POLICY.md`
 - `docs/claude-e-agentic/PHASE_29B_T2_PUBLIC_ROLE_AGENTIC_DESIGN.md`
@@ -123,7 +126,165 @@ Detailed verification history is archived in:
 
 ## Next Handoff
 
-### Phase 30B - Golden Path Prototype Hardening And Demo Readiness
+### Phase 31A - Founder Demo Polish And Product Narrative
+
+- `P31A-T0` - Founder demo polish contract and task sequence.
+  - Owner: Codex B. Reviewer: Codex A/founder as needed.
+  - Architecture reference:
+    `docs/codex-b-architecture/PHASE_31A_FOUNDER_DEMO_POLISH_CONTRACT.md`.
+  - Status: done 2026-06-23 by Codex B. P31A is PASS to open as a narrow polish/
+    narrative phase. The goal is to make the working P30A/P30B internal
+    validation loop feel like a believable founder demo without expanding
+    product scope. No new providers, public evidence sources, Dashboard
+    expansion, Account Details redesign, Agent Console composer, auth/pricing/
+    signup implementation, runtime tools, frontend financial calculations,
+    broker/order behavior, or private-data exposure are in scope.
+
+- `P31A-T1` - Product narrative docs alignment.
+  - Owner: Codex A. Reviewer: Codex B.
+  - Scope: update PRD, MVP scope, positioning, and roadmap language where
+    relevant so Portfolio Copilot is consistently described as a read-only
+    specialist review desk for busy self-directed investors. Preserve the core
+    question: "What would I be ignoring if I acted manually now?" Do not expand
+    product scope or imply advice, execution, automation, or AI stock-picking.
+  - Acceptance criteria: product docs distinguish internal validation prototype
+    from public MVP; P30A/P30B golden path is the demo baseline; placeholder
+    areas are named honestly; deferred surfaces remain deferred.
+  - Status: done 2026-06-23 by Codex A. Updated PRD, MVP scope, and positioning
+    docs to consistently frame Portfolio Copilot as a read-only specialist
+    review desk for busy self-directed investors centered on "What would I be
+    ignoring if I acted manually now?" Preserved manual decision-support, no
+    advice/order/execution, no AI-stock-picker, and no scope-expansion
+    boundaries. The docs now distinguish the P30A/P30B/P31A state as an
+    internal founder-demo validation loop, not a public MVP or commercial beta.
+
+- `P31A-T2` - Golden path copy and technical-artifact audit.
+  - Owner: Claude A. Reviewers: Codex B and Claude B.
+  - Scope: inventory Trade Review, Save Evidence Snapshot, Reports Library,
+    Report Detail, Agent Team briefing states, and accessible adjacent surfaces
+    for rough copy, raw scope-note codes, synthetic/demo labels, technical
+    handles, disjointed save/generate/report continuity, and unsupported-surface
+    distractions. Produce a narrow patch plan before broad visual changes.
+  - Acceptance criteria: audit identifies which fixes are presentation-only,
+    which need Codex B contract review, and which should be deferred. Raw
+    scope-note code friendly labels should be treated as frontend mapping over
+    existing reviewed codes unless a backend field is requested.
+  - First implementation owner: Claude A.
+  - Status: done 2026-06-23 by Claude A; Codex B and Claude B review PASS.
+    Audited the golden path (Trade Review, Save Evidence Snapshot, Reports
+    Library/Detail, Agent Team briefing states) and accessible adjacent surfaces
+    for raw scope-note/caveat/warning codes, technical handles, and synthetic/
+    demo labeling, and produced a narrow presentation-only patch plan. Friendly
+    scope-note labels are scoped as frontend mapping over existing reviewed
+    codes; visible `/portfolio-context` `ctx_` handles were routed to P31A-T4 as
+    adjacent-surface hygiene.
+
+- `P31A-T3` - Golden path frontend polish.
+  - Owner: Claude A, with Codex F as backup. Reviewers: Claude B and Codex B.
+  - Status: done 2026-06-23 by Claude A; Claude B visual/safety review PASS and
+    Codex B contract/privacy/safety review PASS. Applied presentation-only golden-
+    path polish: a `scopeNoteLabel` friendly-label map over existing backend-owned
+    scope-note/caveat/warning codes (raw code preserved for audit via `title`),
+    applied in Report scope summary, Report provenance, the saved Agent role
+    section, the Agent Team scope banner, and Trade Review results scope notes,
+    with unmapped codes falling back to `humanizeCode`. The Trade Review demo-
+    context selector now shows friendly labels while keeping the backend-owned
+    `context_reference` as the option value. No new read fields, evidence,
+    freshness, actionability, or status semantics; no backend/API/schema/storage
+    change.
+
+- `P31A-T4` - Adjacent surface hygiene.
+  - Owner: Codex F or Claude A. Reviewers: Claude B; Codex B if copy,
+    privacy, report-state, or read-contract semantics change.
+  - Status: done 2026-06-23 by Claude A; Claude B visual/product-safety review
+    PASS 2026-06-23 and Codex B contract/privacy review PASS 2026-06-23 (touched
+    visible opaque handles). Presentation-only change on `/portfolio-context`: the list
+    "Reference" column is now a friendly "Context" label
+    (`contextReferenceLabel`) and the detail summary no longer shows the raw
+    handle as its panel tag. The backend-owned `context_reference` is unchanged
+    as the row key, selection value, detail request value, and route state; the
+    raw handle stays reachable for audit via the list row `title` hover and a
+    clearly-labeled detail "Reference (audit)" row. No backend/API/schema/
+    storage/contract change. Connected synthetic-demo preview confirmed friendly
+    labels with zero raw `ctx_` in primary visible copy, page-level horizontal
+    overflow 0 at 1024/1280/1440 in light and dark, and a clean console.
+
+- `P31A-T5` - Agent briefing wording check.
+  - Owner: Claude E if needed. Reviewer: Codex B.
+  - Status: conditional. Only open if frontend polish reveals confusing Agent
+    Team wording that must be fixed in deterministic-template output. No new
+    sources, roles, fields, runtime tools, or provider calls.
+
+- `P31A-T6` - Founder demo polish smoke.
+  - Owner: Claude A or Codex F. Reviewers: Claude B and Codex B.
+  - Status: done 2026-06-23 by Claude A. Founder-demo polish smoke PASS across
+    stock/ETF and cash-secured-put selected-account golden paths plus
+    `/portfolio-context` adjacent hygiene; friendly labels render as primary copy,
+    raw technical codes/ctx handles remain audit-only, explicit generation
+    unchanged, saved report historical evidence unchanged, no unsafe wording/
+    private-data exposure, no new overflow beyond tracked known issue,
+    verification commands pass. Ran against the stable P30B synthetic seed
+    (`seed_golden_path_demo.py --apply --reset-saved-outputs`) on a disposable
+    `gp-smoke` DB (fresh isolated volume, destroyed with `down -v`) with no
+    Skyframe fixture headers, exercising real routes/storage for one synthetic
+    demo user only. Verified: Trade Review friendly scope-note labels as primary
+    copy with raw codes only in `title`; demo-context dropdown leads with friendly
+    labels (raw `ctx_demo_*` only as secondary `·` reference, per reviewed
+    P31A-T3); save snapshot distinct from explicit Agent Team generation; Reports
+    required explicit Generate with no auto-generation; saved report detail led
+    with the specialist briefing, kept honest separate saved/generated timestamps,
+    skipped public roles honestly, and read scope/evidence from the saved snapshot
+    only; `/portfolio-context` showed zero raw `ctx_` in primary copy (handle in
+    `title`/audit row only); no advice/order/execution wording (only the negated
+    "Not an order recommendation" disclaimer); no `trrev_`/`svrev_`/private refs,
+    balances, holdings, provider IDs, or payloads rendered; page-level horizontal
+    overflow 0 at 1024/1280/1440 in light and dark on Trade Review, Reports detail,
+    and `/portfolio-context`; console clean except known React Router v7 future-
+    flag warnings. Verification commands all PASS: frontend typecheck, lint
+    `--max-warnings 0`, build, check:skyframe-tokens, and `git diff --check`. No
+    visual/copy behavior changed from the reviewed P31A-T3/T4 expectations, so no
+    new Claude B/Codex B review was required. Deferred polish: pre-existing
+    `/portfolio-context` right-column ("View") clip at <=1024 (already tracked,
+    not worsened); raw `saved_review_artifact` source-type label still shown on
+    Reports cards/detail (out of P31A-T3/T4 scope).
+
+- `P31A-T7` - Founder acceptance and closeout.
+  - Owner: Codex B and Codex A/founder.
+  - Status: ready_for_founder_acceptance 2026-06-23. P31A-T1/T2/T3/T4/T6 are
+    complete and reviewed/accepted as applicable. P31A may now proceed to
+    Codex A/founder PASS/REVISE/BLOCK closeout.
+
+### Phase 32A - Account Details Nickname Management
+
+- `P32A-T5` - Account Details nickname management UI (display-name editor).
+  - Owner: Claude A. Reviewer: Claude B (visual/UX/accessibility/safety-copy);
+    Codex B for contract/privacy.
+  - Scope: collapsed "Edit display name" affordance plus compact inline
+    Save/Clear/Cancel editor on the selected-account header. Edits PATCH
+    `/users/{uid}/account-details/{account_reference}/nickname` with only the
+    opaque `account_reference` + `{ nickname }`; the backend-returned candidate
+    is the source of truth for the new label.
+  - Status: review PASS 2026-06-24 by Claude B (visual/UX/accessibility/safety-
+    copy); Codex B contract/privacy review PASS. Reads as Account Details
+    identity management, not trade/order entry. Enter saves, Escape cancels,
+    autofocus and the global focus-visible ring intact, errors use role=alert,
+    input has aria-label. Hint "This changes only your Portfolio Copilot label."
+    is safe and on-product; no advice/order/execution/guaranteed-return wording
+    introduced. Claude A verification PASS: frontend typecheck, lint
+    `--max-warnings 0`, build (only pre-existing >500 kB chunk advisory),
+    check:skyframe-tokens, and `git diff --check`. Browser smoke not run
+    (data-backed Account Details surface needs the local API token / real
+    boundary); not closed in closeout for the same boundary reason.
+  - Closeout 2026-06-24 by Claude A: all three review deferred-polish items
+    implemented and re-verified (typecheck, lint `--max-warnings 0`, build,
+    check:skyframe-tokens, `git diff --check` PASS) — focus returns to the "Edit
+    display name" trigger when the editor closes (save/clear/cancel/Escape), the
+    hint is associated to the input via `aria-describedby`, and the selected-
+    account title has a long-label overflow guard (`overflow-wrap: anywhere`,
+    `min-width: 0`). Presentation/a11y-only; no contract, request shape, or field
+    usage change, so no Codex B re-review required.
+
+### Closed Context - Phase 30B Golden Path Prototype Hardening And Demo Readiness
 
 - `P30B-T0` - Open hardening contract and task sequence.
   - Owner: Codex B. Reviewer: Codex A/founder as needed.

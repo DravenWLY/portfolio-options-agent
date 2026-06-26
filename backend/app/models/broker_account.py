@@ -31,6 +31,7 @@ class BrokerAccount(Base):
     )
     provider_account_id: Mapped[str] = mapped_column(String(160), nullable=False)
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    user_nickname: Mapped[str | None] = mapped_column(String(60), nullable=True)
     account_type: Mapped[str] = mapped_column(String(40), nullable=False, default="other", server_default="other")
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD", server_default="USD")
     sync_status: Mapped[str] = mapped_column(

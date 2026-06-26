@@ -705,6 +705,45 @@ class AccountDetailsRead(BaseModel):
         return self
 
 
+class ReviewAccountCandidateRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    account_reference: str
+    display_label: str
+    account_kind_label: str
+    source_kind: AccountDetailSourceKind
+    source_label: str
+    connection_status_label: str
+    last_successful_sync_label: str | None = None
+    broker_snapshot_freshness: PortfolioContextFreshnessRead
+    market_quote_freshness: PortfolioContextFreshnessRead | None = None
+    portfolio_shape: PortfolioContextShapeRead
+    cash_state_label: str
+    account_level_feasibility_evaluated: bool
+    account_level_feasibility_label: str
+    caveat_codes: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def candidate_payload_must_be_safe(self) -> "ReviewAccountCandidateRead":
+        validate_account_reference(self.account_reference)
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+class ReviewAccountCandidateListRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    data_mode: AccountDetailsDataMode
+    generated_at: datetime
+    candidates: tuple[ReviewAccountCandidateRead, ...]
+    caveat_codes: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def candidate_list_payload_must_be_safe(self) -> "ReviewAccountCandidateListRead":
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
 class AccountDetailsSyncRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 

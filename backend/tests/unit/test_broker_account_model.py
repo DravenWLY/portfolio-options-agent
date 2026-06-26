@@ -20,6 +20,7 @@ def test_broker_account_model_columns() -> None:
         "account_id",
         "provider_account_id",
         "display_name",
+        "user_nickname",
         "account_type",
         "base_currency",
         "sync_status",
@@ -34,6 +35,7 @@ def test_broker_account_model_columns() -> None:
     assert columns["account_id"].nullable is True
     assert columns["provider_account_id"].nullable is False
     assert columns["display_name"].nullable is False
+    assert columns["user_nickname"].nullable is True
 
 
 def test_broker_account_table_constraints_and_indexes() -> None:

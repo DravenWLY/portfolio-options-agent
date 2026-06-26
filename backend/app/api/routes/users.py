@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.api.routes.broker_sync import get_snaptrade_adapter
 from app.db.session import get_db
+from app.schemas.account import AccountNicknameUpdate
 from app.schemas.trade_review_workspace import (
     AccountDetailsRead,
     AccountDetailsSyncRead,
@@ -14,6 +15,8 @@ from app.schemas.trade_review_workspace import (
     PortfolioContextDetailRead,
     PortfolioContextListRead,
     ReviewReadinessRead,
+    ReviewAccountCandidateListRead,
+    ReviewAccountCandidateRead,
     RiskAlertListRead,
     SelectedAccountDetailsRead,
     TradeReviewListRead,
@@ -29,10 +32,12 @@ from app.services.trade_review.frontend_read import (
     get_portfolio_context_for_user,
     get_review_readiness_for_user,
     get_selected_account_details_for_user,
+    list_review_account_candidates_for_user,
     list_portfolio_contexts_for_user,
     list_recent_trade_reviews_for_user,
     list_risk_alerts_for_user,
     resolve_broker_account_id_for_account_details_sync,
+    update_account_details_nickname_for_user,
 )
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -89,6 +94,41 @@ def get_user_account_details(user_id: UUID, db: Session = Depends(get_db)) -> Ac
     """Return sanitized Account Details rows and portfolio-scope metadata."""
 
     return get_account_details_for_user(user_id, db=db)
+
+
+@router.get("/{user_id}/review-account-candidates", response_model=ReviewAccountCandidateListRead)
+def list_user_review_account_candidates(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+) -> ReviewAccountCandidateListRead:
+    """Return safe account candidates for Trade Review review-account selection."""
+
+    return list_review_account_candidates_for_user(user_id, db=db)
+
+
+@router.patch(
+    "/{user_id}/account-details/{account_reference}/nickname",
+    response_model=ReviewAccountCandidateRead,
+)
+def update_user_account_details_nickname(
+    user_id: UUID,
+    account_reference: str,
+    payload: AccountNicknameUpdate,
+    db: Session = Depends(get_db),
+) -> ReviewAccountCandidateRead:
+    """Set or clear a user-owned display nickname for an opaque account reference."""
+
+    try:
+        return update_account_details_nickname_for_user(
+            user_id,
+            account_reference,
+            payload.nickname,
+            db=db,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account details not found") from exc
 
 
 @router.get("/{user_id}/account-details/{account_reference}", response_model=SelectedAccountDetailsRead)

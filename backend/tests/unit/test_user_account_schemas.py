@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.account import AccountCreate, AccountUpdate
+from app.schemas.account import AccountCreate, AccountNicknameUpdate, AccountUpdate
 from app.schemas.user import UserCreate
 
 
@@ -39,3 +39,37 @@ def test_account_update_allows_partial_payload() -> None:
     payload = AccountUpdate(display_name="Updated")
 
     assert payload.model_dump(exclude_unset=True) == {"display_name": "Updated"}
+
+
+def test_account_nickname_update_normalizes_safe_text_and_allows_clear() -> None:
+    payload = AccountNicknameUpdate(nickname="  Momentum   IRA  ")
+
+    assert payload.nickname == "Momentum IRA"
+    assert AccountNicknameUpdate(nickname=None).nickname is None
+    assert AccountNicknameUpdate(nickname="   ").nickname is None
+    assert AccountNicknameUpdate(nickname=" " * 100).nickname is None
+
+
+@pytest.mark.parametrize(
+    "nickname",
+    (
+        "Account 123456",
+        "provider_account_id secret",
+        "buying_power test",
+        "buying power test",
+        "api_key test",
+        "api key test",
+        "access_token test",
+        "access token test",
+        "raw_payload detail",
+        "safe to trade account",
+        "ready-to-trade account",
+        "Guaranteed return",
+        "You should buy",
+        "Recommend buying",
+        "<script>alert(1)</script>",
+    ),
+)
+def test_account_nickname_update_rejects_private_or_unsupported_text(nickname: str) -> None:
+    with pytest.raises(ValidationError):
+        AccountNicknameUpdate(nickname=nickname)

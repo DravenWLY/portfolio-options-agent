@@ -40,6 +40,7 @@ class BrokerAccountRead(BaseModel):
     account_id: UUID | None
     provider_account_id: str
     display_name: str
+    user_nickname: str | None
     account_type: str
     base_currency: str
     sync_status: str

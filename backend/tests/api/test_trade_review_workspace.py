@@ -525,6 +525,202 @@ def test_trade_review_portfolio_preview_resolves_current_user_account_details_re
     assert not find_forbidden_keys(saved_artifact, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
 
 
+def test_review_account_candidates_use_user_owned_nickname_without_private_fields(
+    client: TestClient,
+    db_session,
+) -> None:
+    user = User(display_name="Selector User", email="selector-user@example.com")
+    db_session.add(user)
+    db_session.flush()
+    connection = BrokerConnection(
+        user_id=user.id,
+        provider="snaptrade",
+        broker_name="Fidelity raw name should not render",
+        provider_connection_id="provider_connection_id_secret_selector",
+        connection_status="connected",
+        sync_status="idle",
+        data_freshness_status="fresh",
+    )
+    db_session.add(connection)
+    db_session.flush()
+    broker_account = BrokerAccount(
+        broker_connection_id=connection.id,
+        provider_account_id="provider_account_id_secret_selector",
+        display_name="Taxable account ending 9876 should not render",
+        account_type="taxable_individual",
+        sync_status="idle",
+        data_freshness_status="fresh",
+    )
+    db_session.add(broker_account)
+    db_session.commit()
+
+    account_details = client.get(f"/users/{user.id}/account-details").json()
+    account_reference = account_details["accounts"][0]["account_reference"]
+    update_response = client.patch(
+        f"/users/{user.id}/account-details/{account_reference}/nickname",
+        json={"nickname": "  Swing   account  "},
+    )
+
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["account_reference"] == account_reference
+    assert updated["display_label"] == "Swing account"
+    assert updated["account_level_feasibility_evaluated"] is False
+
+    broker_account.display_name = "Provider refresh renamed account ending 9999 should not render"
+    db_session.commit()
+    candidates_response = client.get(f"/users/{user.id}/review-account-candidates")
+
+    assert candidates_response.status_code == 200
+    candidates = candidates_response.json()
+    assert candidates["data_mode"] == "private_real_source"
+    assert len(candidates["candidates"]) == 1
+    candidate = candidates["candidates"][0]
+    assert candidate["account_reference"] == account_reference
+    assert candidate["display_label"] == "Swing account"
+    assert candidate["source_kind"] == "snaptrade"
+    assert candidate["source_label"] == "SnapTrade"
+    assert candidate["connection_status_label"]
+    assert candidate["cash_state_label"]
+    assert candidate["account_level_feasibility_evaluated"] is False
+    assert candidate["account_level_feasibility_label"] == "Account-level feasibility not evaluated"
+    rendered = repr(candidates).lower()
+    assert "provider_account_id_secret_selector" not in rendered
+    assert "provider_connection_id_secret_selector" not in rendered
+    assert "taxable account ending" not in rendered
+    assert "provider refresh renamed" not in rendered
+    assert "buying_power" not in rendered
+    assert not find_forbidden_keys(candidates, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+    clear_response = client.patch(
+        f"/users/{user.id}/account-details/{account_reference}/nickname",
+        json={"nickname": None},
+    )
+    assert clear_response.status_code == 200
+    assert clear_response.json()["display_label"] == "Fidelity taxable"
+
+
+@pytest.mark.parametrize(
+    "nickname",
+    (
+        "Account 123456",
+        "provider_account_id secret",
+        "safe to trade account",
+        "ready-to-trade account",
+        "Guaranteed return",
+        "You should buy",
+        "Recommend buying",
+    ),
+)
+def test_account_details_nickname_update_rejects_unsafe_values(
+    client: TestClient,
+    db_session,
+    nickname: str,
+) -> None:
+    nickname_slug = nickname.casefold().replace(" ", "-").replace("_", "-")
+    user = User(display_name="Unsafe Nickname User", email=f"unsafe-nickname-{nickname_slug}@example.com")
+    db_session.add(user)
+    db_session.flush()
+    connection = BrokerConnection(
+        user_id=user.id,
+        provider="snaptrade",
+        broker_name="Fidelity",
+        provider_connection_id=f"provider_connection_id_secret_{nickname_slug}",
+        connection_status="connected",
+        sync_status="idle",
+        data_freshness_status="fresh",
+    )
+    db_session.add(connection)
+    db_session.flush()
+    broker_account = BrokerAccount(
+        broker_connection_id=connection.id,
+        provider_account_id=f"provider_account_id_secret_{nickname_slug}",
+        display_name="Provider owned display",
+        account_type="taxable_individual",
+        sync_status="idle",
+        data_freshness_status="fresh",
+    )
+    db_session.add(broker_account)
+    db_session.commit()
+
+    account_reference = client.get(f"/users/{user.id}/account-details").json()["accounts"][0]["account_reference"]
+    response = client.patch(
+        f"/users/{user.id}/account-details/{account_reference}/nickname",
+        json={"nickname": nickname},
+    )
+
+    assert response.status_code == 422
+    db_session.refresh(broker_account)
+    assert broker_account.user_nickname is None
+
+
+def test_review_account_candidates_feed_portfolio_preview_by_opaque_reference_only(
+    client: TestClient,
+    db_session,
+) -> None:
+    user = User(display_name="Selector Preview User", email="selector-preview@example.com")
+    db_session.add(user)
+    db_session.flush()
+    connection = BrokerConnection(
+        user_id=user.id,
+        provider="snaptrade",
+        broker_name="Fidelity raw name should not render",
+        provider_connection_id="provider_connection_id_secret_selector_preview",
+        connection_status="connected",
+        sync_status="idle",
+        data_freshness_status="fresh",
+    )
+    db_session.add(connection)
+    db_session.flush()
+    broker_account = BrokerAccount(
+        broker_connection_id=connection.id,
+        provider_account_id="provider_account_id_secret_selector_preview",
+        display_name="Taxable account ending 0000 should not render",
+        user_nickname="Options review account",
+        account_type="taxable_individual",
+        sync_status="idle",
+        data_freshness_status="fresh",
+    )
+    db_session.add(broker_account)
+    db_session.commit()
+
+    candidates = client.get(f"/users/{user.id}/review-account-candidates").json()
+    account_reference = candidates["candidates"][0]["account_reference"]
+    response = client.post(
+        "/trade-reviews/portfolio-preview",
+        headers={"X-User-Id": str(user.id)},
+        json={
+            "supported_flow": "cash_secured_put",
+            "option_leg": {
+                "underlying_symbol": "XYZ",
+                "option_type": "put",
+                "leg_action": "sell_to_open",
+                "expiration_date": "2026-06-19",
+                "strike": "50",
+                "quantity": "1",
+                "premium": "2",
+            },
+            "portfolio_context_selection": {"mode": "latest_available"},
+            "review_account_selection": {
+                "mode": "selected_account",
+                "account_reference": account_reference,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["scope_metadata"]["review_account"]["account_reference"] == account_reference
+    assert payload["scope_metadata"]["review_account"]["display_label"] == "Options review account"
+    assert payload["scope_metadata"]["account_level_feasibility_evaluated"] is False
+    assert "account_level_feasibility_not_evaluated" in payload["scope_metadata"]["scope_caveat_codes"]
+    rendered = repr(payload).lower()
+    assert "provider_account_id_secret_selector_preview" not in rendered
+    assert "provider_connection_id_secret_selector_preview" not in rendered
+    assert "taxable account ending" not in rendered
+    assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
 def test_trade_review_portfolio_preview_does_not_resolve_cross_user_account_reference(
     client: TestClient,
     db_session,

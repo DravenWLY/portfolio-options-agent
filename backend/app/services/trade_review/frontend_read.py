@@ -59,6 +59,8 @@ from app.schemas.trade_review_workspace import (
     ReportScopeMetadataRead,
     ReviewReadinessRead,
     ReviewAccountRead,
+    ReviewAccountCandidateListRead,
+    ReviewAccountCandidateRead,
     ReviewAccountSelectionRequest,
     RiskAlertItemRead,
     RiskAlertListRead,
@@ -619,6 +621,99 @@ def get_account_details_for_user(
     )
     validate_trade_review_workspace_payload(read.model_dump(mode="python"))
     return read
+
+
+def list_review_account_candidates_for_user(
+    user_id: object,
+    *,
+    db: Session,
+    generated_at: datetime | None = None,
+) -> ReviewAccountCandidateListRead:
+    """Return safe selectable review-account candidates for Trade Review."""
+
+    generated = generated_at or datetime.now(UTC)
+    real_read = _real_account_details_for_user(db, user_id=user_id, generated_at=generated)
+    if real_read is None:
+        read = ReviewAccountCandidateListRead(
+            data_mode="unavailable",
+            generated_at=generated,
+            candidates=(),
+            caveat_codes=("review_account_candidates_unavailable",),
+        )
+        validate_trade_review_workspace_payload(read.model_dump(mode="python"))
+        return read
+
+    candidates = tuple(
+        ReviewAccountCandidateRead(
+            account_reference=account.account_reference,
+            display_label=account.display_label,
+            account_kind_label=account.account_kind_label,
+            source_kind=account.source_kind,
+            source_label=account.source_label,
+            connection_status_label=account.connection_status_label,
+            last_successful_sync_label=account.last_successful_sync_label,
+            broker_snapshot_freshness=account.broker_snapshot_freshness,
+            market_quote_freshness=account.market_quote_freshness,
+            portfolio_shape=account.portfolio_shape,
+            cash_state_label=account.cash_state_label,
+            account_level_feasibility_evaluated=account.account_level_feasibility_evaluated,
+            account_level_feasibility_label="Account-level feasibility not evaluated",
+            caveat_codes=account.caveat_codes,
+        )
+        for account in real_read.accounts
+    )
+    read = ReviewAccountCandidateListRead(
+        data_mode=real_read.data_mode,
+        generated_at=generated,
+        candidates=candidates,
+        caveat_codes=real_read.caveat_codes,
+    )
+    validate_trade_review_workspace_payload(read.model_dump(mode="python"))
+    return read
+
+
+def update_account_details_nickname_for_user(
+    user_id: object,
+    account_reference: str,
+    nickname: str | None,
+    *,
+    db: Session,
+    generated_at: datetime | None = None,
+) -> ReviewAccountCandidateRead:
+    """Update a user-owned nickname for an opaque Account Details account ref."""
+
+    resolved_reference = validate_account_reference(account_reference)
+    row = _broker_account_detail_row_for_account_reference(
+        db,
+        user_id=user_id,
+        account_reference=resolved_reference,
+    )
+    if row is None:
+        raise LookupError("Account details not found")
+
+    row.broker_account.user_nickname = nickname
+    try:
+        candidates = list_review_account_candidates_for_user(
+            user_id,
+            db=db,
+            generated_at=generated_at,
+        )
+        selected = next(
+            (
+                candidate
+                for candidate in candidates.candidates
+                if candidate.account_reference == resolved_reference
+            ),
+            None,
+        )
+        if selected is None:
+            raise LookupError("Account details not found")
+    except Exception:
+        db.rollback()
+        raise
+
+    db.commit()
+    return selected
 
 
 def get_selected_account_details_for_user(
@@ -2114,10 +2209,18 @@ def _account_display_label(
     fallback_index: int,
     existing_labels: tuple[str, ...],
 ) -> str:
-    broker_label = _broker_display_label(broker_connection.broker_name)
-    kind_label = _short_account_kind_label(broker_account.account_type)
-    base_label = f"{broker_label} {kind_label}" if broker_label != "Connected broker" else f"Connected broker {kind_label}"
-    label = base_label.strip()
+    nickname = (broker_account.user_nickname or "").strip()
+    if nickname:
+        label = nickname
+    else:
+        broker_label = _broker_display_label(broker_connection.broker_name)
+        kind_label = _short_account_kind_label(broker_account.account_type)
+        base_label = (
+            f"{broker_label} {kind_label}"
+            if broker_label != "Connected broker"
+            else f"Connected broker {kind_label}"
+        )
+        label = base_label.strip()
     if not label:
         label = f"Connected account {fallback_index}"
     if label not in existing_labels:

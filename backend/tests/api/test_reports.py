@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.routes.trade_reviews import _saved_review_safe_caveat_code_tuple
 from app.models.broker_account import BrokerAccount
 from app.models.broker_connection import BrokerConnection
 from app.models.report_message import ReportMessage
@@ -337,7 +338,10 @@ def test_db_backed_golden_path_preview_save_generate_readback_and_regenerate(
     assert save_response.status_code == 201
     saved = save_response.json()
     assert saved["source_reference"] == source_reference
-    assert saved["scope_metadata"] == preview["scope_metadata"]
+    _assert_saved_scope_preserves_review_selection_with_safe_caveats(
+        saved["scope_metadata"],
+        preview["scope_metadata"],
+    )
     assert saved["deterministic_summary"]["supported_flow"] == expected_flow
     assert saved["deterministic_summary"]["symbol_or_underlying"] == expected_symbol
     assert saved["public_evidence"] is None
@@ -346,6 +350,16 @@ def test_db_backed_golden_path_preview_save_generate_readback_and_regenerate(
     assert evidence.trade_intent_summary.supported_flow == expected_flow
     assert evidence.trade_intent_summary.symbol_or_underlying == expected_symbol
     assert evidence.scope_state.account_level_feasibility_evaluated is False
+    evidence_rendered = repr(evidence.model_dump(mode="python")).lower()
+    for forbidden in (
+        account_reference.lower(),
+        "swing account",
+        "provider_account_id_secret",
+        "provider_connection_id_secret",
+        "taxable account ending",
+        "buying_power",
+    ):
+        assert forbidden not in evidence_rendered
 
     listed = client.get(f"/users/{user_id}/reports").json()
     assert len(listed) == 1
@@ -364,6 +378,16 @@ def test_db_backed_golden_path_preview_save_generate_readback_and_regenerate(
     assert generated["deterministic_summary"] == saved["deterministic_summary"]
     assert generated["generated_at"] == saved["generated_at"]
     assert generated["public_evidence"]["public_evidence_mode"] == "not_reviewed"
+    generated_summary_rendered = repr(generated["agent_summary"]).lower()
+    for forbidden in (
+        account_reference.lower(),
+        "swing account",
+        "provider_account_id_secret",
+        "provider_connection_id_secret",
+        "taxable account ending",
+        "buying_power",
+    ):
+        assert forbidden not in generated_summary_rendered
 
     # Later mutable account state must not reinterpret the saved report scope or source snapshot.
     later_account_response = client.post(
@@ -400,6 +424,16 @@ def test_db_backed_golden_path_preview_save_generate_readback_and_regenerate(
         "generated_at": regenerated["generated_at"],
         "public_evidence": regenerated["public_evidence"],
     } == immutable_saved_source
+    regenerated_summary_rendered = repr(regenerated["agent_summary"]).lower()
+    for forbidden in (
+        account_reference.lower(),
+        "swing account",
+        "provider_account_id_secret",
+        "provider_connection_id_secret",
+        "taxable account ending",
+        "buying_power",
+    ):
+        assert forbidden not in regenerated_summary_rendered
 
     saved_rendered = repr(
         {
@@ -939,6 +973,7 @@ def _create_connected_broker_account_reference(client: TestClient, db_session: S
             broker_connection_id=connection.id,
             provider_account_id="provider_account_id_secret_golden",
             display_name="Taxable account ending 1234 should not render",
+            user_nickname="Swing account",
             account_type="taxable_individual",
             sync_status="idle",
             data_freshness_status="fresh",
@@ -949,8 +984,63 @@ def _create_connected_broker_account_reference(client: TestClient, db_session: S
     account_details_response = client.get(f"/users/{user_id}/account-details")
     assert account_details_response.status_code == 200
     account_details = account_details_response.json()
+    assert account_details["data_mode"] == "private_real_source"
+    assert account_details["portfolio_scope"]["account_level_feasibility_evaluated"] is False
     assert account_details["accounts"]
-    return user_id, account_details["accounts"][0]["account_reference"]
+    account = account_details["accounts"][0]
+    assert account["account_reference"].startswith("acctref_")
+    assert account["display_label"] == "Swing account"
+    assert account["source_kind"] == "snaptrade"
+    assert account["source_label"] == "SnapTrade"
+    assert account["connection_status_label"]
+    assert account["account_level_feasibility_evaluated"] is False
+    rendered = repr(account_details).lower()
+    for forbidden in (
+        "provider_account_id_secret",
+        "provider_connection_id_secret",
+        "taxable account ending",
+        "raw_payload",
+    ):
+        assert forbidden not in rendered
+    assert not find_forbidden_keys(account_details, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+    return user_id, account["account_reference"]
+
+
+def _assert_saved_scope_preserves_review_selection_with_safe_caveats(
+    saved_scope: dict,
+    preview_scope: dict,
+) -> None:
+    assert saved_scope["review_account"] == preview_scope["review_account"]
+    assert saved_scope["scope_summary_label"] == preview_scope["scope_summary_label"]
+    assert (
+        saved_scope["account_level_feasibility_evaluated"]
+        == preview_scope["account_level_feasibility_evaluated"]
+    )
+
+    saved_portfolio_scope = dict(saved_scope["portfolio_context_scope"])
+    preview_portfolio_scope = dict(preview_scope["portfolio_context_scope"])
+    saved_portfolio_caveats = tuple(saved_portfolio_scope.pop("caveat_codes"))
+    preview_portfolio_caveats = tuple(preview_portfolio_scope.pop("caveat_codes"))
+    assert saved_portfolio_scope == preview_portfolio_scope
+
+    saved_caveats = tuple(saved_scope["scope_caveat_codes"])
+    expected_saved_caveats = _saved_review_safe_caveat_code_tuple(tuple(preview_scope["scope_caveat_codes"]))
+    expected_saved_portfolio_caveats = _saved_review_safe_caveat_code_tuple(preview_portfolio_caveats)
+    assert saved_caveats == expected_saved_caveats
+    assert saved_portfolio_caveats == expected_saved_portfolio_caveats
+
+    rendered_saved_caveats = repr((*saved_caveats, *saved_portfolio_caveats)).lower()
+    assert "buying_power" not in rendered_saved_caveats
+    assert "cash_collateral" not in rendered_saved_caveats
+    assert "collateral_unverified" not in rendered_saved_caveats
+
+    rendered_preview_caveats = repr((*preview_scope["scope_caveat_codes"], *preview_portfolio_caveats)).lower()
+    if any(token in rendered_preview_caveats for token in ("buying_power", "cash_collateral", "collateral_unverified")):
+        assert "liquidity_model_unverified" in saved_caveats or "liquidity_model_unverified" in saved_portfolio_caveats
+        assert (
+            "account_feasibility_not_evaluated" in saved_caveats
+            or "account_feasibility_not_evaluated" in saved_portfolio_caveats
+        )
 
 
 class _CountingEdgarProfileClient:

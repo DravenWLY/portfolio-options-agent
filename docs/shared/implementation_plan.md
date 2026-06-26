@@ -366,6 +366,19 @@ Detailed verification history is archived in:
     boundary. P32A Account Details / nickname-management slice closed by Codex B;
     any future token-authorized connected smoke is deferred follow-up only.
 
+- `P32A-T8` - Real-source golden-path acceptance and remaining blocker map.
+  - Owner: Codex B. Reviewer: Codex A/founder as needed for product acceptance.
+  - Architecture reference:
+    `docs/codex-b-architecture/PHASE_32A_REAL_SOURCE_GOLDEN_PATH_GAP_AUDIT.md`.
+  - Status: done 2026-06-25 by Codex B. Confirms the landed backend (`9c80de2`)
+    and frontend (`d982dcb`) make Account Details nickname management and the
+    searchable review-account selector contract-ready, while the broader
+    real-source golden path is not yet demo-closeout ready. Remaining blockers:
+    token-authorized browser verification, disposable DB Alembic verification for
+    migration `0021`, and a reviewed deterministic feasibility boundary for
+    cash/collateral/current-position truth. Next task: P32A-T9 for Codex C to run
+    disposable DB migration/test verification without real data.
+
 ### Closed Context - Phase 30B Golden Path Prototype Hardening And Demo Readiness
 
 - `P30B-T0` - Open hardening contract and task sequence.

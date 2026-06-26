@@ -23,6 +23,7 @@ import {
   roleStatusIcon,
   roleStatusMeta,
   roleUnavailableText,
+  scopeNoteLabel,
 } from "./reportStatus";
 
 interface AgentRoleSectionProps {
@@ -95,7 +96,7 @@ function PrimaryCard({ role }: { role: SavedAgentTeamRoleSummaryRead }) {
           <ul style={styles.codeList}>
             {role.warning_codes.map((code) => (
               <li key={code} style={styles.codeChip} title={code}>
-                {code}
+                {scopeNoteLabel(code)}
               </li>
             ))}
           </ul>
@@ -240,7 +241,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-sm)",
     padding: "1px 6px",
     fontSize: "var(--font-size-xs)",
-    fontFamily: "var(--mp-font-mono)",
     overflowWrap: "anywhere",
   },
   /* ── context (compact) ── */

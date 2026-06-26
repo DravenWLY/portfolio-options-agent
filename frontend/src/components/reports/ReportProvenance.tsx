@@ -17,7 +17,7 @@ import type {
   ReportPublicEvidenceAttributionRead,
   SavedAgentTeamSummaryRead,
 } from "../../types/api";
-import { evidenceKeyLabel, humanizeCode } from "./reportStatus";
+import { evidenceKeyLabel, humanizeCode, scopeNoteLabel } from "./reportStatus";
 
 interface ReportProvenanceProps {
   status: AgentTeamReportStatus;
@@ -133,7 +133,7 @@ export default function ReportProvenance({
             <ul style={styles.codeList}>
               {warningCodes.map((code) => (
                 <li key={code} style={styles.codeChip} title={code}>
-                  {code}
+                  {scopeNoteLabel(code)}
                 </li>
               ))}
             </ul>
@@ -279,7 +279,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-sm)",
     padding: "1px 6px",
     fontSize: "var(--font-size-xs)",
-    fontFamily: "var(--mp-font-mono)",
     overflowWrap: "anywhere",
   },
 };

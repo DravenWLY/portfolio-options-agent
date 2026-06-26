@@ -601,7 +601,7 @@ a:hover {
 }
 
 .account-details-selector-button[aria-pressed="true"]:hover {
-  border-color: var(--mp-accent-line) !important;
+  border-color: color-mix(in srgb, var(--mp-accent) 35%, var(--mp-rule)) !important;
   background-color: var(--mp-accent-soft) !important;
 }
 
@@ -614,6 +614,60 @@ a:hover {
 .account-details-selector-button:focus:not(:focus-visible),
 .account-details-selector-button:active:not(:focus-visible) {
   outline: 0;
+}
+
+.account-details-top-tab:not(:disabled):hover {
+  color: var(--mp-accent) !important;
+}
+
+.account-details-top-tab[data-active="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--mp-accent);
+}
+
+.account-details-refresh-button:hover {
+  background-color: color-mix(in srgb, var(--mp-accent-soft) 72%, var(--mp-card)) !important;
+}
+
+.account-details-nickname-trigger:hover {
+  opacity: 1 !important;
+  color: var(--mp-accent) !important;
+  background-color: var(--mp-accent-soft) !important;
+  border-color: color-mix(in srgb, var(--mp-accent) 24%, var(--mp-rule)) !important;
+}
+
+.account-details-nickname-trigger::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  transform: translateX(-50%) translateY(2px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+  padding: 5px 7px;
+  border-radius: 4px;
+  background-color: var(--mp-ink);
+  color: var(--mp-card);
+  font-family: var(--mp-font-sans);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  box-shadow: var(--mp-shadow-sm);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+}
+
+.account-details-nickname-trigger:hover::after,
+.account-details-nickname-trigger:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
 }
 
 .report-thread-button:focus:not(:focus-visible),
@@ -674,6 +728,22 @@ a:hover {
 @media (max-width: 900px) {
   .account-details-workspace {
     flex-direction: column;
+  }
+
+  .account-details-workspace > aside {
+    position: relative !important;
+    top: auto !important;
+    max-height: none !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--mp-rule);
+  }
+
+  .account-details-workspace > main > header {
+    flex-direction: column;
+    align-items: stretch !important;
+    min-height: auto !important;
+    padding-top: var(--space-3) !important;
+    padding-bottom: var(--space-3) !important;
   }
 }
 

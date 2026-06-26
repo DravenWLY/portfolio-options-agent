@@ -35,6 +35,7 @@ export type MpIconName =
   | "circle"
   | "menu"
   | "search"
+  | "edit"
   | "send";
 
 interface MpIconProps {
@@ -236,6 +237,13 @@ export default function MpIcon({
         <svg {...svg}>
           <circle cx="11" cy="11" r="7" />
           <path d="M21 21l-4.5-4.5" />
+        </svg>
+      );
+    case "edit":
+      return (
+        <svg {...svg}>
+          <path d="M4 20h4l11-11-4-4L4 16v4z" />
+          <path d="M13 7l4 4" />
         </svg>
       );
     case "send":

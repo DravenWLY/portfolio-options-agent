@@ -326,6 +326,28 @@ export function evidenceKeyLabel(key: string): string {
   return EVIDENCE_KEY_LABELS[key] ?? humanizeCode(key);
 }
 
+/** Friendly display labels for backend-owned scope-note / caveat / warning codes
+ *  (P31A-T3). Static presentation copy over existing reviewed code fields only —
+ *  no new evidence, freshness, actionability, feasibility, or status semantics.
+ *  The raw code stays reachable for audit (title/disclosure). Wording approved by
+ *  Codex B (P31A-T2) and Claude B pre-implementation review. */
+const SCOPE_NOTE_LABELS: Record<string, string> = {
+  buying_power_display_only: "Broker capacity label is context only; not a feasibility input",
+  account_level_feasibility_not_evaluated: "Account-level feasibility not evaluated",
+  current_position_truth_unstable: "Current positions not confirmed",
+  cash_collateral_not_fully_modeled: "Collateral not fully modeled",
+  cash_collateral_policy_not_reviewed: "Cash-collateral policy not reviewed",
+  review_account_scope_membership_unknown: "Account scope membership not confirmed",
+  selected_context_scope: "Specific saved portfolio context",
+  public_evidence_roles_skipped: "Public analyst roles not run",
+};
+
+/** Friendly label for a scope-note / caveat / warning code. Unmapped codes fall
+ *  back to humanizeCode so nothing renders as raw snake_case on the golden path. */
+export function scopeNoteLabel(code: string): string {
+  return SCOPE_NOTE_LABELS[code] ?? humanizeCode(code);
+}
+
 /** Turn a snake/kebab code into a readable phrase for audit display.
  *  Display-only; the raw code is still shown in monospace where it is audit
  *  provenance, matching the existing scope-caveat treatment. */

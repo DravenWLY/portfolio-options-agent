@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import type { AgentTeamScopeSummaryRead } from "../../types/agentTeam";
 import { Badge } from "../shared/mp";
 import { MpIcon } from "../shared/mp";
+import { scopeNoteLabel } from "../reports/reportStatus";
 
 interface AgentTeamScopeBannerProps {
   scope?: AgentTeamScopeSummaryRead | null;
@@ -71,7 +72,7 @@ export default function AgentTeamScopeBanner({ scope }: AgentTeamScopeBannerProp
           </summary>
           <div style={styles.noteChips}>
             {caveatCodes.map((code) => (
-              <code key={code} style={styles.codeChip}>{code}</code>
+              <span key={code} style={styles.codeChip} title={code}>{scopeNoteLabel(code)}</span>
             ))}
           </div>
         </details>

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type {
   SupportedTradeReviewFlow,
   TradeReviewWorkspacePreviewRequest,
@@ -7,11 +7,15 @@ import type {
   TradeReviewSubmission,
   PortfolioContextSelectionMode,
 } from "../../types/tradeReview";
-import type { AccountDetailAccountRead } from "../../types/accountDetails";
+import type { ReviewAccountCandidateRead } from "../../types/accountDetails";
 import SymbolAutocomplete from "./SymbolAutocomplete";
 import { promoteSymbolRecent } from "../../lib/symbolRecents";
 import { useAccountContext } from "../../context/useAccountContext";
 import { accountDetailsApi } from "../../api/accountDetails";
+import MpIcon from "../shared/mp/MpIcon";
+import { scopeNoteLabel } from "../reports/reportStatus";
+
+type CandidatesStatus = "idle" | "loading" | "ready" | "error";
 
 /**
  * TradeReviewForm — collects manual inputs for the four Phase 18A flows.
@@ -32,11 +36,13 @@ import { accountDetailsApi } from "../../api/accountDetails";
 
 type ReviewMode = "portfolio" | "synthetic";
 
+// `value` is the backend-owned context_reference and must stay exactly as-is.
+// Only the visible `label` is friendly; the raw handle stays in `help` for reference.
 const DEMO_CONTEXT_REFS: { value: string; label: string; help: string }[] = [
-  { value: "ctx_demo_latest", label: "ctx_demo_latest", help: "Latest-like demo context (cash + positions present)" },
-  { value: "ctx_demo_stale", label: "ctx_demo_stale", help: "Demo context with a stale broker snapshot" },
-  { value: "ctx_demo_missing", label: "ctx_demo_missing", help: "Demo context with missing/unknown market quotes" },
-  { value: "ctx_demo_empty", label: "ctx_demo_empty", help: "No portfolio context available (empty)" },
+  { value: "ctx_demo_latest", label: "Latest demo context", help: "ctx_demo_latest · cash + positions present" },
+  { value: "ctx_demo_stale", label: "Stale-snapshot demo context", help: "ctx_demo_stale · stale broker snapshot" },
+  { value: "ctx_demo_missing", label: "Missing-quotes demo context", help: "ctx_demo_missing · missing/unknown market quotes" },
+  { value: "ctx_demo_empty", label: "Empty demo context", help: "ctx_demo_empty · no portfolio context available" },
 ];
 
 const FLOW_OPTIONS: {
@@ -77,43 +83,50 @@ export default function TradeReviewForm({
     useState<PortfolioContextSelectionMode>("latest_available");
   const [contextRef, setContextRef] = useState<string>(DEMO_CONTEXT_REFS[0].value);
 
-  // Phase 27C: review-account selection. "" = no review account selected
-  // (submits review_account_selection.mode="unselected"). Accounts come from
-  // the reviewed Account Details overview; only the opaque account_reference is
-  // ever submitted, and only display labels are shown.
+  // Phase 27C / P32A-T3R: review-account selection. "" = no review account
+  // selected (submits review_account_selection.mode="unselected"). Candidates
+  // come from the backend-owned safe selector contract
+  // (GET /users/{uid}/review-account-candidates); only the opaque
+  // account_reference is ever submitted, and only backend display labels are
+  // shown. No raw IDs, balances, positions, lots, or provider payloads. The
+  // selector is a picker only — nickname management lives in Account Details.
   const [reviewAccountRef, setReviewAccountRef] = useState<string>("");
-  const [accounts, setAccounts] = useState<AccountDetailAccountRead[]>([]);
-  const [accountsStatus, setAccountsStatus] =
-    useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [candidates, setCandidates] = useState<ReviewAccountCandidateRead[]>([]);
+  const [candidatesStatus, setCandidatesStatus] = useState<CandidatesStatus>("idle");
+  const [candidatesCaveats, setCandidatesCaveats] = useState<string[]>([]);
 
   useEffect(() => {
     if (reviewMode !== "portfolio" || !userId) {
-      setAccounts([]);
-      setAccountsStatus("idle");
+      setCandidates([]);
+      setCandidatesCaveats([]);
+      setCandidatesStatus("idle");
       return;
     }
     let cancelled = false;
-    setAccountsStatus("loading");
+    setCandidatesStatus("loading");
     accountDetailsApi
-      .get(userId)
+      .listReviewAccountCandidates(userId)
       .then((res) => {
         if (cancelled) return;
-        setAccounts(res.accounts);
-        setAccountsStatus("ready");
-        // Drop a stale selection if the account is no longer present.
+        setCandidates(res.candidates);
+        setCandidatesCaveats(res.caveat_codes);
+        setCandidatesStatus("ready");
+        // Drop a stale selection if the candidate is no longer present.
         setReviewAccountRef((prev) =>
-          res.accounts.some((a) => a.account_reference === prev) ? prev : "",
+          res.candidates.some((c) => c.account_reference === prev) ? prev : "",
         );
       })
       .catch(() => {
         if (cancelled) return;
-        setAccounts([]);
-        setAccountsStatus("error");
+        setCandidates([]);
+        setCandidatesCaveats([]);
+        setCandidatesStatus("error");
       });
     return () => {
       cancelled = true;
     };
   }, [reviewMode, userId]);
+
   const [flowGroup, setFlowGroup] = useState<FlowGroup>("stock_etf_buy");
   const [assetClass, setAssetClass] = useState<"stock" | "etf">("stock");
 
@@ -265,42 +278,15 @@ export default function TradeReviewForm({
             The account where you would manually place this trade. Account-level
             feasibility context is only considered when a review account is selected.
           </p>
-          {!userId ? (
-            <p style={styles.contextNote}>
-              Select a user in the account selector to load connected accounts.
-            </p>
-          ) : accountsStatus === "loading" ? (
-            <p style={styles.contextNote}>Loading connected accounts…</p>
-          ) : accountsStatus === "error" ? (
-            <p style={styles.contextNote}>
-              Connected accounts are unavailable right now. You can still run a review
-              with no review account selected.
-            </p>
-          ) : (
-            <>
-              <label style={styles.fieldFull}>
-                <span style={styles.labelText}>Review account</span>
-                <select
-                  style={{ ...styles.input, ...styles.selectFull }}
-                  value={reviewAccountRef}
-                  onChange={(e) => setReviewAccountRef(e.target.value)}
-                  disabled={busy}
-                >
-                  <option value="">No review account selected</option>
-                  {accounts.map((a) => (
-                    <option key={a.account_reference} value={a.account_reference}>
-                      {a.account_kind_label
-                        ? `${a.display_label} · ${a.account_kind_label}`
-                        : a.display_label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {accountsStatus === "ready" && accounts.length === 0 && (
-                <p style={styles.contextNote}>No connected accounts found for this user.</p>
-              )}
-            </>
-          )}
+          <ReviewAccountCombobox
+            userId={userId}
+            candidates={candidates}
+            status={candidatesStatus}
+            listCaveats={candidatesCaveats}
+            selectedRef={reviewAccountRef}
+            onSelect={setReviewAccountRef}
+            busy={busy}
+          />
         </fieldset>
       )}
 
@@ -459,6 +445,292 @@ export default function TradeReviewForm({
   );
 }
 
+/* ── Review-account selector (P32A-T3R) ─────────────────────────────────────
+ * A clean, searchable single-select combobox. Trade Review picks the review
+ * account only — nickname management lives in Account Details, not here. The
+ * selector renders only backend-owned safe labels, submits the opaque
+ * account_reference as its sole value, and searches over safe labels only. It
+ * never renders or requests raw account IDs, balances, buying power, positions,
+ * lots, or provider payloads. No advice / order / execution wording. */
+function ReviewAccountCombobox({
+  userId,
+  candidates,
+  status,
+  listCaveats,
+  selectedRef,
+  onSelect,
+  busy,
+}: {
+  userId: string | null;
+  candidates: ReviewAccountCandidateRead[];
+  status: CandidatesStatus;
+  listCaveats: string[];
+  selectedRef: string;
+  onSelect: (ref: string) => void;
+  busy: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Close on outside pointer-down while the popover is open.
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [open]);
+
+  // Focus the search field when the popover opens.
+  useEffect(() => {
+    if (open) searchRef.current?.focus();
+  }, [open]);
+
+  if (!userId) {
+    return (
+      <p style={styles.contextNote}>
+        Select a user in the account selector to load connected accounts.
+      </p>
+    );
+  }
+  if (status === "loading") {
+    return <p style={styles.contextNote}>Loading connected accounts…</p>;
+  }
+  if (status === "error") {
+    return (
+      <p style={styles.contextNote}>
+        Connected accounts are unavailable right now. You can still run a review
+        with no review account selected.
+      </p>
+    );
+  }
+  if (status === "ready" && candidates.length === 0) {
+    return (
+      <>
+        <p style={styles.contextNote}>No connected accounts found for this user.</p>
+        <CandidateCaveatNote codes={listCaveats} />
+      </>
+    );
+  }
+
+  const q = query.trim().toLowerCase();
+  const matches = q === "" ? candidates : candidates.filter((c) => candidateMatchesFilter(c, q));
+  const selected = candidates.find((c) => c.account_reference === selectedRef) ?? null;
+  // Option order mirrors what is rendered: index 0 is always the clear row.
+  const optionRefs = ["", ...matches.map((c) => c.account_reference)];
+
+  function choose(ref: string) {
+    onSelect(ref);
+    setOpen(false);
+    setQuery("");
+    triggerRef.current?.focus();
+  }
+
+  function onTriggerKeyDown(e: React.KeyboardEvent<HTMLButtonElement>) {
+    if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      setActiveIndex(0);
+      setOpen(true);
+    }
+  }
+
+  // Keydown bubbles up from the search input; Enter must never submit the form.
+  function onPanelKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(i + 1, optionRefs.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const ref = optionRefs[activeIndex];
+      if (ref !== undefined) choose(ref);
+    }
+  }
+
+  return (
+    <div ref={rootRef} style={styles.combo}>
+      <button
+        ref={triggerRef}
+        type="button"
+        style={styles.comboTrigger}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label="Review account"
+        disabled={busy}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={onTriggerKeyDown}
+      >
+        <span style={styles.comboTriggerBody}>
+          {selected ? (
+            <>
+              <span style={styles.comboValuePrimary}>
+                {selected.account_kind_label
+                  ? `${selected.display_label} · ${selected.account_kind_label}`
+                  : selected.display_label}
+              </span>
+              <span style={styles.comboValueMeta}>
+                <FeasibilityHint candidate={selected} />
+                <span style={styles.comboValueMuted}>{` · ${selected.source_label}`}</span>
+              </span>
+            </>
+          ) : (
+            <span style={styles.comboPlaceholder}>No review account selected</span>
+          )}
+        </span>
+        <MpIcon name="chevron-d" size={14} style={{ flexShrink: 0, color: "var(--mp-mute)" }} />
+      </button>
+
+      {open && (
+        <div style={styles.comboPanel} onKeyDown={onPanelKeyDown}>
+          <div style={styles.comboSearchWrap}>
+            <MpIcon name="search" size={13} style={{ flexShrink: 0, color: "var(--mp-mute)" }} />
+            <input
+              ref={searchRef}
+              style={styles.comboSearch}
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setActiveIndex(0);
+              }}
+              placeholder="Search accounts…"
+              autoComplete="off"
+              spellCheck={false}
+              type="search"
+              aria-label="Search review accounts"
+            />
+          </div>
+          <ul role="listbox" aria-label="Review account candidates" style={styles.comboList}>
+            <ComboRow
+              active={activeIndex === 0}
+              selected={selectedRef === ""}
+              onChoose={() => choose("")}
+              onHover={() => setActiveIndex(0)}
+              primary="No review account selected"
+              secondary="Review without account-level feasibility context"
+            />
+            {matches.map((c, i) => (
+              <ComboRow
+                key={c.account_reference}
+                active={activeIndex === i + 1}
+                selected={selectedRef === c.account_reference}
+                onChoose={() => choose(c.account_reference)}
+                onHover={() => setActiveIndex(i + 1)}
+                primary={c.display_label}
+                secondary={[c.account_kind_label, c.source_label, c.connection_status_label]
+                  .filter(Boolean)
+                  .join(" · ")}
+                tertiary={<FeasibilityHint candidate={c} />}
+              />
+            ))}
+            {matches.length === 0 && (
+              <li style={styles.comboEmpty}>No accounts match “{query.trim()}”.</li>
+            )}
+          </ul>
+        </div>
+      )}
+      <CandidateCaveatNote codes={listCaveats} />
+    </div>
+  );
+}
+
+function ComboRow({
+  active,
+  selected,
+  onChoose,
+  onHover,
+  primary,
+  secondary,
+  tertiary,
+}: {
+  active: boolean;
+  selected: boolean;
+  onChoose: () => void;
+  onHover: () => void;
+  primary: string;
+  secondary: string;
+  tertiary?: ReactNode;
+}) {
+  return (
+    <li
+      role="option"
+      aria-selected={selected}
+      onClick={onChoose}
+      onMouseEnter={onHover}
+      style={{ ...styles.comboRow, ...(active ? styles.comboRowActive : {}) }}
+    >
+      <span style={styles.comboRowDot} aria-hidden="true">
+        {selected && <MpIcon name="check" size={12} />}
+      </span>
+      <span style={styles.comboRowBody}>
+        <span style={styles.comboRowPrimary}>{primary}</span>
+        {secondary && <span style={styles.comboRowSecondary}>{secondary}</span>}
+        {tertiary && <span style={styles.comboRowTertiary}>{tertiary}</span>}
+      </span>
+    </li>
+  );
+}
+
+/* Compact honest signal: whether account-level feasibility was evaluated.
+ * Icon + text (never color-only). The label text is backend-owned. */
+function FeasibilityHint({ candidate }: { candidate: ReviewAccountCandidateRead }) {
+  return (
+    <span style={styles.feasibility}>
+      <MpIcon
+        name={candidate.account_level_feasibility_evaluated ? "check" : "info"}
+        size={11}
+        style={{ verticalAlign: "middle", marginRight: 4, color: "var(--mp-mute)" }}
+      />
+      {candidate.account_level_feasibility_label}
+    </span>
+  );
+}
+
+/* Compact selector-level note (e.g. candidates unavailable). Backend-owned
+ * caveat codes are humanized and joined on one line — never a long stack. */
+function CandidateCaveatNote({ codes }: { codes: string[] }) {
+  if (codes.length === 0) return null;
+  return (
+    <p style={styles.contextNote}>
+      <MpIcon
+        name="info"
+        size={11}
+        style={{ verticalAlign: "middle", marginRight: 4, color: "var(--mp-mute)" }}
+      />
+      {codes.map((c) => scopeNoteLabel(c)).join(" · ")}
+    </p>
+  );
+}
+
+function candidateMatchesFilter(c: ReviewAccountCandidateRead, q: string): boolean {
+  // Filter only over safe, backend-owned labels — never the opaque
+  // account_reference or any private value.
+  const haystack = [
+    c.display_label,
+    c.account_kind_label,
+    c.source_label,
+    c.connection_status_label,
+    c.cash_state_label,
+    c.account_level_feasibility_label,
+    c.last_successful_sync_label ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(q);
+}
+
 function TextField({
   label,
   value,
@@ -603,5 +875,142 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--mp-ink-2)",
     margin: 0,
     lineHeight: 1.6,
+  },
+
+  /* ── Review-account searchable combobox (P32A-T3R) ── */
+  combo: {
+    position: "relative",
+    width: "100%",
+    minWidth: 0,
+  },
+  comboTrigger: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "var(--space-2)",
+    width: "100%",
+    textAlign: "left",
+    padding: "var(--space-2) var(--space-3)",
+    border: "1px solid var(--mp-rule)",
+    borderRadius: "var(--radius-sm)",
+    backgroundColor: "var(--mp-paper-2)",
+    color: "var(--mp-ink)",
+    cursor: "pointer",
+    minWidth: 0,
+  },
+  comboTriggerBody: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 1,
+    minWidth: 0,
+    flex: 1,
+  },
+  comboValuePrimary: {
+    fontSize: "var(--font-size-sm)",
+    fontWeight: 600,
+    color: "var(--mp-ink)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  comboValueMeta: {
+    fontSize: "var(--font-size-xs)",
+    color: "var(--mp-ink-2)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  comboValueMuted: {
+    color: "var(--mp-mute)",
+  },
+  comboPlaceholder: {
+    fontSize: "var(--font-size-sm)",
+    color: "var(--mp-mute)",
+  },
+  comboPanel: {
+    position: "absolute",
+    top: "calc(100% + 4px)",
+    left: 0,
+    right: 0,
+    zIndex: 30,
+    backgroundColor: "var(--mp-card)",
+    border: "1px solid var(--mp-rule)",
+    borderRadius: "var(--radius-sm)",
+    boxShadow: "var(--mp-shadow-md)",
+    overflow: "hidden",
+    minWidth: 0,
+  },
+  comboSearchWrap: {
+    display: "flex",
+    alignItems: "center",
+    gap: "var(--space-2)",
+    padding: "var(--space-2) var(--space-3)",
+    borderBottom: "1px solid var(--mp-rule)",
+  },
+  comboSearch: {
+    flex: 1,
+    minWidth: 0,
+    border: "none",
+    outline: "none",
+    background: "transparent",
+    color: "var(--mp-ink)",
+    fontSize: "var(--font-size-sm)",
+  },
+  comboList: {
+    listStyle: "none",
+    margin: 0,
+    padding: "var(--space-1)",
+    maxHeight: 240,
+    overflowY: "auto",
+    display: "flex",
+    flexDirection: "column",
+    gap: 1,
+  },
+  comboRow: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "var(--space-2)",
+    padding: "var(--space-2) var(--space-2)",
+    borderRadius: "var(--radius-sm)",
+    cursor: "pointer",
+    minWidth: 0,
+  },
+  comboRowActive: {
+    backgroundColor: "var(--mp-paper-2)",
+  },
+  comboRowDot: {
+    flexShrink: 0,
+    width: 14,
+    marginTop: 2,
+    color: "var(--mp-accent)",
+    display: "inline-flex",
+    justifyContent: "center",
+  },
+  comboRowBody: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 1,
+    minWidth: 0,
+  },
+  comboRowPrimary: {
+    fontSize: "var(--font-size-sm)",
+    fontWeight: 600,
+    color: "var(--mp-ink)",
+  },
+  comboRowSecondary: {
+    fontSize: "var(--font-size-xs)",
+    color: "var(--mp-mute)",
+  },
+  comboRowTertiary: {
+    fontSize: "var(--font-size-xs)",
+    color: "var(--mp-ink-2)",
+  },
+  comboEmpty: {
+    fontSize: "var(--font-size-xs)",
+    color: "var(--mp-mute)",
+    padding: "var(--space-2) var(--space-2)",
+  },
+  feasibility: {
+    color: "var(--mp-ink-2)",
   },
 };

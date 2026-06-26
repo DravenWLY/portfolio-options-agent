@@ -16,6 +16,7 @@ import type {
 import type { RiskSeverity } from "../../types/api";
 import { MpIcon, type MpIconName } from "../shared/mp";
 import SaveReviewSnapshot from "./SaveReviewSnapshot";
+import { scopeNoteLabel } from "../reports/reportStatus";
 
 /**
  * TradeReviewResults — renders the sanitized TradeReviewWorkspaceRead.
@@ -348,7 +349,7 @@ function ScopeMetadataPanel({ scope }: { scope: ReportScopeMetadataRead }) {
           <span style={styles.scopeChipBlockLabel}>Scope notes</span>
           <ul style={styles.scopeChipList}>
             {scope.scope_caveat_codes.map((c) => (
-              <li key={c} style={styles.scopeCaveatCode}>{c}</li>
+              <li key={c} style={styles.scopeCaveatCode} title={c}>{scopeNoteLabel(c)}</li>
             ))}
           </ul>
         </div>
@@ -1067,8 +1068,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   scopeChipList: { margin: 0, padding: 0, listStyle: "none", display: "flex", flexWrap: "wrap", gap: "var(--space-1)" },
   scopeCaveatCode: {
-    fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", fontFamily: "var(--mp-font-mono, monospace)",
+    fontSize: "var(--font-size-xs)", color: "var(--mp-mute)",
     border: "1px solid var(--mp-rule)", borderRadius: "var(--radius-sm)", padding: "1px 6px",
+    overflowWrap: "anywhere", minWidth: 0,
   },
 
   /* Disclosure section */

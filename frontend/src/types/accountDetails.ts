@@ -91,6 +91,39 @@ export interface AccountDetailAccountRead {
   caveat_codes: string[];
 }
 
+/* ── Phase 32A review-account selector candidates ──────────────────────────
+ * Mirrors backend `ReviewAccountCandidateRead` / `ReviewAccountCandidateListRead`
+ * (P32A-T2). This is the *safe* selector contract for Trade Review's
+ * review-account picker: backend-owned display labels plus freshness/shape
+ * summaries only. It deliberately omits raw account IDs, provider IDs,
+ * balances, cash values, buying power, positions, quantities, lots, and raw
+ * payloads — those never reach the selector. The frontend submits only the
+ * opaque `account_reference` and renders the labels verbatim. */
+export interface ReviewAccountCandidateRead {
+  account_reference: string;
+  display_label: string;
+  account_kind_label: string;
+  source_kind: AccountDetailSourceKind;
+  source_label: string;
+  connection_status_label: string;
+  last_successful_sync_label: string | null;
+  broker_snapshot_freshness: PortfolioContextFreshnessRead;
+  market_quote_freshness: PortfolioContextFreshnessRead | null;
+  portfolio_shape: PortfolioContextShapeRead;
+  cash_state_label: string;
+  account_level_feasibility_evaluated: boolean;
+  account_level_feasibility_label: string;
+  caveat_codes: string[];
+}
+
+export interface ReviewAccountCandidateListRead {
+  data_mode: AccountDetailsDataMode;
+  /** ISO 8601 datetime string from backend. */
+  generated_at: string;
+  candidates: ReviewAccountCandidateRead[];
+  caveat_codes: string[];
+}
+
 /* ── Top-level read ────────────────────────────────────────────────────── */
 
 export interface AccountDetailsRead {

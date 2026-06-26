@@ -154,7 +154,7 @@ export default function PortfolioContextPage() {
             <table style={styles.tbl}>
               <thead>
                 <tr>
-                  <Th>Reference</Th>
+                  <Th>Context</Th>
                   <Th>Label</Th>
                   <Th>Source</Th>
                   <Th>Positions</Th>
@@ -173,7 +173,9 @@ export default function PortfolioContextPage() {
                         : undefined
                     }
                   >
-                    <Td mono>{ctx.context_reference}</Td>
+                    <Td title={ctx.context_reference}>
+                      {contextReferenceLabel(ctx.context_reference)}
+                    </Td>
                     <Td>{ctx.context_label}</Td>
                     <Td mono>{ctx.source_kind}</Td>
                     <Td mono>
@@ -248,7 +250,6 @@ function ContextDetailView({ detail }: { detail: PortfolioContextDetailRead }) {
       {/* Summary panel */}
       <Panel
         title={ctx.context_label}
-        tag={ctx.context_reference}
         right={isDemoMode ? <DemoChip /> : undefined}
       >
         <KV rows={[
@@ -256,6 +257,7 @@ function ContextDetailView({ detail }: { detail: PortfolioContextDetailRead }) {
           ["Stock positions (count)", String(ctx.portfolio_shape.stock_position_count)],
           ["Option positions (count)", String(ctx.portfolio_shape.option_position_count)],
           ["Cash state", ctx.cash_state_label],
+          ["Reference (audit)", ctx.context_reference],
         ]} />
         {ctx.available_flows.length > 0 && (
           <div style={styles.flowsRow}>
@@ -416,6 +418,28 @@ function flowLabel(flow: string): string {
   return flow.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * Friendly, non-technical display label for an opaque portfolio-context
+ * reference (P31A-T4). Presentation-only: the backend-owned `context_reference`
+ * is never changed and remains the row key, selection value, detail request
+ * value, and route state. The raw handle stays reachable for audit via the list
+ * row `title` hover and the detail "Reference (audit)" row. Labels mirror the
+ * Trade Review demo-context selector wording for cross-surface consistency.
+ */
+const CONTEXT_REFERENCE_LABELS: Record<string, string> = {
+  ctx_demo_latest: "Latest demo context",
+  ctx_demo_stale: "Stale-snapshot demo context",
+  ctx_demo_missing: "Missing-quotes demo context",
+  ctx_demo_empty: "Empty demo context",
+};
+
+function contextReferenceLabel(reference: string): string {
+  const mapped = CONTEXT_REFERENCE_LABELS[reference];
+  if (mapped) return mapped;
+  if (reference.startsWith("ctx_demo")) return "Demo portfolio context";
+  return "Saved portfolio context";
+}
+
 /* ── Local sub-components ─────────────────────────────────────────────── */
 
 function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
@@ -427,9 +451,9 @@ function Th({ children, align = "left" }: { children: React.ReactNode; align?: "
     }}>{children}</th>
   );
 }
-function Td({ children, mono, align = "left" }: { children: React.ReactNode; mono?: boolean; align?: "left" | "right" }) {
+function Td({ children, mono, align = "left", title }: { children: React.ReactNode; mono?: boolean; align?: "left" | "right"; title?: string }) {
   return (
-    <td style={{
+    <td title={title} style={{
       textAlign: align, fontSize: "var(--font-size-sm)", color: "var(--mp-ink-2)",
       padding: "10px 12px", borderBottom: "1px solid var(--mp-rule)",
       fontFamily: mono ? "var(--mp-font-mono)" : undefined,

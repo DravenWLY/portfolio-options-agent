@@ -1,5 +1,5 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties, type MutableRefObject, type ReactNode } from "react";
-import { Badge, DemoChip, KV, MpIcon, PageHeader, Panel, SafetyStrip, type MpTone } from "../components/shared/mp";
+import { Fragment, useCallback, useEffect, useId, useRef, useState, type CSSProperties, type MutableRefObject, type ReactNode } from "react";
+import { Badge, DemoChip, MpIcon, PageHeader, SafetyStrip, type MpTone } from "../components/shared/mp";
 import { LoadingSkeleton, ErrorState, EmptyState } from "../components/shared/StateViews";
 import { useAccountContext } from "../context/useAccountContext";
 import { accountDetailsApi } from "../api/accountDetails";
@@ -15,8 +15,7 @@ import type {
   AccountTaxLotDisplayRowRead,
   AccountTaxLotPaginationRead,
   AccountDetailsReadinessCaveatRead,
-  PortfolioScopeRead,
-  ReviewAccountRead,
+  ReviewAccountCandidateRead,
   AccountScopeRole,
 } from "../types/accountDetails";
 import type { ReadinessSnapshotStatus } from "../types/portfolioContext";
@@ -240,6 +239,38 @@ export default function AccountDetailsPage() {
     return () => { cancelled = true; };
   }, [detailReloadKey, selectedAccountRef, userId]);
 
+  // P32A-T5: after a nickname save/clear the backend returns the refreshed
+  // candidate (the authoritative display label). Apply it as the source of
+  // truth to the overview row, the scope review-account label, and the open
+  // selected-detail header — no extra fetch needed; only display_label moves.
+  const handleNicknameUpdated = useCallback((updated: ReviewAccountCandidateRead) => {
+    setData((prev) =>
+      prev
+        ? {
+            ...prev,
+            accounts: prev.accounts.map((a) =>
+              a.account_reference === updated.account_reference
+                ? { ...a, display_label: updated.display_label }
+                : a,
+            ),
+            review_account:
+              prev.review_account &&
+              prev.review_account.account_reference === updated.account_reference
+                ? { ...prev.review_account, display_label: updated.display_label }
+                : prev.review_account,
+          }
+        : prev,
+    );
+    setSelectedDetail((prev) => {
+      if (prev && prev.account_reference === updated.account_reference) {
+        const next = { ...prev, display_label: updated.display_label };
+        selectedDetailRef.current = next;
+        return next;
+      }
+      return prev;
+    });
+  }, []);
+
   /* ── No user ─────────────────────────────────────────────────────────── */
   if (!userId) {
     return (
@@ -267,7 +298,7 @@ export default function AccountDetailsPage() {
       <PageHeader
         eyebrow="Data sources · account details"
         title="Account Details"
-        sub="Connected accounts, snapshot freshness, exposure labels, and the scope used for portfolio-aware review. Read-only."
+        sub="Connected account detail, snapshot freshness, exposure labels, and private display rows. Read-only."
         right={
           isDemo ? <DemoChip /> :
           badge ? <Badge tone={badge.tone} dot title={badge.title}>{badge.label}</Badge> :
@@ -289,9 +320,8 @@ export default function AccountDetailsPage() {
           />
         ) : (
           <>
-            <ScopePanel scope={data.portfolio_scope} reviewAccount={data.review_account} />
-
             <AccountWorkspace
+              userId={userId}
               accounts={data.accounts}
               selectedAccount={selectedAccount}
               selectedDetail={selectedDetail}
@@ -302,6 +332,7 @@ export default function AccountDetailsPage() {
               onRetrySelected={() => setDetailReloadKey((prev) => prev + 1)}
               syncState={syncState}
               onRefreshSelected={() => { void refreshSelectedAccount(); }}
+              onNicknameUpdated={handleNicknameUpdated}
             />
 
             {/* Provenance + top-level data notes — shown once, not per card */}
@@ -323,55 +354,10 @@ export default function AccountDetailsPage() {
   );
 }
 
-/* ── Scope summary ─────────────────────────────────────────────────────── */
-
-function ScopePanel({
-  scope, reviewAccount,
-}: {
-  scope: PortfolioScopeRead;
-  reviewAccount: ReviewAccountRead | null;
-}) {
-  return (
-    <Panel title="Review scope" tag="portfolio scope" accent>
-      {/* Backend scope label is self-describing (e.g. "Portfolio scope: All
-          connected accounts") — render it verbatim as the headline. */}
-      <p style={styles.scopeHeadline}>{scope.display_label}</p>
-      <KV compact rows={[
-        ...(reviewAccount
-          ? ([["Review account", reviewAccount.account_kind_label
-              ? `${reviewAccount.display_label} · ${reviewAccount.account_kind_label}`
-              : reviewAccount.display_label]] as [string, string][])
-          : []),
-        ["Feasibility", scope.account_level_feasibility_label],
-      ]} />
-
-      {scope.included_account_labels.length > 0 && (
-        <div style={styles.scopeChips}>
-          <span style={styles.scopeChipsLabel}>Included</span>
-          <div style={styles.chipRow}>
-            {scope.included_account_labels.map((l) => (
-              <Badge key={l} tone="live" dot={false}>{l}</Badge>
-            ))}
-          </div>
-        </div>
-      )}
-      {scope.excluded_account_labels.length > 0 && (
-        <div style={styles.scopeChips}>
-          <span style={styles.scopeChipsLabel}>Excluded</span>
-          <div style={styles.chipRow}>
-            {scope.excluded_account_labels.map((l) => (
-              <Badge key={l} tone="mute" dot={false}>{l}</Badge>
-            ))}
-          </div>
-        </div>
-      )}
-    </Panel>
-  );
-}
-
 /* ── Account workspace ────────────────────────────────────────────────── */
 
 function AccountWorkspace({
+  userId,
   accounts,
   selectedAccount,
   selectedDetail,
@@ -382,7 +368,9 @@ function AccountWorkspace({
   onRetrySelected,
   syncState,
   onRefreshSelected,
+  onNicknameUpdated,
 }: {
+  userId: string;
   accounts: AccountDetailAccountRead[];
   selectedAccount: AccountDetailAccountRead | null;
   selectedDetail: SelectedAccountDetailsRead | null;
@@ -393,6 +381,7 @@ function AccountWorkspace({
   onRetrySelected: () => void;
   syncState: SyncUiState;
   onRefreshSelected: () => void;
+  onNicknameUpdated: (updated: ReviewAccountCandidateRead) => void;
 }) {
   if (accounts.length === 0) {
     return (
@@ -426,24 +415,107 @@ function AccountWorkspace({
       </aside>
 
       <main style={styles.detailPane}>
-        {selectedAccount ? (
-          <SelectedAccountDetail
-            acc={selectedAccount}
-            detail={selectedDetail}
-            status={detailStatus}
-            error={detailError}
-            onRetry={onRetrySelected}
-            syncState={syncState}
-            onRefresh={onRefreshSelected}
-          />
-        ) : (
-          <EmptyState
-            title="Select an account"
-            body="Choose an account from the list to inspect its private detail summary."
-          />
-        )}
+        <AccountWorkspaceTopBar
+          syncState={syncState}
+          onRefresh={onRefreshSelected}
+        />
+        <div style={styles.detailCanvas}>
+          {selectedAccount ? (
+            <SelectedAccountDetail
+              userId={userId}
+              acc={selectedAccount}
+              detail={selectedDetail}
+              status={detailStatus}
+              error={detailError}
+              onRetry={onRetrySelected}
+              onNicknameUpdated={onNicknameUpdated}
+            />
+          ) : (
+            <EmptyState
+              title="Select an account"
+              body="Choose an account from the list to inspect its private detail summary."
+            />
+          )}
+        </div>
       </main>
     </section>
+  );
+}
+
+// Founder-demo navigation. Dashboard is the only built surface, so it is the
+// current view and the rest are honestly disabled "Soon" — no fake tab system,
+// no incomplete tablist/tabpanel ARIA. Rendered as a simple segmented nav.
+const ACCOUNT_NAV_ITEMS = ["Dashboard", "Analytics", "Reports", "Settings"] as const;
+
+function AccountWorkspaceTopBar({
+  syncState,
+  onRefresh,
+}: {
+  syncState: SyncUiState;
+  onRefresh: () => void;
+}) {
+  const isSyncing = syncState.status === "syncing";
+  const isRunning = syncState.status === "running";
+  const disabled = isSyncing;
+  const label = isSyncing ? "Refreshing" : "Refresh snapshot";
+  const title = isRunning
+    ? "Sync already in progress. You can try again later."
+    : "Request a fresh broker snapshot for this account.";
+
+  return (
+    <header style={styles.workspaceTopBar}>
+      <nav style={styles.workspaceTabs} aria-label="Account workspace navigation">
+        {ACCOUNT_NAV_ITEMS.map((item) =>
+          item === "Dashboard" ? (
+            <span
+              key={item}
+              className="account-details-top-tab"
+              style={{ ...styles.workspaceTab, ...styles.workspaceTabActive }}
+              data-active="true"
+              aria-current="page"
+            >
+              {item}
+            </span>
+          ) : (
+            <button
+              key={item}
+              type="button"
+              className="account-details-top-tab"
+              style={{ ...styles.workspaceTab, ...styles.workspaceTabDisabled }}
+              disabled
+              title="Coming soon"
+            >
+              {item}
+              <span style={styles.soonTag}>Soon</span>
+            </button>
+          ),
+        )}
+      </nav>
+      <div style={styles.workspaceActions}>
+        <div style={styles.topRefreshGroup}>
+          <button
+            type="button"
+            className="account-details-refresh-button"
+            onClick={onRefresh}
+            disabled={disabled}
+            aria-label={label}
+            title={title}
+            style={{
+              ...styles.topRefreshBtn,
+              opacity: disabled ? 0.62 : 1,
+              cursor: isSyncing ? "wait" : "pointer",
+            }}
+          >
+            <span>{label}</span>
+            <MpIcon name="refresh" size={13} style={isSyncing ? styles.refreshIconSpin : undefined} />
+          </button>
+          <RefreshSnapshotStatus syncState={syncState} />
+        </div>
+        <span style={styles.profileAvatar} aria-label="User profile" role="img">
+          <MpIcon name="agent" size={16} />
+        </span>
+      </div>
+    </header>
   );
 }
 
@@ -475,7 +547,9 @@ function AccountSelectorItem({
       <span
         style={{
           ...styles.selectorStripe,
-          backgroundColor: stripeMeta ? roleColor(stripeMeta.tone) : "var(--mp-rule-strong)",
+          backgroundColor: selected
+            ? "var(--mp-accent)"
+            : (stripeMeta ? roleColor(stripeMeta.tone) : "var(--mp-rule-strong)"),
         }}
         aria-hidden="true"
       />
@@ -499,21 +573,21 @@ function AccountSelectorItem({
 }
 
 function SelectedAccountDetail({
+  userId,
   acc,
   detail,
   status,
   error,
   onRetry,
-  syncState,
-  onRefresh,
+  onNicknameUpdated,
 }: {
+  userId: string;
   acc: AccountDetailAccountRead;
   detail: SelectedAccountDetailsRead | null;
   status: DetailLoadStatus;
   error: string | null;
   onRetry: () => void;
-  syncState: SyncUiState;
-  onRefresh: () => void;
+  onNicknameUpdated: (updated: ReviewAccountCandidateRead) => void;
 }) {
   const header = detail ?? acc;
   const caveatCodes = detail?.caveat_codes ?? acc.caveat_codes;
@@ -523,19 +597,19 @@ function SelectedAccountDetail({
   const isStaleError = status === "error" && hasDetail;
 
   return (
-    <Panel
-      title="Selected account"
-      right={<RoleBadges roles={acc.scope_roles} />}
-      accent={acc.scope_roles.includes("review_account")}
-      toneLeft={acc.scope_roles.includes("excluded_from_scope") ? "mute" : undefined}
-    >
       <article style={styles.detailArticle}>
         <header style={styles.detailHeader}>
           <div style={styles.detailTitleBlock}>
-            <h2 className="mp-display" style={styles.detailTitle}>{header.display_label}</h2>
+            <span style={styles.detailEyebrow}>Selected account</span>
+            <NicknameEditableTitle
+              userId={userId}
+              accountReference={acc.account_reference}
+              label={header.display_label}
+              onUpdated={onNicknameUpdated}
+            />
             <p style={styles.detailKind}>{header.account_kind_label}</p>
           </div>
-          <RefreshSnapshotControl syncState={syncState} onRefresh={onRefresh} />
+          <RoleBadges roles={acc.scope_roles} />
         </header>
 
         <div style={styles.metaRow}>
@@ -594,58 +668,159 @@ function SelectedAccountDetail({
           </>
         )}
       </article>
-    </Panel>
   );
 }
 
 /**
- * Compact refresh control for the selected-account header (P27B-T19).
- * Uses only the opaque-sync bridge (POST /users/{uid}/account-details/
- * {account_reference}/sync). The button stays quiet in the layout: it
- * sits beside the title with the same icon+text idiom used elsewhere
- * (Economic awareness). The status message below the button is short and
- * shown only when the latest attempt finished or is in flight — never
- * alarming and never speculative. Backend `message` is rendered verbatim
- * when available; the 409 "running" and unexpected-error cases fall back
- * to a local, non-alarming label.
+ * P32A-T5: user-owned display-name editor for the selected account header.
+ *
+ * Collapsed, it shows the backend display label plus a small "Edit display
+ * name" icon action. Editing reveals a compact inline input with Save / Clear /
+ * Cancel. It sends only the opaque account_reference and the nickname text (or
+ * null to clear) to PATCH /users/{uid}/account-details/{account_reference}/
+ * nickname; the backend owns validation, normalization, allowed characters,
+ * length, and private-token rejection. The refreshed candidate the backend
+ * returns is the source of truth for the new label. No raw IDs, balances,
+ * holdings, or provider data are sent or shown, and nothing is stored locally.
  */
-function RefreshSnapshotControl({
-  syncState,
-  onRefresh,
+function NicknameEditableTitle({
+  userId,
+  accountReference,
+  label,
+  onUpdated,
 }: {
-  syncState: SyncUiState;
-  onRefresh: () => void;
+  userId: string;
+  accountReference: string;
+  label: string;
+  onUpdated: (updated: ReviewAccountCandidateRead) => void;
 }) {
-  const isSyncing = syncState.status === "syncing";
-  const isRunning = syncState.status === "running";
-  const disabled = isSyncing;
-  const label = isSyncing ? "Refreshing" : "Refresh snapshot";
-  const title = isRunning
-    ? "Sync already in progress. You can try again later."
-    : "Request a fresh broker snapshot for this account.";
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // When the inline editor closes, return focus to the trigger so keyboard and
+  // screen-reader users are not dropped to document.body as the input unmounts.
+  const restoreFocusRef = useRef(false);
+  const hintId = useId();
 
+  useEffect(() => {
+    if (!editing && restoreFocusRef.current) {
+      restoreFocusRef.current = false;
+      triggerRef.current?.focus();
+    }
+  }, [editing]);
+
+  function closeEditor() {
+    restoreFocusRef.current = true;
+    setEditing(false);
+    setError(null);
+  }
+
+  async function submit(nickname: string | null) {
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await accountDetailsApi.updateNickname(userId, accountReference, nickname);
+      onUpdated(updated);
+      restoreFocusRef.current = true;
+      setEditing(false);
+      setValue("");
+    } catch (err) {
+      setError(
+        err instanceof ApiRequestError
+          ? err.detail
+          : err instanceof Error
+            ? err.message
+            : "Could not update the display name.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div style={styles.nicknameTitleRow}>
+        <h2 className="mp-display" style={styles.detailTitle}>{label}</h2>
+        <button
+          ref={triggerRef}
+          type="button"
+          className="account-details-nickname-trigger"
+          style={styles.nicknameEditBtn}
+          aria-label="Edit account name"
+          title="Edit account name"
+          data-tooltip="Edit account name"
+          onClick={() => {
+            setValue("");
+            setError(null);
+            setEditing(true);
+          }}
+        >
+          <MpIcon name="edit" size={15} strokeWidth={1.8} />
+        </button>
+      </div>
+    );
+  }
+
+  const trimmed = value.trim();
   return (
-    <div style={styles.refreshGroup}>
-      <button
-        type="button"
-        onClick={onRefresh}
-        disabled={disabled}
-        aria-label={label}
-        title={title}
-        style={{
-          ...styles.refreshBtn,
-          opacity: disabled ? 0.62 : 1,
-          cursor: isSyncing ? "wait" : "pointer",
-        }}
-      >
-        <MpIcon
-          name="refresh"
-          size={13}
-          style={isSyncing ? styles.refreshIconSpin : undefined}
+    <div style={styles.nicknameEditor}>
+      <div style={styles.nicknameInputRow}>
+        <input
+          style={styles.nicknameInput}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (!saving) submit(trimmed === "" ? null : trimmed);
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              closeEditor();
+            }
+          }}
+          placeholder="Display name"
+          aria-label="Display name"
+          aria-describedby={hintId}
+          maxLength={60}
+          autoFocus
+          disabled={saving}
+          autoComplete="off"
+          spellCheck={false}
         />
-        <span>{label}</span>
-      </button>
-      <RefreshSnapshotStatus syncState={syncState} />
+        <button
+          type="button"
+          style={styles.nicknameSave}
+          onClick={() => submit(trimmed === "" ? null : trimmed)}
+          disabled={saving}
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button
+          type="button"
+          style={styles.nicknameGhost}
+          onClick={() => submit(null)}
+          disabled={saving}
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          style={styles.nicknameGhost}
+          onClick={closeEditor}
+          disabled={saving}
+        >
+          Cancel
+        </button>
+      </div>
+      {error && (
+        <p style={styles.nicknameError} role="alert">
+          <MpIcon name="alert" size={11} style={{ verticalAlign: "middle", marginRight: 4 }} />
+          {error}
+        </p>
+      )}
+      <p id={hintId} style={styles.nicknameHint}>This changes only your Portfolio Copilot label.</p>
     </div>
   );
 }
@@ -877,9 +1052,6 @@ function EquityRows({ rows }: { rows: AccountEquityPositionDisplayRowRead[] }) {
     <RowSection title="Stock / ETF / fund positions" count={rows.length} empty="No equity position display rows are available for this account.">
       {rows.length > 0 && (
         <div style={styles.tableScroller}>
-          {/* Brokerage-style column ordering: identity, then price/value/gain
-              up front, then quantity, then cost basis. Quantity is demoted
-              because the value/gain columns dominate scanability. */}
           <table style={{ ...styles.dataTable, minWidth: tableMinWidth(columnCount) }}>
             <thead>
               <tr>
@@ -969,8 +1141,6 @@ function OptionRows({ rows }: { rows: AccountOptionPositionDisplayRowRead[] }) {
   const showCostBasis = rows.some((row) => isMeaningfulDisplayLabel(row.cost_basis_label));
   const showTotalGainLoss = rows.some((row) => isMeaningfulDisplayLabel(row.total_gain_loss_label));
   const showGainLossPercent = rows.some((row) => isMeaningfulDisplayLabel(row.gain_loss_percent_label));
-  // Multiplier is demoted into the expanded panel (low-info for standard 100x
-  // contracts); expansion is decided per row by hasOptionExpandedDetail.
   const columnCount = 5 +
     Number(showLastPrice) +
     Number(showMarketValue) +
@@ -991,9 +1161,6 @@ function OptionRows({ rows }: { rows: AccountOptionPositionDisplayRowRead[] }) {
     <RowSection title="Option positions" count={rows.length} empty="No option position display rows are available for this account.">
       {rows.length > 0 && (
         <div style={styles.tableScroller}>
-          {/* Brokerage-style option ordering: contract identity (with side and
-              expiration secondary), then price/value/gain up front, then
-              quantity, then cost basis. */}
           <table style={{ ...styles.dataTable, minWidth: tableMinWidth(columnCount) }}>
             <thead>
               <tr>
@@ -1465,7 +1632,11 @@ function AccountDetailsSafetyStrip() {
 /* ── Styles ───────────────────────────────────────────────────────────── */
 
 const styles: Record<string, CSSProperties> = {
-  page: { display: "flex", flexDirection: "column", gap: "var(--space-5)", maxWidth: 1440, margin: "0 auto", color: "var(--mp-ink)" },
+  page: {
+    display: "flex", flexDirection: "column", gap: "var(--space-5)",
+    maxWidth: 1440, margin: "0 auto", color: "var(--mp-ink)",
+    fontFamily: "\"Hanken Grotesk\", var(--mp-font-sans)",
+  },
 
   /* Scope panel */
   scopeHeadline: { margin: 0, fontSize: "var(--font-size-md)", fontWeight: 600, color: "var(--mp-ink)", lineHeight: 1.3 },
@@ -1477,11 +1648,60 @@ const styles: Record<string, CSSProperties> = {
   chipRow: { display: "flex", gap: "var(--space-1)", flexWrap: "wrap" },
 
   /* Account workspace */
-  workspace: { display: "flex", alignItems: "stretch", gap: "var(--space-4)", minWidth: 0 },
-  selectorPane: {
-    flex: "0 0 272px", minWidth: 236, display: "flex", flexDirection: "column", gap: "var(--space-3)",
+  workspace: {
+    display: "flex", alignItems: "stretch", gap: 0, minWidth: 0,
+    border: "1px solid var(--mp-rule)", borderRadius: 4,
+    backgroundColor: "var(--mp-card)", boxShadow: "var(--mp-shadow-sm)",
+    overflow: "clip",
   },
-  detailPane: { flex: "1 1 560px", minWidth: 0 },
+  selectorPane: {
+    flex: "0 0 280px", minWidth: 236, display: "flex", flexDirection: "column", gap: "var(--space-3)",
+    alignSelf: "stretch", padding: "var(--space-4)", borderRight: "1px solid var(--mp-rule)",
+    backgroundColor: "var(--mp-card)", position: "sticky", top: 0,
+    maxHeight: "calc(100vh - var(--space-6))", overflow: "hidden",
+  },
+  detailPane: { flex: "1 1 720px", minWidth: 0, backgroundColor: "var(--mp-paper)", display: "flex", flexDirection: "column" },
+  detailCanvas: {
+    display: "flex", flexDirection: "column", gap: "var(--space-5)",
+    padding: "var(--space-6)", minWidth: 0,
+  },
+  workspaceTopBar: {
+    position: "sticky", top: 0, zIndex: 5,
+    minHeight: 64, display: "flex", alignItems: "center", justifyContent: "space-between",
+    gap: "var(--space-4)", padding: "0 var(--space-5)",
+    borderBottom: "1px solid var(--mp-rule)", backgroundColor: "var(--mp-card)",
+  },
+  workspaceTabs: { display: "flex", alignItems: "center", gap: "var(--space-5)", minWidth: 0, overflowX: "auto" },
+  workspaceTab: {
+    position: "relative", display: "inline-flex", alignItems: "center", minHeight: 64,
+    padding: 0, border: 0, backgroundColor: "transparent", cursor: "pointer",
+    color: "var(--mp-mute)", textDecoration: "none", fontFamily: "\"Hanken Grotesk\", var(--mp-font-sans)",
+    fontSize: "var(--font-size-sm)", fontWeight: 700, whiteSpace: "nowrap",
+  },
+  workspaceTabActive: { color: "var(--mp-accent)", cursor: "default" },
+  workspaceTabDisabled: {
+    color: "var(--mp-mute)", cursor: "default", gap: 6,
+  },
+  soonTag: {
+    fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase",
+    color: "var(--mp-mute)", border: "1px solid var(--mp-rule)", borderRadius: 999,
+    padding: "1px 6px", lineHeight: 1.4,
+  },
+  workspaceActions: { display: "flex", alignItems: "center", gap: "var(--space-3)", flexShrink: 0 },
+  topRefreshGroup: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, minWidth: 0 },
+  topRefreshBtn: {
+    display: "inline-flex", alignItems: "center", gap: 7,
+    minHeight: 32, padding: "5px 11px", borderRadius: 4,
+    border: "1px solid var(--mp-accent)", backgroundColor: "var(--mp-accent-soft)",
+    color: "var(--mp-accent)", fontFamily: "\"Hanken Grotesk\", var(--mp-font-sans)",
+    fontSize: "var(--font-size-xs)", fontWeight: 800, whiteSpace: "nowrap",
+  },
+  profileAvatar: {
+    width: 34, height: 34, borderRadius: "50%",
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    color: "var(--mp-accent)", backgroundColor: "var(--mp-card-2)",
+    border: "1px solid var(--mp-rule)",
+  },
   selectorHead: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--space-3)" },
   sectionLabel: {
     fontSize: "var(--font-size-xs)", color: "var(--mp-mute)",
@@ -1489,21 +1709,21 @@ const styles: Record<string, CSSProperties> = {
   },
   sectionCount: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)", fontFamily: "var(--mp-font-mono)" },
   selectorSub: { margin: "2px 0 0", color: "var(--mp-mute)", fontSize: "var(--font-size-xs)", lineHeight: 1.35 },
-  accountList: { display: "flex", flexDirection: "column", gap: 7, minWidth: 0 },
+  accountList: { display: "flex", flexDirection: "column", gap: 7, minWidth: 0, overflowY: "auto", paddingRight: 2 },
   selectorButton: {
     position: "relative", display: "flex", gap: "var(--space-2)", width: "100%", textAlign: "left",
-    padding: "10px 12px 10px 13px", color: "var(--mp-ink)", backgroundColor: "var(--mp-card)",
+    padding: "11px 12px 11px 13px", color: "var(--mp-ink)", backgroundColor: "var(--mp-card)",
     borderWidth: 1, borderStyle: "solid", borderColor: "var(--mp-rule)",
-    borderRadius: "var(--radius-md)", boxShadow: "var(--mp-shadow-sm)",
+    borderRadius: 4, boxShadow: "none",
     cursor: "pointer", overflow: "hidden", minWidth: 0,
   },
   selectorButtonSelected: {
     backgroundColor: "var(--mp-accent-soft)",
-    borderColor: "var(--mp-accent-line)",
-    boxShadow: "inset 0 0 0 1px var(--mp-accent-line)",
+    borderColor: "color-mix(in srgb, var(--mp-accent) 35%, var(--mp-rule))",
+    boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--mp-accent) 24%, transparent)",
   },
   selectorStripe: {
-    position: "absolute", left: 0, top: 0, bottom: 0, width: 4, borderRadius: "var(--radius-md) 0 0 var(--radius-md)",
+    position: "absolute", left: 0, top: 0, bottom: 0, width: 4, borderRadius: "4px 0 0 4px",
   },
   selectorBody: { display: "flex", flexDirection: "column", gap: 3, minWidth: 0, width: "100%", paddingLeft: "var(--space-1)" },
   selectorTitleRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-2)", minWidth: 0 },
@@ -1513,11 +1733,63 @@ const styles: Record<string, CSSProperties> = {
   selectorBottom: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-2)", paddingTop: 0, minWidth: 0 },
   selectorValue: { fontSize: "var(--font-size-xs)", fontWeight: 700, color: "var(--mp-ink-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 },
 
-  detailArticle: { display: "flex", flexDirection: "column", gap: "var(--space-4)", minWidth: 0 },
+  detailArticle: {
+    display: "flex", flexDirection: "column", gap: "var(--space-4)", minWidth: 0,
+    padding: "var(--space-5)", border: "1px solid var(--mp-rule)",
+    borderRadius: 4, backgroundColor: "var(--mp-card)",
+  },
   detailHeader: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--space-4)", flexWrap: "wrap" },
   detailTitleBlock: { minWidth: 0 },
-  detailTitle: { margin: 0, fontSize: "var(--font-size-2xl)", fontWeight: 500, color: "var(--mp-ink)", lineHeight: 1.05 },
+  detailEyebrow: {
+    display: "block", marginBottom: "var(--space-1)",
+    fontSize: "var(--font-size-xs)", color: "var(--mp-mute)",
+    textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 800,
+  },
+  detailTitle: {
+    margin: 0, fontSize: 36, fontWeight: 800, color: "var(--mp-ink)",
+    lineHeight: 1.05, minWidth: 0, overflowWrap: "anywhere",
+    fontFamily: "\"Hanken Grotesk\", var(--mp-font-sans)",
+  },
   detailKind: { margin: "var(--space-1) 0 0", color: "var(--mp-mute)", fontSize: "var(--font-size-sm)" },
+
+  /* ── Display-name (nickname) editor — P32A-T5 ── */
+  nicknameTitleRow: { display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap", minWidth: 0 },
+  nicknameEditBtn: {
+    position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center",
+    flexShrink: 0, width: 30, height: 30, padding: 0,
+    border: "1px solid transparent", borderRadius: 4,
+    backgroundColor: "transparent", color: "var(--mp-mute)", cursor: "pointer",
+    opacity: 0.72,
+  },
+  nicknameEditor: { display: "flex", flexDirection: "column", gap: "var(--space-1)", minWidth: 0, maxWidth: 640 },
+  nicknameInputRow: { display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap", minWidth: 0 },
+  nicknameInput: {
+    flex: "1 1 200px", minWidth: 0,
+    padding: "7px 10px", minHeight: 32,
+    border: "1px solid var(--mp-rule)", borderRadius: "var(--radius-sm)",
+    backgroundColor: "var(--mp-paper-2)", color: "var(--mp-ink)",
+    fontFamily: "var(--mp-font-sans)", fontSize: "var(--font-size-sm)",
+    boxSizing: "border-box",
+  },
+  nicknameSave: {
+    display: "inline-flex", alignItems: "center", minHeight: 32, padding: "5px 13px",
+    border: "1px solid var(--mp-accent)", borderRadius: "var(--radius-sm)",
+    backgroundColor: "var(--mp-accent)", color: "var(--mp-paper)",
+    fontFamily: "var(--mp-font-sans)", fontSize: "var(--font-size-xs)", fontWeight: 700,
+    cursor: "pointer", whiteSpace: "nowrap",
+  },
+  nicknameGhost: {
+    display: "inline-flex", alignItems: "center", minHeight: 32, padding: "5px 10px",
+    border: "1px solid var(--mp-rule)", borderRadius: "var(--radius-sm)",
+    backgroundColor: "var(--mp-paper)", color: "var(--mp-ink-2)",
+    fontFamily: "var(--mp-font-sans)", fontSize: "var(--font-size-xs)", fontWeight: 600,
+    cursor: "pointer", whiteSpace: "nowrap",
+  },
+  nicknameError: {
+    display: "inline-flex", alignItems: "center", margin: 0,
+    color: "var(--mp-block)", fontSize: "var(--font-size-xs)", fontWeight: 600, lineHeight: 1.4,
+  },
+  nicknameHint: { margin: 0, color: "var(--mp-mute)", fontSize: "var(--font-size-xs)", lineHeight: 1.4 },
   roleBadges: { display: "flex", gap: "var(--space-1)", flexWrap: "wrap", justifyContent: "flex-end" },
 
   /* Selected-account refresh control (P27B-T19). Kept quiet beside the
@@ -1556,23 +1828,26 @@ const styles: Record<string, CSSProperties> = {
 
   /* Account summary band — promoted stat tiles + cash detail + freshness line. */
   summarySection: { display: "flex", flexDirection: "column", gap: "var(--space-3)", minWidth: 0 },
-  summaryBand: { display: "flex", flexWrap: "wrap", gap: "var(--space-2)", minWidth: 0 },
+  summaryBand: {
+    display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(132px, 1fr))",
+    gap: "var(--space-3)", minWidth: 0,
+  },
   statTile: {
-    flex: "1 1 150px", minWidth: 0, display: "flex", flexDirection: "column", gap: 4,
-    padding: "10px 14px", border: "1px solid var(--mp-rule)", borderRadius: "var(--radius-sm)",
-    backgroundColor: "color-mix(in srgb, var(--mp-card-2) 70%, transparent)",
+    minWidth: 0, display: "flex", flexDirection: "column", gap: 5,
+    padding: "13px 14px", border: "1px solid var(--mp-rule)", borderRadius: 4,
+    backgroundColor: "var(--mp-card)",
   },
   statTilePrimary: {
-    flex: "1 1 220px",
-    borderColor: "var(--mp-accent-line)",
+    borderLeft: "4px solid var(--mp-accent)",
+    borderColor: "color-mix(in srgb, var(--mp-accent) 25%, var(--mp-rule))",
     backgroundColor: "var(--mp-accent-soft)",
   },
   statTileLabel: {
     fontSize: "var(--font-size-xs)", color: "var(--mp-mute)",
     textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700,
   },
-  statTileValue: { fontSize: "var(--font-size-md)", color: "var(--mp-ink)", fontWeight: 700, overflowWrap: "anywhere", lineHeight: 1.2 },
-  statTileValuePrimary: { fontSize: "var(--font-size-xl)", color: "var(--mp-ink)", fontWeight: 800, overflowWrap: "anywhere", lineHeight: 1.15 },
+  statTileValue: { fontSize: "var(--font-size-md)", color: "var(--mp-ink)", fontWeight: 800, overflowWrap: "anywhere", lineHeight: 1.2 },
+  statTileValuePrimary: { fontSize: "var(--font-size-lg)", color: "var(--mp-ink)", fontWeight: 900, overflowWrap: "anywhere", lineHeight: 1.15 },
   cashDetail: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 },
   cashDetailLine: {
     margin: 0, display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap",
@@ -1587,8 +1862,8 @@ const styles: Record<string, CSSProperties> = {
   quietText: { color: "var(--mp-mute)", fontSize: "var(--font-size-xs)", lineHeight: 1.5 },
   readinessSection: {
     display: "flex", flexDirection: "column", gap: "var(--space-3)", minWidth: 0,
-    padding: "var(--space-3)", border: "1px solid var(--mp-rule)",
-    borderRadius: "var(--radius-sm)", backgroundColor: "color-mix(in srgb, var(--mp-card-2) 74%, transparent)",
+    padding: "var(--space-4)", border: "1px solid var(--mp-rule)",
+    borderRadius: 4, backgroundColor: "var(--mp-card)",
   },
   readinessSectionHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "var(--space-3)", flexWrap: "wrap" },
   readinessSectionTitle: {
@@ -1610,8 +1885,8 @@ const styles: Record<string, CSSProperties> = {
   rowsStack: { display: "flex", flexDirection: "column", gap: "var(--space-3)", minWidth: 0 },
   rowSection: {
     display: "flex", flexDirection: "column", gap: "var(--space-2)", minWidth: 0,
-    border: "1px solid var(--mp-rule)", borderRadius: "var(--radius-sm)",
-    backgroundColor: "var(--mp-card-2)", padding: "var(--space-3)",
+    border: 0, borderRadius: 4,
+    backgroundColor: "transparent", padding: "var(--space-2) 0 0",
   },
   rowSectionHeader: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "var(--space-3)" },
   rowSectionTitle: {
@@ -1619,7 +1894,7 @@ const styles: Record<string, CSSProperties> = {
     textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700,
   },
   rowSectionCount: { fontSize: "var(--font-size-xs)", color: "var(--mp-mute)" },
-  tableScroller: { overflowX: "auto", minWidth: 0, borderRadius: "var(--radius-sm)" },
+  tableScroller: { overflowX: "auto", minWidth: 0, borderRadius: 4 },
   dataTable: { width: "100%", minWidth: 760, borderCollapse: "collapse", fontSize: "var(--font-size-xs)" },
   expandableTableRow: { cursor: "pointer" },
   th: {
@@ -1633,22 +1908,22 @@ const styles: Record<string, CSSProperties> = {
     textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap",
   },
   thStickyLeft: {
-    width: 168, minWidth: 168, maxWidth: 168,
+    width: 144, minWidth: 144, maxWidth: 144,
     padding: "9px 14px", textAlign: "left", color: "var(--mp-mute)",
     borderBottom: "1px solid var(--mp-rule-2)", fontWeight: 700,
     textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap",
   },
-  symbolStack: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0, maxWidth: 140 },
+  symbolStack: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0, maxWidth: 116 },
   symbolMain: { display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 },
   symbolSub: { color: "var(--mp-mute)", fontSize: "var(--font-size-xs)", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   td: { padding: "9px 14px", color: "var(--mp-ink-2)", borderBottom: "1px solid var(--mp-rule)", verticalAlign: "middle" },
   tdSticky: {
-    width: 168, minWidth: 168, maxWidth: 168,
+    width: 144, minWidth: 144, maxWidth: 144,
     padding: "9px 14px", color: "var(--mp-ink-2)", borderBottom: "1px solid var(--mp-rule)",
     verticalAlign: "middle",
   },
   tdStickyStrong: {
-    width: 168, minWidth: 168, maxWidth: 168,
+    width: 144, minWidth: 144, maxWidth: 144,
     padding: "9px 14px", color: "var(--mp-ink)", borderBottom: "1px solid var(--mp-rule)",
     verticalAlign: "middle", fontWeight: 700,
   },
@@ -1658,7 +1933,7 @@ const styles: Record<string, CSSProperties> = {
     whiteSpace: "nowrap", textAlign: "right",
   },
   tdStickyMuted: {
-    width: 168, minWidth: 168, maxWidth: 168,
+    width: 144, minWidth: 144, maxWidth: 144,
     padding: "9px 14px", color: "var(--mp-mute)", borderBottom: "1px solid var(--mp-rule)",
     verticalAlign: "middle",
   },

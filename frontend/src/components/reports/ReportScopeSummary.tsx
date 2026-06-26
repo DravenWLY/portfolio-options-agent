@@ -1,6 +1,7 @@
 import type { ReportScopeMetadataRead } from "../../types/tradeReview";
 import { Badge } from "../shared/mp";
 import { MpIcon } from "../shared/mp";
+import { scopeNoteLabel } from "./reportStatus";
 
 interface ReportScopeSummaryProps {
   scope: ReportScopeMetadataRead | null;
@@ -97,8 +98,12 @@ function ChipGroup({
       <span style={styles.chipLabel}>{label}</span>
       <ul style={styles.chipList}>
         {items.map((item, index) => (
-          <li key={`${label}-${index}-${item}`} style={code ? styles.codeChip : styles.chip}>
-            {item}
+          <li
+            key={`${label}-${index}-${item}`}
+            style={styles.chip}
+            title={code ? item : undefined}
+          >
+            {code ? scopeNoteLabel(item) : item}
           </li>
         ))}
       </ul>
@@ -210,16 +215,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-sm)",
     padding: "2px 6px",
     fontSize: "var(--font-size-xs)",
-    overflowWrap: "anywhere",
-  },
-  codeChip: {
-    color: "var(--mp-ink-2)",
-    background: "var(--reports-card-surface)",
-    border: "1px solid var(--reports-rule)",
-    borderRadius: "var(--radius-sm)",
-    padding: "2px 6px",
-    fontSize: "var(--font-size-xs)",
-    fontFamily: "var(--mp-font-mono)",
     overflowWrap: "anywhere",
   },
 };

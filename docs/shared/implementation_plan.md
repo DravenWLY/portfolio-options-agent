@@ -254,7 +254,7 @@ Detailed verification history is archived in:
     complete and reviewed/accepted as applicable. P31A may now proceed to
     Codex A/founder PASS/REVISE/BLOCK closeout.
 
-### Phase 32A - Account Details Nickname Management
+### Phase 32A - Account Details Nickname Management And Redesign
 
 - `P32A-T5` - Account Details nickname management UI (display-name editor).
   - Owner: Claude A. Reviewer: Claude B (visual/UX/accessibility/safety-copy);
@@ -283,6 +283,88 @@ Detailed verification history is archived in:
     account title has a long-label overflow guard (`overflow-wrap: anywhere`,
     `min-width: 0`). Presentation/a11y-only; no contract, request shape, or field
     usage change, so no Codex B re-review required.
+
+- `P32A-T6A` - Account Details redesign (two-pane workspace, sticky tabbed top
+  bar, pencil nickname affordance, restored brokerage-style position tables).
+  - Owner: Claude A. Reviewer: Claude B (visual/UX/accessibility/safety-copy);
+    Codex B high-level contract/privacy PASS.
+  - Scope: two-pane account rail + selected-account detail; sticky top bar with
+    local Dashboard/Analytics/Reports/Settings tabs (Dashboard live, the other
+    three placeholders only); large Review scope block removed per founder
+    feedback; nickname trigger reduced to a pencil-only icon with "Edit account
+    name" tooltip; position tables restored to richer brokerage-style columns
+    (gain/loss, gain/loss %, avg cost, cost basis) that render only when backend
+    labels exist. Existing Account Details + nickname endpoints unchanged.
+  - Status: review PASS 2026-06-25 by Claude B. Reads as a read-only trust/detail
+    workspace, not order entry; no unsafe copy and no raw account/provider IDs.
+    Implementer verification PASS: frontend typecheck, lint `--max-warnings 0`,
+    build (existing Vite chunk advisory only), check:skyframe-tokens, and
+    `git diff --check`. Browser smoke not run (data-backed surface needs the
+    local API token / real boundary).
+  - Follow-ups (non-blocking, for the next polish slice): complete or simplify
+    the tab ARIA pattern (`role="tab"` without `aria-controls`/`tabpanel`/roving
+    `tabindex`); move chrome accents off the green `--mp-live` status token to
+    `--mp-accent` (teal/cyan) per Skyframe, since green also signals gain in the
+    same pane; fix the PageHeader sub-copy that still references the removed
+    Review scope block. Deferred polish: nickname pencil rest contrast (WCAG
+    1.4.11), decorative profile avatar that looks interactive, backend-owned
+    gain/loss tone. Placeholder tabs: keep for internal, disable as "Soon" before
+    a founder demo. Scope visibility: compact per-account role chips already
+    present, so no scope block needs restoring.
+
+- `P32A-T6B` - Account Details demo-readiness polish (presentation/interaction
+  only; same contract).
+  - Owner: Claude A. Reviewer: Claude B (visual/UX/accessibility/safety-copy).
+    No Codex B re-review: no contract, request shape, endpoint, read-field, or
+    nickname PATCH change.
+  - Status: review PASS 2026-06-25 by Claude B. Implements the three T6A Important
+    follow-ups: header sub-copy no longer references the removed Review scope
+    block; all nav/selection chrome (active nav, tab hover/underline, selected
+    rail stripe/border/bg + hover, refresh button + hover, profile avatar,
+    primary stat tile, nickname-trigger hover) moved off the green `--mp-live`
+    status token to `--mp-accent` (green reserved for live freshness + positive
+    gain); Analytics/Reports/Settings are honestly disabled "Soon" buttons with
+    Dashboard as `aria-current`, replacing the incomplete tablist/tab ARIA.
+    Nickname editor a11y intact (focus-return, aria-describedby, role=alert,
+    aria-label, Enter/Escape, autofocus, focus-visible) — only its hover color
+    changed. No unsafe copy, no raw IDs. Verification PASS: typecheck, lint
+    `--max-warnings 0`, build (existing chunk advisory only), check:skyframe-
+    tokens, `git diff --check`. Browser smoke not run (data-backed surface needs
+    local API token / real boundary). Deferred polish (carried from T6A): nickname
+    pencil rest contrast (WCAG 1.4.11), decorative profile avatar, backend-owned
+    gain/loss tone.
+
+- `P32A-T6C` - Account Details connected browser smoke.
+  - Owner: Claude A. Reviewer: Claude B only if a later token-authorized smoke
+    finds visual/UX issues requiring fixes.
+  - Status: deferred/token-gated 2026-06-25 by Codex B. Connected browser smoke
+    is token-gated by local API access and the real-data boundary; static
+    verification and reviews passed, and no `.env`, secrets, local DB contents,
+    broker payloads, screenshots with real data, or generated reports were
+    inspected. A founder-authorized throwaway-token synthetic run may verify the
+    Account Details page later, but it does not block closing the reviewed
+    Account Details / nickname-management slice.
+
+- `P32A-T7` - Selector/nickname integration closeout after backend landing.
+  - Owner: Claude A. Reviewer: none required (verification/docs-closeout only;
+    no code change).
+  - Status: done 2026-06-25 by Claude A. Frontend selector/nickname integration
+    confirmed coherent with the landed backend at commit `9c80de2`
+    (PATCH `/users/{uid}/account-details/{account_reference}/nickname`, GET
+    `/users/{uid}/review-account-candidates`, BrokerAccount.user_nickname
+    migration `0021`). Verified field-for-field that the committed frontend
+    (`d982dcb`) mirrors the backend `ReviewAccountCandidateRead` /
+    `ReviewAccountCandidateListRead`; Trade Review consumes the candidates GET
+    and submits only `review_account_selection.account_reference` (or mode
+    `unselected`); the Account Details editor calls only the nickname PATCH with
+    `{ nickname }`/null and treats the backend `display_label` as source of
+    truth. No raw IDs/balances/holdings/positions/payloads rendered, no frontend
+    financial computation, no advice/order/execution wording. Static
+    verification PASS: typecheck, lint `--max-warnings 0`, build (existing chunk
+    advisory only), check:skyframe-tokens, `git diff --check`. Connected browser
+    smoke prepared, not executed; token-gated by local API access / real-data
+    boundary. P32A Account Details / nickname-management slice closed by Codex B;
+    any future token-authorized connected smoke is deferred follow-up only.
 
 ### Closed Context - Phase 30B Golden Path Prototype Hardening And Demo Readiness
 

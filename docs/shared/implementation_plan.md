@@ -379,6 +379,63 @@ Detailed verification history is archived in:
     cash/collateral/current-position truth. Next task: P32A-T9 for Codex C to run
     disposable DB migration/test verification without real data.
 
+### Phase 33A - Tool-Mediated Agent Team Prototype
+
+- `P33A-T0` - Tool-mediated Agent Team prototype contract.
+  - Owner: Codex B. Reviewers: Codex A/founder for product posture; Claude E for
+    agentic design alignment.
+  - Architecture reference:
+    `docs/codex-b-architecture/PHASE_33A_TOOL_MEDIATED_AGENT_TEAM_CONTRACT.md`.
+  - Status: done 2026-06-27 by Codex B. Opens Phase 33A as a tool-mediated,
+    app-owned Agent Team prototype. Agents may request reviewed evidence through
+    structured tool requests; the backend validates and executes tools, returns
+    privacy-safe `ToolResult` envelopes, and freezes used results for
+    reproducibility. LangGraph is deferred until durable multi-turn threads,
+    resumable state, human interrupts, or complex dynamic loops become
+    load-bearing. Initial tools are limited to existing saved evidence:
+    `trade_intent_summary`, `portfolio_scope_context`,
+    `deterministic_review_findings`, `broker_snapshot_freshness`,
+    `market_quote_freshness`, `public_company_profile`, and
+    `evidence_gap_inspector`. Deferred tools (`market_mood_context`,
+    `economic_awareness_context`, `prior_report_context`, `public_news_events`)
+    each require separate Codex B/source-rights review.
+
+- `P33A-T1` - Tool registry, request shape, and ToolResult envelopes.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: next. Implement the in-process registry, safe structured tool-request
+    shape, safe `ToolResult` envelope, initial mock/offline tool functions over
+    existing saved evidence, and tests for tier enforcement/private-data
+    rejection. No live providers, new sources, frontend changes, MCP,
+    TradingAgents runtime, or LangGraph.
+
+- `P33A-T2` - Planner, Evidence Auditor, and role behavior design.
+  - Owner: Claude E. Reviewer: Codex B.
+  - Status: pending P33A-T1 envelope. Define planner catalog scope, role
+    projections, citation graph, one bounded critique/re-pass rule, and output
+    expectations over the P33A-T1 tool envelopes.
+
+- `P33A-T3` - First tool-mediated saved-report run.
+  - Owner: Codex C + Claude E. Reviewer: Codex B.
+  - Status: pending T1/T2. Wire a mock-first saved-report generation path that
+    uses backend-executed tools over existing saved evidence only.
+
+- `P33A-T4` - Reproducibility freeze contract.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: pending T3. Persist used tool-result envelopes through an additive
+    reviewed saved-report or saved-evidence contract; report readback must not
+    re-fetch tools or recompute from current state.
+
+- `P33A-T5` - Tool-mediated Agent Team evaluation harness.
+  - Owner: Claude E. Reviewer: Codex B.
+  - Status: pending T3/T4. Add synthetic/offline eval cases for useful
+    ignored-risk discovery, honest missing-data handling, citation completeness,
+    contradiction rejection, no private leaks, and no advice/order wording.
+
+- `P33A-T6` - Report UI handoff.
+  - Owner: Claude A or Codex F. Reviewers: Claude B visual/safety; Codex B if new
+    fields are rendered.
+  - Status: deferred until stable T1-T5 sample outputs exist.
+
 ### Closed Context - Phase 30B Golden Path Prototype Hardening And Demo Readiness
 
 - `P30B-T0` - Open hardening contract and task sequence.

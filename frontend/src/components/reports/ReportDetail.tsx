@@ -35,6 +35,7 @@ import GenerateAgentTeamReport from "./GenerateAgentTeamReport";
 import ReportProse from "./ReportProse";
 import ReportProvenance from "./ReportProvenance";
 import ReportTrustStrip from "./ReportTrustStrip";
+import ToolMediatedEvidence from "./ToolMediatedEvidence";
 import {
   deriveReportStatus,
   humanizeCode,
@@ -277,6 +278,10 @@ function ReportBody({
         createdAt={detail.created_at}
         updatedAt={detail.updated_at}
       />
+
+      {summary?.tool_run_artifact && (
+        <ToolMediatedEvidence artifact={summary.tool_run_artifact} />
+      )}
     </div>
   );
 }

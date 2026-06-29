@@ -431,10 +431,44 @@ Detailed verification history is archived in:
     ignored-risk discovery, honest missing-data handling, citation completeness,
     contradiction rejection, no private leaks, and no advice/order wording.
 
-- `P33A-T6` - Report UI handoff.
-  - Owner: Claude A or Codex F. Reviewers: Claude B visual/safety; Codex B if new
-    fields are rendered.
-  - Status: deferred until stable T1-T5 sample outputs exist.
+- `P33A-T6A` - Report UI contract/design handoff for tool-mediated artifacts (planning).
+  - Owner: Claude A. Reviewer: Codex B (read-contract/privacy).
+  - Status: done 2026-06-29 by Claude A; Codex B read-contract/privacy decision
+    APPROVED-TO-IMPLEMENT for a collapsed supporting-provenance "Tool-mediated
+    evidence & audit" band when tool_run_artifact is present. Approved safe-subset
+    frontend mirror only; summary_payload / raw scope / source_key / data_mode /
+    latency / cost / contract_version / planner internals / auditor internals stay
+    unmirrored or hidden. Mock output may render with a persistent
+    "Demo evidence · mock tools" badge. Open questions, audited role findings,
+    frozen timestamp, warning/caveat/finding-type humanization, and
+    source-label-mapped citation/provenance chips approved. Frontend-derived
+    auditor counts not approved; a backend-owned auditor_summary_label (later
+    Codex C task, Codex B review) is required before any compact auditor summary
+    is shown.
+
+- `P33A-T6B` - Tool-mediated evidence & audit band (frontend implementation).
+  - Owner: Claude A (Codex F backup). Reviewers: Claude B (visual/UX/safety-copy);
+    Codex B re-review only if the UI needs additional fields, renders hidden
+    fields, or adds auditor summary/counts.
+  - Status: review PASS 2026-06-29 by Claude B (visual/UX/accessibility/safety-
+    copy). Additive collapsed supporting-provenance band rendered after
+    ReportProvenance, gated on `summary.tool_run_artifact`. Reads as frozen,
+    secondary, historical evidence (not live research); persistent "Demo evidence
+    · mock tools" badge + per-source "Mock" tags while mock. Open questions and
+    audited findings inline; Sources checked + audit metadata in a keyboard-
+    operable `mp-disclosure` with a visible focus ring. Gaps (not_available
+    sources, unavailable/empty finding sets) are muted, icon+text (not color-
+    only), and never show citation chips. Codes humanized (raw only in `title`);
+    citations map via `evidenceKeyLabel`. Renders the P33A-T6A safe-subset mirror
+    only — no summary_payload / scope / source_key / data_mode / latency / cost /
+    contract_version / planner or auditor internals, no derived auditor counts; no
+    forbidden field rendered, so no Codex B re-review required. No advice/order/
+    execution wording; tokens only. Verification PASS: typecheck, lint
+    `--max-warnings 0`, build (existing chunk advisory only), check:skyframe-
+    tokens, `git diff --check`. Browser smoke not run (data-backed Reports need
+    `LOCAL_DEV_ACCESS_TOKEN`). Deferred polish: neutral icon for not_available
+    gaps; optionally surface finding/source caveat codes; optionally strengthen
+    the demo badge for the founder demo.
 
 ### Closed Context - Phase 30B Golden Path Prototype Hardening And Demo Readiness
 

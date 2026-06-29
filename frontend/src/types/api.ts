@@ -225,6 +225,66 @@ export interface SavedAgentTeamRoleSummaryRead {
   unavailable_reason: string | null;
 }
 
+/* ── Phase 33A tool-mediated run artifact (read side, P33A-T6B) ──────────────
+ * SAFE-SUBSET mirror of backend `SavedToolMediatedRunArtifactRead`. Per the
+ * P33A-T6A Codex B read-contract decision, the frontend mirrors and renders
+ * ONLY the approved fields below. It deliberately omits `summary_payload`, raw
+ * `scope`, `source_key`, `data_mode`, `latency_ms`, `estimated_cost`,
+ * `contract_version`, the planner `role_plan`, and auditor internals
+ * (verdicts / contradictions / dropped_claims / eval_flags) — those stay
+ * unmirrored and unrenderable. Frontend-derived auditor counts are NOT allowed;
+ * a compact auditor summary waits on a backend-owned `auditor_summary_label`.
+ * While `provider_mode` is mock, the UI must badge this as demo evidence.
+ * Everything here is read from the frozen artifact only — never recomputed. */
+export type SavedToolMediatedEvidenceAvailability =
+  | "available"
+  | "limited"
+  | "not_available"
+  | "not_reviewed"
+  | "not_applicable";
+
+export interface SavedToolMediatedRoleFindingRead {
+  finding_type: string;
+  claim_text: string;
+  /** Evidence reference keys — shown as humanized citation labels, never raw. */
+  evidence_refs: string[];
+  caveat_codes: string[];
+}
+
+export interface SavedToolMediatedRoleFindingSetRead {
+  role_name: string;
+  role_status: AgentTeamReportRoleStatus;
+  findings: SavedToolMediatedRoleFindingRead[];
+  warning_codes: string[];
+  unavailable_reason: string | null;
+}
+
+export interface SavedToolMediatedSourceRead {
+  tool_name: string;
+  role_name: string;
+  status: string;
+  evidence_tier: string;
+  source_label: string;
+  availability: SavedToolMediatedEvidenceAvailability;
+  freshness: string | null;
+  as_of: string | null;
+  caveat_codes: string[];
+  evidence_refs: string[];
+  is_mock: boolean;
+}
+
+export interface SavedToolMediatedRunArtifactRead {
+  provider_mode: string;
+  frozen_at: string;
+  tool_result_count: number;
+  open_questions: string[];
+  warning_codes: string[];
+  synthesis_evidence_references: string[];
+  audited_findings: SavedToolMediatedRoleFindingSetRead[];
+  /** Backend `tool_results` projected to the approved per-source subset only. */
+  tool_results: SavedToolMediatedSourceRead[];
+}
+
 export interface SavedAgentTeamSummaryRead {
   run_status: SavedReviewAgentRunStatus;
   provider_mode: string;
@@ -238,6 +298,9 @@ export interface SavedAgentTeamSummaryRead {
   final_synthesis_authored_by: AgentTeamReportSynthesisAuthor | null;
   evidence_schema_version: string | null;
   evidence_references: string[];
+  /** Phase 33A: frozen tool-mediated run artifact (safe subset). Present only on
+   *  tool-mediated saved runs; null/absent otherwise. */
+  tool_run_artifact?: SavedToolMediatedRunArtifactRead | null;
 }
 
 /* ── Phase 29C-T4A saved public-evidence attribution (read side) ─────────────

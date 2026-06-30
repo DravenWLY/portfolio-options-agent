@@ -2,19 +2,25 @@
 
 Status: PM positioning decision
 Owner: Codex A - Product / Founder Strategy / PM
-Last updated: 2026-06-02
+Last updated: 2026-06-23
 
 ## Core Positioning
 
-Portfolio Copilot is a specialist review team for self-directed investors. It
-helps users review proposed trades, understand portfolio risk, and manage their
-own portfolio decisions with clearer evidence, freshness context, and
-analysis-only explanations.
+Portfolio Copilot is a read-only specialist review desk for busy self-directed
+investors. It helps users review proposed manual trades, understand portfolio
+risk, and manage their own portfolio decisions with clearer evidence,
+freshness context, and analysis-only explanations. Its core question is:
+"What would I be ignoring if I acted manually now?"
 
 Portfolio Copilot is not a broker, investment adviser, automated trading
 system, research terminal, screener, or portfolio manager. It does not manage
 the portfolio for the user, recommend trades, allocate assets, place orders, or
 decide what the user should buy or sell.
+
+The current P30A/P30B/P31A state is an internal founder-demo validation loop,
+not a public MVP or commercial beta. The accepted demo path is:
+`Trade Review -> save evidence snapshot -> Reports -> explicitly generate Agent
+Team briefing -> reopen saved report`.
 
 ## Complement, Not Replace
 
@@ -23,7 +29,8 @@ Stock Rover, TradingView, or broker dashboards. Those products help users
 research, monitor, screen, chart, or execute. Portfolio Copilot focuses on the
 moment before a user manually acts elsewhere: what the proposed stock, ETF, or
 options trade could do to the user's portfolio, cash/collateral posture,
-concentration, assignment/exercise exposure, and data freshness.
+concentration, assignment/exercise exposure, data freshness, evidence gaps, and
+manual verification needs.
 
 ## Approved Persona Labels
 
@@ -59,7 +66,11 @@ Avoid "Portfolio Strategist" because it can imply strategy recommendations.
 Use:
 
 - "specialist review team"
+- "specialist review desk"
 - "manual decision support"
+- "what would I be ignoring if I acted manually now?"
+- "saved evidence snapshot"
+- "Agent Team briefing"
 - "scenario analysis"
 - "helps you manage your own portfolio decisions"
 - "review proposed trades"

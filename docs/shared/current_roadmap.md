@@ -136,16 +136,19 @@ What is already available:
 
 What should happen next:
 
-1. Open P31A as a narrow product/front-end polish phase around founder-demo
-   narrative, not horizontal expansion.
-2. Improve review-desk onboarding/copy, explain the Agent Team briefing in
-   plain language, and convert preview-only raw scope-note codes into friendlier
-   labels where existing contracts allow.
-3. Refine the founder-demo script and product positioning docs around the
-   accepted "specialist review desk" framing.
-4. Dashboard expansion, new public evidence, new providers, Agent Console
-   composer work, Account Details redesign, and broader Skyframe rollout should
-   pause unless they directly unblock the golden path.
+1. Continue Phase 34A as the live tool-mediated Agent Team prototype: live LLM
+   reasoning remains explicitly gated, backend-owned, and evidence-bounded.
+2. Keep converting tools only through reviewed source-rights gates and frozen
+   saved-evidence contracts. The current approved macro lane is FRED-only
+   normalized economic awareness; CNN-derived Market Mood and FMP Economic
+   Calendar remain unapproved for Agent Team tools.
+3. Preserve the review-desk posture: no recommendations, order/execution
+   language, safe-to-trade language, or AI-stock-picker framing.
+4. Frontend report UX should wait for stable read contracts unless a task is
+   explicitly presentation-only over already-reviewed fields.
+5. Agent Console, LangGraph/MCP, new news sources, Dashboard expansion, and
+   production provider work remain deferred until the live saved-report
+   prototype is useful and safe.
 
 Architecture references:
 
@@ -155,6 +158,11 @@ Architecture references:
 - `docs/codex-b-architecture/PHASE_29C_PUBLIC_EVIDENCE_SOURCE_GOVERNANCE.md`
 - `docs/codex-b-architecture/PHASE_30A_GOLDEN_PATH_REVIEW_DESK_CONTRACT.md`
 - `docs/codex-b-architecture/PHASE_30B_GOLDEN_PATH_HARDENING_CONTRACT.md`
+- `docs/codex-b-architecture/PHASE_31A_FOUNDER_DEMO_POLISH_CONTRACT.md`
+- `docs/codex-b-architecture/PHASE_33A_TOOL_MEDIATED_AGENT_TEAM_CONTRACT.md`
+- `docs/codex-b-architecture/PHASE_34A_LIVE_TOOL_MEDIATED_AGENT_TEAM_CONTRACT.md`
+- `docs/claude-e-agentic/PHASE_33A_TOOL_RICH_AGENT_TEAM_ARCHITECTURE_MEMO.md`
+- `docs/claude-e-agentic/PHASE_34A_T2_LIVE_ROLE_PROMPT_AUDITOR_DESIGN.md`
 
 ### Deferred Scope Management
 

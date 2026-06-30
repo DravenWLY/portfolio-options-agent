@@ -146,6 +146,16 @@ REPORT_PROHIBITED_PHRASES = frozenset(
         "guaranteed returns",
     }
 )
+REPORT_ALLOWED_NEGATED_DISCLOSURES = (
+    (
+        "source: fred, federal reserve bank of st. louis. economic release/calendar metadata only. "
+        "not investment advice or a trading signal."
+    ),
+    (
+        "fred aggregates data from multiple sources; releases may lag, revise, or be subject to "
+        "source-specific rights. portfolio copilot does not use this as a trade recommendation."
+    ),
+)
 # Bare-number invented technical levels / price targets. Public and technical
 # role narrative is qualitative and carries no numbers, so any level keyword
 # adjacent to a digit is LLM-invented and rejected (deterministic metrics are
@@ -183,6 +193,8 @@ def validate_agent_team_report_output(
 
 def _reject_report_phrases(value: object, *, label: str) -> None:
     rendered = repr(value).lower()
+    for disclosure in REPORT_ALLOWED_NEGATED_DISCLOSURES:
+        rendered = rendered.replace(disclosure, "")
     if any(phrase in rendered for phrase in REPORT_PROHIBITED_PHRASES):
         raise ValueError(f"{label} contains prohibited advice or execution wording")
 

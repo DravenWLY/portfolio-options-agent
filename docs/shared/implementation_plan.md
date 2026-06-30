@@ -402,34 +402,80 @@ Detailed verification history is archived in:
 
 - `P33A-T1` - Tool registry, request shape, and ToolResult envelopes.
   - Owner: Codex C. Reviewer: Codex B.
-  - Status: next. Implement the in-process registry, safe structured tool-request
-    shape, safe `ToolResult` envelope, initial mock/offline tool functions over
-    existing saved evidence, and tests for tier enforcement/private-data
-    rejection. No live providers, new sources, frontend changes, MCP,
-    TradingAgents runtime, or LangGraph.
+  - Status: done 2026-06-28 by Codex C; Codex B-style review PASS after raw URL
+    rejection blocker was fixed and re-reviewed. Implemented backend-only
+    mock/offline `ToolRequest`, extended `ToolResult` envelopes,
+    `default_tool_registry()`, `execute_tool_request(...)`, and the initial
+    saved-evidence tools: `trade_intent_summary`, `portfolio_scope_context`,
+    `deterministic_review_findings`, `broker_snapshot_freshness`,
+    `market_quote_freshness`, `public_company_profile`, and
+    `evidence_gap_inspector`. Verification PASS: `test_tools.py` 55 passed;
+    agent_team/agent_eval 235 passed, 2 deselected; backend unit suite 193
+    passed; `git diff --check` clean. No live providers, new sources, frontend
+    changes, persistence, MCP, TradingAgents runtime, or LangGraph.
 
 - `P33A-T2` - Planner, Evidence Auditor, and role behavior design.
   - Owner: Claude E. Reviewer: Codex B.
-  - Status: pending P33A-T1 envelope. Define planner catalog scope, role
-    projections, citation graph, one bounded critique/re-pass rule, and output
-    expectations over the P33A-T1 tool envelopes.
+  - Design reference:
+    `docs/claude-e-agentic/PHASE_33A_T2_PLANNER_AUDITOR_ROLE_DESIGN.md`.
+  - Status: done 2026-06-28 by Claude E; Codex B review PASS. Adopted
+    `USABLE_EVIDENCE_BY_ROLE = receivable tool evidence refs intersect citable
+    report refs` as the binding planner/auditor map, with
+    `ROLE_ALLOWED_EVIDENCE_KEYS` as the report-output ceiling. Planner and
+    Evidence Auditor remain meta/run-state-only and out of `AGENT_TEAM_ROLES`;
+    `options_structure_analyst` remains deferred; public roles are
+    gap-reporting roles over T1's near-empty public tool set only through
+    skipped/unavailable/warning states or citable availability refs, not
+    unsupported prose; the auditor filters `evidence_gap_inspector` refs to each
+    role's citable set and uses
+    `liquidity_collateral_caveats` as the canonical ref. Structured plan,
+    findings, auditor record, and citation graph stay run-state-only in T3 and
+    reduce to existing markdown/evidence_refs/warning_codes; freeze remains T4.
+    One bounded re-pass is allowed only for contradiction or fixable unsupported
+    claims; leak/advice/invented-number failures drop fail-closed while the rest
+    of the report survives.
 
 - `P33A-T3` - First tool-mediated saved-report run.
   - Owner: Codex C + Claude E. Reviewer: Codex B.
-  - Status: pending T1/T2. Wire a mock-first saved-report generation path that
-    uses backend-executed tools over existing saved evidence only.
+  - Status: done 2026-06-29 by Codex C; Codex B narrow re-review PASS after
+    citable-ref filtering blockers were fixed. Implemented deterministic
+    planner -> backend-executed tools -> role findings -> Evidence Auditor ->
+    Portfolio Manager synthesis over existing saved evidence only, using
+    `provider_mode="tool_mediated_mock"` and the existing saved summary read
+    model. Verification PASS: tool-mediated report tests 24 passed; combined
+    tool/tool-mediated tests 74 passed; backend suite 1139 passed, 138
+    DB-gated skips, 3 deselected; `git diff --check` clean. No live providers,
+    frontend, new sources, web/MCP, TradingAgents runtime, LangGraph, or LLM
+    provider calls.
 
 - `P33A-T4` - Reproducibility freeze contract.
   - Owner: Codex C. Reviewer: Codex B.
-  - Status: pending T3. Persist used tool-result envelopes through an additive
-    reviewed saved-report or saved-evidence contract; report readback must not
-    re-fetch tools or recompute from current state.
+  - Status: done 2026-06-29 by Codex C; Codex B narrow re-review PASS after
+    nested URL-like keys inside frozen `summary_payload` were blocked
+    schema-side. Added an optional `tool_run_artifact` freeze on
+    `SavedAgentTeamSummaryRead` with the sanitized plan, tool-result envelopes,
+    audited findings, auditor record, open questions, warning codes, and
+    synthesis evidence refs. Legacy summaries without a freeze remain valid;
+    blocked deterministic drafts do not attach the artifact. The freeze rejects
+    raw/private IDs, buying power, raw payloads, URL keys/values, prompts,
+    traces, unsafe wording, and generated metrics. Verification PASS: focused
+    report/tool/agent suites 353 passed, 18 skipped, 2 deselected; full backend
+    suite before the narrow blocker fix 1146 passed, 138 skipped, 3 deselected;
+    `git diff --check` clean.
 
 - `P33A-T5` - Tool-mediated Agent Team evaluation harness.
-  - Owner: Claude E. Reviewer: Codex B.
-  - Status: pending T3/T4. Add synthetic/offline eval cases for useful
-    ignored-risk discovery, honest missing-data handling, citation completeness,
-    contradiction rejection, no private leaks, and no advice/order wording.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-06-29 by Codex C; Codex B review PASS. Implemented the
+    offline deterministic eval harness for tool-mediated Agent Team reports with
+    no schema/read-contract changes and no persisted/read-model eval output. The
+    harness evaluates both `SavedAgentTeamSummaryRead` and frozen
+    `tool_run_artifact` payloads; checks citation closure, usable evidence by
+    role, unavailable/gap ref handling, PM synthesis refs, red-team hard-block
+    drops, artifact reproducibility, deterministic-draft no-artifact behavior,
+    byte-stable regeneration, and legacy-summary deferral. D1 discovery remains
+    delta-measured/non-regression-gated rather than strict-improvement-gated.
+    Verification PASS: tool-mediated eval tests 22 passed; agent_eval +
+    agent_team 285 passed, 2 deselected; `git diff --check` clean.
 
 - `P33A-T6A` - Report UI contract/design handoff for tool-mediated artifacts (planning).
   - Owner: Claude A. Reviewer: Codex B (read-contract/privacy).
@@ -450,8 +496,8 @@ Detailed verification history is archived in:
   - Owner: Claude A (Codex F backup). Reviewers: Claude B (visual/UX/safety-copy);
     Codex B re-review only if the UI needs additional fields, renders hidden
     fields, or adds auditor summary/counts.
-  - Status: review PASS 2026-06-29 by Claude B (visual/UX/accessibility/safety-
-    copy). Additive collapsed supporting-provenance band rendered after
+  - Status: done 2026-06-29 by Claude A; Claude B visual/UX/accessibility/safety-
+    copy review PASS. Additive collapsed supporting-provenance band rendered after
     ReportProvenance, gated on `summary.tool_run_artifact`. Reads as frozen,
     secondary, historical evidence (not live research); persistent "Demo evidence
     · mock tools" badge + per-source "Mock" tags while mock. Open questions and
@@ -466,9 +512,136 @@ Detailed verification history is archived in:
     execution wording; tokens only. Verification PASS: typecheck, lint
     `--max-warnings 0`, build (existing chunk advisory only), check:skyframe-
     tokens, `git diff --check`. Browser smoke not run (data-backed Reports need
-    `LOCAL_DEV_ACCESS_TOKEN`). Deferred polish: neutral icon for not_available
-    gaps; optionally surface finding/source caveat codes; optionally strengthen
-    the demo badge for the founder demo.
+    `LOCAL_DEV_ACCESS_TOKEN` and the real-data boundary); this is deferred and
+    does not block closeout. Deferred polish: neutral icon for not_available gaps;
+    optionally surface finding/source caveat codes; optionally strengthen the demo
+    badge for the founder demo.
+
+- `P33A-Closeout` - Phase closeout.
+  - Owner: Codex B. Reviewer: Codex A/founder for product validation.
+  - Status: closed 2026-06-29 by Codex B. Phase 33A completed the mock/offline
+    tool-mediated Agent Team prototype: reviewed tool registry and ToolResult
+    envelopes, planner/role/auditor behavior, first saved-report run,
+    reproducibility freeze, offline eval harness, and a safe-subset Reports UI
+    for the frozen tool-run artifact. The result is an internal prototype over
+    existing saved evidence and mock tools only. Real tool/source expansion,
+    live LLM/provider use, Agent Console active runs, LangGraph, MCP, and
+    browser smoke remain outside Phase 33A.
+
+### Phase 34A - Live Tool-Mediated Agent Team Prototype
+
+- `P34A-T0` - Live prototype contract.
+  - Owner: Codex B. Reviewers: Codex A/founder for product posture; Claude E for
+    agentic design alignment.
+  - Architecture reference:
+    `docs/codex-b-architecture/PHASE_34A_LIVE_TOOL_MEDIATED_AGENT_TEAM_CONTRACT.md`.
+  - Status: done 2026-06-29 by Codex B. Opens Phase 34A as the live-data/live-LLM
+    successor to the P33A mock/offline scaffold. "Working prototype" now means a
+    backend-owned, read-only Agent Team run that starts from a saved trade-review
+    evidence package, uses live LLM role reasoning only when explicitly enabled,
+    lets roles request reviewed backend tools through structured tool requests,
+    gives LLMs only sanitized `ToolResult` envelopes, uses real reviewed data
+    sources where approved, and freezes all used tool/model artifacts for saved
+    report readback. P34A remains internal/non-production: no direct LLM access to
+    broker/provider/news/EDGAR clients, no frontend LLM calls, no raw private data
+    in prompts/results, no order/execution behavior, no web/MCP/TradingAgents
+    runtime, and no LangGraph dependency as the safety boundary.
+
+- `P34A-T1` - Live LLM runner gate for tool-mediated reports.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-06-29 by Codex C; Codex B contract/privacy review PASS.
+    The existing backend `LLMProvider` / provider-factory seam now gates live
+    role reasoning for tool-mediated reports. Live remains disabled by default,
+    provider-factory `LLMProviderResolution` controls activation, prompts receive
+    only sanitized `ToolResult` envelopes, provider failures degrade to skipped/
+    unavailable role output while preserving deterministic tool evidence, unsafe
+    provider output is rejected before persistence, and saved report readback
+    remains frozen. Verification PASS: `test_tool_mediated_report.py` 36 passed;
+    agent_eval + agent_team 295 passed, 2 deselected; report schema unit tests 90
+    passed; `git diff --check` clean. No frontend, provider-live test, broker,
+    EDGAR, MCP, TradingAgents, LangGraph, or new source scope drift.
+
+- `P34A-T2` - Live role prompt and Evidence Auditor design.
+  - Owner: Claude E. Reviewer: Codex B.
+  - Design reference:
+    `docs/claude-e-agentic/PHASE_34A_T2_LIVE_ROLE_PROMPT_AUDITOR_DESIGN.md`.
+  - Status: done 2026-06-29 by Claude E; Codex B review PASS. Design keeps live
+    prompts limited to sanitized `ToolResult` envelopes plus approved
+    instructions; citations remain backend-owned and cannot be introduced by the
+    LLM; the Evidence Auditor rejects advice/actionability, unsupported claims,
+    invented numbers/levels/URLs, and private leaks fail-closed; exactly one
+    bounded re-pass is allowed only for fixable unsupported/contradictory claims;
+    hard blocks are never retried. Codex B decisions: Q1 approved an additive
+    safe `provider_runs` metadata field on `SavedToolMediatedRunArtifactRead`;
+    Q2 PM synthesis stays deterministic in M1; Q3 live failures fall back to the
+    deterministic finding rather than skipping when a floor exists; Q4
+    contradiction detection uses structured caveat/availability signals rather
+    than LLM prose tokens; Q5 per-finding live prose is preferred with one-per-
+    role fallback acceptable; Q6 implementation is split into T3A prompt/auditor/
+    freeze changes and T3B real saved-evidence tool pack.
+
+- `P34A-T3A` - Live prompt/auditor implementation and provider-run freeze metadata.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-06-30 by Codex C; Codex B contract/privacy/safety review
+    PASS. Implemented the P34A-T2 prompt/auditor behavior without adding new
+    tools or sources: live remains disabled by default; LLM/provider output never
+    owns `evidence_refs` or `caveat_codes`; provider failures and unsafe output
+    fail closed to the deterministic safe floor when available; hard blocks are
+    not re-passed; contradiction detection uses structured caveat/availability
+    signals; additive `provider_runs` freezes only approved safe metadata; frozen
+    artifacts do not persist raw prompts, raw responses, payloads, traces,
+    secrets, URLs, private account data, or unsafe trading/action wording; saved
+    report readback/model validation does not re-run providers; blocked
+    deterministic drafts still do not attach `tool_run_artifact`. Verification
+    reported PASS: `test_tool_mediated_report.py` 37 passed;
+    `test_tool_mediated_eval.py` 27 passed; agent_team + agent_eval 301 passed,
+    2 deselected; report schema unit tests 90 passed; full backend pytest 1186
+    passed, 138 skipped, 3 deselected; `git diff --check` clean.
+
+- `P34A-T3B` - Real saved-evidence tool pack v1.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: next. Convert the approved M1 tools
+    (`trade_intent_summary`, `portfolio_scope_context`,
+    `deterministic_review_findings`, `broker_snapshot_freshness`,
+    `market_quote_freshness`, `public_company_profile`,
+    `evidence_gap_inspector`) from mock/offline placeholders to real saved-
+    evidence-backed tools where needed. Tools must read frozen saved evidence, not
+    current selectors, and must not expose raw private values.
+
+- `P34A-T4` - Market/macro source-rights gate.
+  - Owner: Codex B. Reviewer: Codex A/founder.
+  - Status: pending T1. Decide whether existing Market Mood and Economic
+    Awareness surfaces may be used as Agent Team tools. Record approved
+    normalized fields, LLM use, saved-report persistence, display attribution,
+    retention/cache limits, failure behavior, and implementation prompt.
+
+- `P34A-T5` - Market/macro tool pack.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: pending T4. Implement only source-rights-approved market/macro tools
+    as backend-only `ToolResult` producers. No raw URLs/payloads, no broad
+    crawling, no market-data provider expansion beyond the approved contract.
+
+- `P34A-T6` - Public news/event source-rights gate.
+  - Owner: Codex B. Reviewer: Codex A/founder.
+  - Status: deferred until M1 works. Choose whether to add a news/company-event
+    source. No news/event tool may be implemented until rights, retention,
+    attribution, excerpt/URL/raw-payload policy, and rate/budget limits are
+    approved.
+
+- `P34A-T7` - Live end-to-end prototype smoke.
+  - Owner: Codex B. Reviewers: Codex A/founder for usefulness; Claude B if UI
+    changes.
+  - Status: pending T1-T3 and any approved T4/T5 sources. Run one stock/ETF and
+    one simple-options saved report with live LLM role output, real reviewed
+    saved evidence, approved tools only, frozen readback, no private leaks, and no
+    advice/order/execution wording. Requires explicit credential authorization
+    without reading or printing secrets.
+
+- `P34A-T8` - LangGraph architecture spike.
+  - Owner: Claude E. Reviewer: Codex B.
+  - Status: optional after P34A-M1. Compare the app-owned runner against LangGraph
+    for durable Agent Console and multi-turn orchestration. LangGraph may wrap
+    reviewed app-owned nodes but must not become the privacy/safety boundary.
 
 ### Closed Context - Phase 30B Golden Path Prototype Hardening And Demo Readiness
 

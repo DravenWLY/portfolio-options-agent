@@ -2,7 +2,7 @@
 
 Status: docs index
 Owner: shared
-Last updated: 2026-05-20
+Last updated: 2026-06-30
 
 The docs folder is organized by agent ownership plus a shared source-of-truth area. Prefer the smallest relevant file before loading large architecture or history documents.
 
@@ -34,6 +34,22 @@ Unless a task gives a narrower read list:
 | `docs/claude-c-competitor/` | Claude C Competitor Intel | Competitor analysis and product intelligence for PM synthesis. |
 | `docs/codex-d-devops/` | Codex D DevOps | Deployment, CI/CD, observability, and production-readiness drafts. |
 | `docs/claude-d-security/` | Claude D Security | Security, compliance, privacy, broker-data handling, and disclaimer drafts. |
+
+## Current Architecture / Agentic Design Trail
+
+For current Agent Team work, prefer this narrow trail before loading older
+phase archives:
+
+- `docs/shared/implementation_plan.md` - active phase status and handoffs.
+- `docs/shared/current_roadmap.md` - current product/architecture direction.
+- `docs/codex-b-architecture/PHASE_33A_TOOL_MEDIATED_AGENT_TEAM_CONTRACT.md` -
+  mock/offline tool-mediated Agent Team boundary.
+- `docs/codex-b-architecture/PHASE_34A_LIVE_TOOL_MEDIATED_AGENT_TEAM_CONTRACT.md` -
+  live LLM/tool-mediated prototype boundary.
+- `docs/claude-e-agentic/PHASE_33A_TOOL_RICH_AGENT_TEAM_ARCHITECTURE_MEMO.md` -
+  tool-rich architecture discussion.
+- `docs/claude-e-agentic/PHASE_34A_T2_LIVE_ROLE_PROMPT_AUDITOR_DESIGN.md` -
+  live role prompt and Evidence Auditor design.
 
 ## Agent Context Decision
 

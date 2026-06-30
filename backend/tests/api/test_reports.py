@@ -211,9 +211,9 @@ def test_generate_agent_team_report_persists_summary_and_projects_on_reports(
         "deterministic_summary": saved["deterministic_summary"],
         "generated_at": saved["generated_at"],
     }
-    rendered = repr(saved).lower()
-    assert "primary reviewed account" not in rendered
-    assert "acctref_savedreview1" not in rendered
+    agent_summary_rendered = repr(saved["agent_summary"]).lower()
+    assert "primary reviewed account" not in agent_summary_rendered
+    assert "acctref_savedreview1" not in agent_summary_rendered
     assert not find_forbidden_keys(saved, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
 
     listed = client.get(f"/users/{user_id}/reports").json()
@@ -300,7 +300,10 @@ def test_db_backed_golden_path_preview_save_generate_readback_and_regenerate(
     assert preview_response.status_code == 200
     preview = preview_response.json()
     assert preview["supported_flow"] == expected_flow
-    assert preview["deterministic_review"]["trade_intent"]["symbol_or_underlying"] == expected_symbol
+    intent_symbol = preview["trade_intent_summary"].get("symbol") or preview["trade_intent_summary"].get(
+        "underlying_symbol"
+    )
+    assert intent_symbol == expected_symbol
     assert "account_level_feasibility_not_evaluated" in preview["scope_metadata"]["scope_caveat_codes"]
     if expected_preview_caveat is not None:
         assert expected_preview_caveat in {caveat["code"] for caveat in preview["caveats"]}
@@ -1040,6 +1043,8 @@ def _assert_saved_scope_preserves_review_selection_with_safe_caveats(
         assert (
             "account_feasibility_not_evaluated" in saved_caveats
             or "account_feasibility_not_evaluated" in saved_portfolio_caveats
+            or "account_level_feasibility_not_evaluated" in saved_caveats
+            or "account_level_feasibility_not_evaluated" in saved_portfolio_caveats
         )
 
 

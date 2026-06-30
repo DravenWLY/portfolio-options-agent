@@ -2,19 +2,30 @@
 
 Status: PM draft approved for product alignment
 Owner: Codex A - Product / Founder Strategy / PM
-Last updated: 2026-06-02
+Last updated: 2026-06-23
 
 ## Product Summary
 
-Portfolio Copilot is a TradingAgents-inspired, portfolio-aware trade review agent team for manual investors. It is TradingAgents-inspired, not TradingAgents-centered: the product center remains broker-aware `TradeIntent` review, not one-shot ticker research or automated trading.
+Portfolio Copilot is a read-only specialist review desk for busy
+self-directed investors. It is TradingAgents-inspired, not
+TradingAgents-centered: the product center remains broker-aware `TradeIntent`
+review and saved Agent Team briefing, not one-shot ticker research or automated
+trading.
 
-Before a user places a stock, ETF, covered call, or cash-secured put trade in their broker, the app reviews a proposed `TradeIntent` against the user's portfolio snapshot, cash/collateral state, concentration exposure, assignment or call-away exposure, risk rules, and data freshness. Deterministic services calculate the facts; AI may explain only approved structured outputs and public evidence.
+Before a user manually places a stock, ETF, covered call, or cash-secured put
+trade in their broker, the app helps answer: "What would I be ignoring if I
+acted manually now?" It reviews a proposed `TradeIntent` against the user's
+portfolio snapshot, cash/collateral state, concentration exposure, assignment
+or call-away exposure, risk rules, and data freshness. Deterministic services
+calculate the facts; AI may explain only approved structured outputs and public
+evidence.
 
-Portfolio Copilot is also complement-not-replace relative to serious investor
+Portfolio Copilot is complement-not-replace relative to serious investor
 research and portfolio tools such as Stock Rover. Those tools help users
 research, screen, track, and monitor. Portfolio Copilot's narrower promise is
-the pre-trade portfolio-aware layer those tools usually lack: what a specific
-manual trade would do to the user's portfolio before they place it elsewhere.
+the review-desk layer those tools usually lack: what a specific manual trade
+would do to the user's portfolio, what data or context may be stale or missing,
+and what should be manually verified before the user acts elsewhere.
 
 The user-facing agent experience is framed as a specialist review team for
 self-directed investors. The team helps the user review proposed trades,
@@ -23,9 +34,23 @@ evidence, freshness context, and analysis-only explanations. It does not manage
 the portfolio for the user, recommend trades, allocate assets, place orders, or
 decide what the user should buy or sell.
 
+The current accepted implementation state is an internal validation prototype,
+not a public MVP or commercial beta. P30A/P30B proved the golden path:
+`Trade Review -> save evidence snapshot -> Reports -> explicitly generate Agent
+Team briefing -> reopen saved report`. P31A polishes the founder demo narrative
+around that loop without expanding product scope.
+
 ## Target User
 
-The first target user is an active self-directed retail investor who manages stocks, ETFs, and simple single-leg options across one or two brokerage accounts. They are comfortable making their own trade decisions, but want a portfolio-aware sanity check before manually acting in their broker. The first wedge is users considering covered calls and cash-secured puts, because those trades make collateral, assignment, coverage, concentration, and stale-data risks easy to see.
+The first target user is a busy active self-directed retail investor who
+manages stocks, ETFs, and simple single-leg options across one or two brokerage
+accounts. They may have limited time during market hours to monitor market
+moves, company context, macro events, portfolio exposure, cash/collateral, and
+data freshness. They are comfortable making their own trade decisions, but want
+a portfolio-aware specialist briefing before manually acting in their broker.
+The first wedge is users considering covered calls and cash-secured puts,
+because those trades make collateral, assignment, coverage, concentration, and
+stale-data risks easy to see.
 
 The first target user is not:
 
@@ -37,11 +62,18 @@ The first target user is not:
 
 ## Core Job
 
-When I am considering a manual trade, help me understand what changes in my portfolio if I do it, what risk rules it violates, what data is fresh or stale, and what I need to confirm before acting in my broker.
+When I am considering a manual trade, help me understand what I might be
+ignoring if I acted now: what changes in my portfolio, what risk rules or
+caveats appear, what evidence is available or missing, what data is fresh or
+stale, and what I need to confirm before acting in my broker.
 
 ## MVP Promise
 
-The first useful MVP lets a user load or maintain a portfolio snapshot, enter a proposed manual trade, and receive a deterministic review that answers:
+The first useful internal validation prototype lets a user load or maintain a
+portfolio snapshot, enter a proposed manual trade, save the reviewed evidence
+snapshot, explicitly generate an Agent Team briefing, and reopen the historical
+saved report. The deterministic review remains the evidence foundation and must
+answer:
 
 - How does this affect cash, collateral, and free cash?
 - How does this affect stock/ETF concentration and allocation?
@@ -80,9 +112,13 @@ The user can enter a single-leg cash-secured put candidate. The app reviews cash
 
 If existing collateral netting is incomplete, the product must explicitly caveat that collateral netting is not fully modelled before exposing the flow as a polished frontend feature.
 
-### 5. Analysis Report
+### 5. Saved Agent Team Briefing
 
-The app produces a saved review/report with deterministic metrics, freshness state, risk-rule violations, and optional AI explanation. The report must avoid directive advice and execution language.
+The app produces a saved review/report with deterministic metrics, freshness
+state, risk-rule violations, evidence/provenance, and Agent Team synthesis when
+generated. The briefing is the primary user-facing report experience when
+available; deterministic facts remain the supporting evidence and audit layer.
+The report must avoid directive advice and execution language.
 
 ## Freshness And Actionability
 
@@ -171,17 +207,23 @@ recommendation.
 
 The MVP is useful when:
 
-- A user can complete a review from portfolio snapshot to saved deterministic report.
-- The report explains portfolio impact, cash/collateral impact, assignment or call-away exposure, concentration impact, and risk-rule violations.
+- A user can complete the golden path from portfolio-backed Trade Review to
+  saved evidence snapshot, explicit Agent Team briefing generation, and reopened
+  saved report.
+- The report explains portfolio impact, cash/collateral impact, assignment or
+  call-away exposure, concentration impact, risk-rule violations, evidence
+  limitations, and manual verification points.
 - Stale, unknown, manual, EOD-only, or provider-error inputs cannot produce action-ready language.
 - Broker freshness and market quote freshness are displayed separately.
-- AI explanation is optional and grounded in approved structured outputs.
+- AI/Agent Team explanation is optional, explicit, and grounded in approved
+  structured saved evidence.
 - The app remains clearly read-only and manual-decision-support only.
 
 ## PM Decisions
 
 - First target segment: active self-directed retail investors using stocks, ETFs, covered calls, and cash-secured puts manually.
-- First paid/useful wedge: portfolio-aware pre-trade review, not brokerage dashboarding or screening.
+- First useful wedge: a portfolio-aware specialist review desk for proposed
+  manual trades, not brokerage dashboarding, screening, or trade execution.
 - Next implementation gate: Portfolio Snapshot Actionability Policy before polished Phase 16 agent outputs.
 - Phase 16 should be split into Phase 16A deterministic agent components and Phase 16B portfolio-aware agent-team orchestration.
 - TradingAgents is optional public ticker/company research evidence, not the final portfolio-aware decision engine.

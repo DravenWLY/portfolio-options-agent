@@ -1998,8 +1998,9 @@ def _multiplier_label(value: Decimal | None) -> str | None:
     multiplier = _optional_decimal(value)
     if multiplier is None:
         return None
-    normalized = multiplier.normalize()
-    text = format(normalized, "f").rstrip("0").rstrip(".")
+    text = format(multiplier.normalize(), "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
     return f"{text} multiplier"
 
 

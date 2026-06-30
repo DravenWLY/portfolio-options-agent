@@ -2,17 +2,28 @@
 
 Status: PM scope decision
 Owner: Codex A - Product / Founder Strategy / PM
-Last updated: 2026-06-02
+Last updated: 2026-06-23
 
 ## MVP Definition
 
-The MVP is a read-only pre-trade review workflow for self-directed investors who manually place trades outside the app. It proves that Portfolio Copilot can turn a portfolio snapshot plus a proposed stock/ETF/options trade into a deterministic, freshness-aware, educational review that helps the user understand portfolio impact before acting elsewhere.
+The current internal validation prototype is a read-only specialist review desk
+for busy self-directed investors who manually place trades outside the app. It
+proves that Portfolio Copilot can turn a portfolio snapshot plus a proposed
+stock/ETF/options trade into a deterministic evidence snapshot and explicit
+Agent Team briefing that helps the user answer: "What would I be ignoring if I
+acted manually now?"
 
-The broader product framing is a TradingAgents-inspired, portfolio-aware trade review agent team. For MVP, this means safe deterministic agent components and an app-owned agent-team orchestration contract, not autonomous trading, not one-shot stock research, and not a thin TradingAgents wrapper.
+The broader product framing is a TradingAgents-inspired, portfolio-aware
+specialist review team. For MVP validation, this means safe deterministic
+review components, immutable saved evidence packages, and an app-owned
+agent-team briefing contract, not autonomous trading, not one-shot stock
+research, and not a thin TradingAgents wrapper.
 
-The MVP is not a migration target for research terminals or portfolio
+The MVP validation loop is not a migration target for research terminals or portfolio
 analytics products. It should complement tools such as Stock Rover by covering
-the short, high-stakes moment before a user manually places a trade.
+the short, high-stakes moment before a user manually places a trade: what the
+trade could do, what context or data may be missing, and what the user should
+verify before acting elsewhere.
 
 The MVP agent experience is a five-persona specialist review team. The team
 helps the user manage their own portfolio decisions with evidence and
@@ -31,7 +42,7 @@ recommend trades, allocate assets, or place orders.
 | Options review | Single-leg covered call and single-leg cash-secured put review. |
 | Calculations | Cash impact, collateral, free cash, assignment exposure, call-away exposure, allocation/concentration impact, deterministic risk-rule violations. |
 | Freshness | Separate broker snapshot freshness and market quote freshness. |
-| Output | Deterministic review report with optional AI explanation of structured facts. |
+| Output | Saved evidence snapshot plus explicit Agent Team briefing, with deterministic facts as the supporting evidence layer. |
 | Storage | Durable report/review history for synthetic/local development and later beta. |
 | UI posture | Operational cockpit and review workspace, not a marketing page or trading terminal. |
 | Agent personas | Fundamentals Analyst, News Analyst, Technical Analyst, Risk Manager, Portfolio Manager. Clean UI labels only; backend keys may stay unchanged. |
@@ -110,7 +121,7 @@ Phase 16 is split:
 - Phase 16A: deterministic agent components such as Portfolio Context, Trade Review, Freshness/Guardrail, and Report Composer.
 - Phase 16B: portfolio-aware agent-team orchestrator that defines stage order, run/step persistence, actionability enforcement, private/public context boundaries, and fallback behavior when research or LLMs are unavailable.
 
-### Gate 4 - Frontend Trade Review Workspace
+### Gate 4 - Frontend Trade Review Workspace And Saved Briefing
 
 Required before a beta-style product demo.
 
@@ -120,7 +131,8 @@ The frontend must show:
 - Deterministic results.
 - Broker freshness and market quote freshness separately.
 - Analysis-only or blocked states.
-- Report history.
+- Saved evidence snapshot and explicit Agent Team briefing generation.
+- Report history/readback from frozen saved evidence.
 - Clear read-only/manual-decision language.
 
 Phase 18 may use deterministic review plus Phase 16A/16B outputs for the first workspace. Rich public research/debate UI should wait for Phase 17 evidence contracts.
@@ -138,17 +150,22 @@ unless users later prove the need and licensing is approved.
 
 ## First Beta Scope
 
-The first local beta/demo can be useful with manual/CSV snapshots and
+The first internal validation demo is useful with synthetic/manual snapshots
+and mocked or replayed evidence because it proves the golden path without real
+brokerage data. A later local beta can be useful with manual/CSV snapshots and
 synthetic/manual market data if the product labels outputs as analysis-only
-where appropriate. A paid or external beta should aim for read-only broker
-sync plus a clear refresh/confirm path and a display-rights-cleared REST
-snapshot market-data source for quote-current options review. Broad provider
-coverage and streaming are not required before validating the core pre-trade
-review job.
+where appropriate. A paid or external beta should aim for read-only broker sync
+plus a clear refresh/confirm path and a display-rights-cleared REST snapshot
+market-data source for quote-current options review. Broad provider coverage
+and streaming are not required before validating the core review-desk job.
 
 ## Scope Admission Rule
 
-A feature belongs in MVP only if it directly improves the user's ability to understand a proposed manual trade's portfolio impact, cash/collateral impact, assignment/call-away exposure, concentration risk, risk-rule violations, or data freshness.
+A feature belongs in MVP only if it directly improves the user's ability to
+understand what they might be ignoring before a proposed manual trade:
+portfolio impact, cash/collateral impact, assignment/call-away exposure,
+concentration risk, risk-rule violations, evidence limitations, or data
+freshness.
 
 Features that mainly improve discovery, screening, research breadth, automation, execution, or dashboard polish should wait unless they unblock the core review workflow.
 

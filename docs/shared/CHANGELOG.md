@@ -1,5 +1,26 @@
 # Changelog
 
+- 2026-06-29: Implemented P33A-T3/T4 backend tool-mediated Agent Team
+  foundation. P33A-T3 now builds a deterministic planner -> backend-executed
+  tools -> role findings -> Evidence Auditor -> Portfolio Manager synthesis
+  summary over saved evidence only, and P33A-T4 adds an optional sanitized
+  `tool_run_artifact` freeze to saved Agent Team summaries for reproducibility.
+  Frozen artifacts include only reviewed plan metadata, safe ToolResult
+  envelopes, audited findings, auditor records, warning codes, open questions,
+  and synthesis evidence refs. No frontend, live providers, new sources, raw
+  account/provider/broker data, raw payloads, prompts, traces, generated
+  metrics, MCP, TradingAgents, LangGraph, or LLM calls were added.
+- 2026-06-23: Opened P31A - Founder Demo Polish And Product Narrative. Added
+  `docs/codex-b-architecture/PHASE_31A_FOUNDER_DEMO_POLISH_CONTRACT.md` and
+  made P31A-T1/T2 the active handoff path: product narrative docs alignment,
+  then golden-path copy and technical-artifact audit. P31A is scoped to
+  presentation/narrative polish around the accepted internal validation loop:
+  friendlier scope-note labels, clearer save/generate/report continuity,
+  graceful synthetic/demo labeling, and minimal adjacent-surface hygiene. It
+  explicitly does not reopen providers, public evidence expansion, Dashboard
+  expansion, Account Details redesign, Agent Console composer work, runtime
+  tools, broker/order behavior, frontend financial calculation, auth/pricing/
+  signup implementation, or TradingAgents integration.
 - 2026-06-23: Codex A/founder accepted P30B-T6. Golden Path Prototype
   Hardening And Demo Readiness is now closed as the internal MVP validation
   loop. Accepted coverage includes DB-backed route-spine tests, stable synthetic

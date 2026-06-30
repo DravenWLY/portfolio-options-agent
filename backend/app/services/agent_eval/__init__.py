@@ -14,7 +14,11 @@ from app.services.agent_eval.checks import (
     check_role_boundaries,
     classify_failures,
 )
-from app.services.agent_eval.harness import evaluate_agent_review_run, evaluate_generated_output
+from app.services.agent_eval.harness import (
+    evaluate_agent_review_run,
+    evaluate_generated_output,
+    evaluate_tool_mediated_report,
+)
 from app.services.agent_eval.results import EvalFinding, EvalReport
 
 __all__ = [
@@ -22,6 +26,7 @@ __all__ = [
     "EvalReport",
     "evaluate_agent_review_run",
     "evaluate_generated_output",
+    "evaluate_tool_mediated_report",
     "check_forbidden_wording",
     "check_evidence_faithfulness",
     "check_prompt_privacy_keys",

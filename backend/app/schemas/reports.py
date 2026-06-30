@@ -95,6 +95,16 @@ _SAVED_REVIEW_PROHIBITED_PHRASES = (
     "submit order",
     "execute trade",
 )
+_SAVED_REVIEW_ALLOWED_NEGATED_DISCLOSURES = (
+    (
+        "source: fred, federal reserve bank of st. louis. economic release/calendar metadata only. "
+        "not investment advice or a trading signal."
+    ),
+    (
+        "fred aggregates data from multiple sources; releases may lag, revise, or be subject to "
+        "source-specific rights. portfolio copilot does not use this as a trade recommendation."
+    ),
+)
 _SAVED_REVIEW_FORBIDDEN_REFERENCE_TOKENS = (
     "account",
     "acct",
@@ -130,7 +140,9 @@ _SAVED_REVIEW_FORBIDDEN_VALUE_TOKENS = (
     "buying_power",
     "api_key",
     "access_token",
-    "prompt",
+    "raw_prompt",
+    "prompt text",
+    "prompt:",
     "llm_trace",
     "provider_trace_id",
 )
@@ -167,6 +179,42 @@ _PUBLIC_EVIDENCE_FORBIDDEN_VALUE_TOKENS = (
     "raw provider",
     "source_url",
 )
+_SAVED_TOOL_FREEZE_FORBIDDEN_VALUE_TOKENS = (
+    "http://",
+    "https://",
+    "source_url",
+    "raw url",
+    "raw payload",
+    "provider_account_id",
+    "broker_account_id",
+    "account_number",
+    "buying_power",
+    "raw_holdings",
+    "raw_positions",
+    "tax_lot",
+    "trace",
+)
+_SAVED_TOOL_FREEZE_FORBIDDEN_KEYS = {
+    "source_url",
+    "source_urls",
+    "url",
+    "urls",
+    "prompt",
+    "prompts",
+    "raw_prompt",
+    "raw_prompts",
+    "prompt_text",
+    "prompt_messages",
+    "trace",
+    "traces",
+}
+_SAVED_TOOL_FREEZE_GENERATED_METRIC_PATTERNS = (
+    re.compile(r"(?<![A-Za-z])\$[0-9][0-9,]*(?:\.[0-9]+)?"),
+    re.compile(r"\b[0-9]+(?:\.[0-9]+)?\s?%"),
+    re.compile(r"\bprice target\b", re.IGNORECASE),
+    re.compile(r"\b(?:roi|yield|breakeven|break-even)\b", re.IGNORECASE),
+    re.compile(r"\b[0-9]+(?:\.[0-9]+)?\s*(?:shares?|contracts?)\b", re.IGNORECASE),
+)
 
 
 def validate_saved_review_artifact_payload(value: object) -> None:
@@ -177,9 +225,47 @@ def validate_saved_review_artifact_payload(value: object) -> None:
     for token in _SAVED_REVIEW_FORBIDDEN_VALUE_TOKENS:
         if token in rendered:
             raise ValueError(f"saved review artifact contains forbidden private value: {token}")
+    for disclosure in _SAVED_REVIEW_ALLOWED_NEGATED_DISCLOSURES:
+        rendered = rendered.replace(disclosure, "")
     for phrase in _SAVED_REVIEW_PROHIBITED_PHRASES:
         if phrase in rendered:
             raise ValueError(f"saved review artifact contains prohibited wording: {phrase}")
+
+
+def validate_saved_tool_freeze_payload(value: object) -> None:
+    """Validate frozen tool-mediated run artifacts before saved-report persistence."""
+
+    validate_saved_review_artifact_payload(value)
+    forbidden = find_forbidden_keys(value, forbidden_keys=_SAVED_TOOL_FREEZE_FORBIDDEN_KEYS)
+    if forbidden:
+        raise ValueError(f"saved tool-mediated run artifact contains forbidden raw-source fields: {sorted(forbidden)}")
+    rendered = repr(value).lower()
+    for token in _SAVED_TOOL_FREEZE_FORBIDDEN_VALUE_TOKENS:
+        if token in rendered:
+            raise ValueError(f"saved tool-mediated run artifact contains forbidden value: {token}")
+    metric_paths = _find_saved_tool_freeze_metric_strings(value)
+    if metric_paths:
+        raise ValueError(f"saved tool-mediated run artifact contains generated metric text: {sorted(metric_paths)}")
+
+
+def _find_saved_tool_freeze_metric_strings(value: object, *, prefix: str = "") -> set[str]:
+    if isinstance(value, str):
+        if any(pattern.search(value) for pattern in _SAVED_TOOL_FREEZE_GENERATED_METRIC_PATTERNS):
+            return {prefix or "<value>"}
+        return set()
+    if isinstance(value, dict):
+        found: set[str] = set()
+        for key, item in value.items():
+            key_path = f"{prefix}.{key}" if prefix else str(key)
+            found.update(_find_saved_tool_freeze_metric_strings(item, prefix=key_path))
+        return found
+    if isinstance(value, (list, tuple)):
+        found = set()
+        for index, item in enumerate(value):
+            item_path = f"{prefix}[{index}]" if prefix else f"[{index}]"
+            found.update(_find_saved_tool_freeze_metric_strings(item, prefix=item_path))
+        return found
+    return set()
 
 
 def validate_saved_review_reference(value: str) -> None:
@@ -331,6 +417,166 @@ class SavedAgentTeamRoleSummaryRead(BaseModel):
         return self
 
 
+class SavedToolMediatedPlannedToolRequestRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    tool_name: str
+    args: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def planned_tool_request_must_be_safe(self) -> "SavedToolMediatedPlannedToolRequestRead":
+        validate_saved_tool_freeze_payload(self.model_dump(mode="python"))
+        return self
+
+
+class SavedToolMediatedRolePlanRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    role_name: str
+    tool_requests: tuple[SavedToolMediatedPlannedToolRequestRead, ...]
+    rationale_code: str
+
+    @model_validator(mode="after")
+    def role_plan_must_be_safe(self) -> "SavedToolMediatedRolePlanRead":
+        validate_saved_tool_freeze_payload(self.model_dump(mode="python"))
+        return self
+
+
+class SavedToolMediatedToolResultRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    tool_name: str
+    role_name: str
+    status: str
+    evidence_tier: str
+    data_mode: str
+    source_key: str
+    source_label: str
+    availability: SavedEvidenceAvailability
+    freshness: str | None = None
+    as_of: datetime | None = None
+    scope: dict[str, Any] = Field(default_factory=dict)
+    caveat_codes: tuple[str, ...] = ()
+    evidence_refs: tuple[str, ...] = ()
+    summary_payload: dict[str, Any] = Field(default_factory=dict)
+    provenance: str
+    latency_ms: int = Field(ge=0)
+    estimated_cost: str
+    is_mock: bool
+    contract_version: str
+
+    @model_validator(mode="after")
+    def tool_result_must_be_safe(self) -> "SavedToolMediatedToolResultRead":
+        validate_saved_tool_freeze_payload(self.model_dump(mode="python"))
+        return self
+
+
+class SavedToolMediatedRoleFindingRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    finding_type: str
+    claim_text: str
+    evidence_refs: tuple[str, ...]
+    caveat_codes: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def role_finding_must_be_safe(self) -> "SavedToolMediatedRoleFindingRead":
+        validate_saved_tool_freeze_payload(self.model_dump(mode="python"))
+        return self
+
+
+class SavedToolMediatedRoleFindingSetRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    role_name: str
+    role_status: AgentTeamReportRoleStatus
+    findings: tuple[SavedToolMediatedRoleFindingRead, ...]
+    warning_codes: tuple[str, ...]
+    unavailable_reason: str | None = None
+
+    @model_validator(mode="after")
+    def role_finding_set_must_be_safe(self) -> "SavedToolMediatedRoleFindingSetRead":
+        validate_saved_tool_freeze_payload(self.model_dump(mode="python"))
+        return self
+
+
+class SavedToolMediatedContradictionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    evidence_ref: str
+    role_a: str
+    role_b: str
+    description: str
+
+    @model_validator(mode="after")
+    def contradiction_must_be_safe(self) -> "SavedToolMediatedContradictionRead":
+        validate_saved_tool_freeze_payload(self.model_dump(mode="python"))
+        return self
+
+
+class SavedToolMediatedAuditorRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    audit_version: str
+    role_verdicts: tuple[tuple[str, bool], ...]
+    contradictions: tuple[SavedToolMediatedContradictionRead, ...]
+    dropped_claims: tuple[str, ...]
+    repass_triggered: bool
+    eval_flags: tuple[str, ...]
+
+    @model_validator(mode="after")
+    def auditor_must_be_safe(self) -> "SavedToolMediatedAuditorRead":
+        validate_saved_tool_freeze_payload(self.model_dump(mode="python"))
+        return self
+
+
+class SavedToolMediatedProviderRunRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    role_name: str
+    provider: str
+    model: str
+    prompt_version: str
+    status: str
+    tokens_in: int | None = Field(default=None, ge=0)
+    tokens_out: int | None = Field(default=None, ge=0)
+    estimated_cost: str | None = None
+    is_mock: bool
+
+    @model_validator(mode="after")
+    def provider_run_must_be_safe(self) -> "SavedToolMediatedProviderRunRead":
+        validate_saved_tool_freeze_payload(self.model_dump(mode="python"))
+        return self
+
+
+class SavedToolMediatedRunArtifactRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    artifact_schema_version: Literal["p33a_tool_run_freeze_v1"] = "p33a_tool_run_freeze_v1"
+    provider_mode: Literal["tool_mediated_mock", "tool_mediated_live"]
+    plan_version: str
+    audit_version: str
+    locked_question: str
+    dimensions: tuple[str, ...]
+    role_plan: tuple[SavedToolMediatedRolePlanRead, ...]
+    tool_results: tuple[SavedToolMediatedToolResultRead, ...]
+    audited_findings: tuple[SavedToolMediatedRoleFindingSetRead, ...]
+    auditor: SavedToolMediatedAuditorRead
+    provider_runs: tuple[SavedToolMediatedProviderRunRead, ...] = ()
+    open_questions: tuple[str, ...]
+    synthesis_evidence_references: tuple[str, ...]
+    warning_codes: tuple[str, ...]
+    tool_result_count: int = Field(ge=0)
+    frozen_at: datetime
+
+    @model_validator(mode="after")
+    def tool_run_artifact_must_be_safe(self) -> "SavedToolMediatedRunArtifactRead":
+        if self.tool_result_count != len(self.tool_results):
+            raise ValueError("tool_result_count must match frozen tool results")
+        validate_saved_tool_freeze_payload(self.model_dump(mode="python"))
+        return self
+
+
 class SavedAgentTeamSummaryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
@@ -344,6 +590,7 @@ class SavedAgentTeamSummaryRead(BaseModel):
     final_synthesis_authored_by: AgentTeamReportSynthesisAuthor | None = None
     evidence_schema_version: str | None = None
     evidence_references: tuple[str, ...] = ()
+    tool_run_artifact: SavedToolMediatedRunArtifactRead | None = None
 
     @model_validator(mode="after")
     def agent_summary_must_be_safe(self) -> "SavedAgentTeamSummaryRead":

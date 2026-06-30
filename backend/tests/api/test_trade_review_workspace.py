@@ -1666,9 +1666,9 @@ def test_user_selected_account_details_returns_private_display_rows_for_current_
         )
     )
     contract = OptionContract(
-        occ_symbol="XYZ260619C00050000",
+        occ_symbol="XYZ270619C00050000",
         underlying_symbol="XYZ",
-        expiration_date=date(2026, 6, 19),
+        expiration_date=date(2027, 6, 19),
         strike=Decimal("50.00"),
         option_type="call",
         multiplier=Decimal("100"),
@@ -1795,7 +1795,7 @@ def test_user_selected_account_details_returns_private_display_rows_for_current_
         "has_more": False,
     }
     assert payload["option_position_rows"][0]["underlying_symbol_label"] == "XYZ"
-    assert payload["option_position_rows"][0]["contract_label"] == "XYZ 2026-06-19 Strike $50.00 Call"
+    assert payload["option_position_rows"][0]["contract_label"] == "XYZ 2027-06-19 Strike $50.00 Call"
     assert payload["option_position_rows"][0]["side_label"] == "Short"
     assert payload["option_position_rows"][0]["quantity_label"] == "1 contract"
     assert payload["option_position_rows"][0]["last_price_label"] == "$3.47"
@@ -1931,11 +1931,12 @@ def test_user_account_details_sync_resolves_opaque_reference_and_returns_sanitiz
     assert str(broker_account.id).lower() not in rendered
     assert "provider_account_id_secret_sync" not in rendered
     assert "provider_request_id_secret_sync" not in rendered
+    provider_account_id = broker_account.provider_account_id
     assert adapter.calls == [
-        "refresh_account:provider_account_id_secret_sync",
-        "get_balances:provider_account_id_secret_sync",
-        "get_positions:provider_account_id_secret_sync",
-        "get_option_positions:provider_account_id_secret_sync",
+        f"refresh_account:{provider_account_id}",
+        f"get_balances:{provider_account_id}",
+        f"get_positions:{provider_account_id}",
+        f"get_option_positions:{provider_account_id}",
     ]
     assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
 
@@ -2270,6 +2271,7 @@ def _collect_string_values(value: object) -> tuple[str, ...]:
 
 
 def _create_account_details_sync_account(db_session, *, email: str = "sync-bridge@example.com") -> tuple[User, BrokerAccount]:
+    email_slug = email.split("@", maxsplit=1)[0].replace(".", "-").replace("_", "-")
     user = User(display_name="Sync Bridge User", email=email)
     db_session.add(user)
     db_session.flush()
@@ -2286,7 +2288,7 @@ def _create_account_details_sync_account(db_session, *, email: str = "sync-bridg
         user_id=user.id,
         provider="snaptrade",
         broker_name="Fidelity private broker label should not render raw",
-        provider_connection_id="provider_connection_id_secret_sync",
+        provider_connection_id=f"provider_connection_id_secret_sync_{email_slug}",
         connection_status="connected",
         sync_status="idle",
         data_freshness_status="fresh",
@@ -2296,7 +2298,7 @@ def _create_account_details_sync_account(db_session, *, email: str = "sync-bridg
     broker_account = BrokerAccount(
         broker_connection_id=connection.id,
         account_id=account.id,
-        provider_account_id="provider_account_id_secret_sync",
+        provider_account_id=f"provider_account_id_secret_sync_{email_slug}",
         display_name="Taxable account ending 1234 should not render",
         account_type="taxable_individual",
         base_currency="USD",

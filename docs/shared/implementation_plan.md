@@ -623,10 +623,31 @@ Detailed verification history is archived in:
 
 - `P34A-T6` - Public news/event source-rights gate.
   - Owner: Codex B. Reviewer: Codex A/founder.
-  - Status: deferred until M1 works. Choose whether to add a news/company-event
-    source. No news/event tool may be implemented until rights, retention,
-    attribution, excerpt/URL/raw-payload policy, and rate/budget limits are
-    approved.
+  - Source-rights reference:
+    `docs/codex-b-architecture/PHASE_34A_T6_PUBLIC_NEWS_EVENT_SOURCE_RIGHTS_GATE.md`.
+  - Status: done 2026-06-30 by Codex B. General public-news providers are not
+    approved for Agent Team tools in P34A. NewsAPI/generic aggregators,
+    Benzinga/Finnhub/Polygon/FMP news, and GDELT/web-scale news databases remain
+    blocked pending provider-specific rights, excerpt/URL/raw-payload,
+    retention, attribution, and commercial-use review. Conditionally approved
+    one narrow event lane: SEC EDGAR recent filing metadata only, as normalized
+    company-event metadata with source attribution, no SEC endorsement wording,
+    no filing-body/exhibit/XBRL/news text, no raw URLs/payloads, no filing/event
+    interpretation, and no trading-action language. Failures degrade to
+    unavailable/gap states and must not fall back to news providers, web search,
+    or scraping.
+
+- `P34A-T6A` - SEC EDGAR recent filing metadata tool.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: next. Implement a backend-only, disabled-by-default,
+    fake/replay-tested `public_events_calendar`/company-event tool over
+    normalized SEC EDGAR recent filing metadata. The tool may expose only
+    reviewed source labels, availability/freshness/as-of, form type, filing
+    date, reviewed company identity metadata, opaque normalized filing refs if
+    needed for audit, and caveats/limitations. No raw SEC payloads, raw URLs,
+    filing text, exhibits, XBRL facts, press/news text, filing interpretation,
+    frontend changes, web search, MCP, TradingAgents runtime, or live provider
+    tests.
 
 - `P34A-T7` - Live end-to-end prototype smoke.
   - Owner: Codex B. Reviewers: Codex A/founder for usefulness; Claude B if UI

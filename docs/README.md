@@ -50,6 +50,8 @@ phase archives:
   tool-rich architecture discussion.
 - `docs/claude-e-agentic/PHASE_34A_T2_LIVE_ROLE_PROMPT_AUDITOR_DESIGN.md` -
   live role prompt and Evidence Auditor design.
+- `docs/codex-b-architecture/PHASE_34A_T6_PUBLIC_NEWS_EVENT_SOURCE_RIGHTS_GATE.md` -
+  public news/event source-rights decision for Agent Team tools.
 
 ## Agent Context Decision
 

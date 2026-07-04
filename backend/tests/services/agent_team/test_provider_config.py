@@ -5,7 +5,10 @@ from app.services.agent_team.provider_config import (
     DEFAULT_OPENAI_MODEL,
     LLMProviderConfig,
     LLMProviderConfigurationError,
+    LLMProviderSecrets,
+    live_llm_tests_enabled,
     load_llm_provider_config,
+    load_llm_provider_secrets,
 )
 
 
@@ -44,6 +47,15 @@ def test_provider_config_parses_app_owned_names() -> None:
     assert config.max_retries == 2
     assert config.token_budget_per_run == 321
     assert config.live_tests_enabled is True
+
+
+def test_provider_config_accepts_generic_live_test_flag_alias() -> None:
+    config = load_llm_provider_config({"RUN_LIVE_LLM_TESTS": "true"})
+
+    assert config.live_tests_enabled is True
+    assert live_llm_tests_enabled({"RUN_LIVE_LLM_TESTS": "true"}) is True
+    assert live_llm_tests_enabled({"POA_LLM_LIVE_TESTS": "1"}) is True
+    assert live_llm_tests_enabled({}) is False
 
 
 @pytest.mark.parametrize(
@@ -121,3 +133,29 @@ def test_openai_credential_not_required_in_default_mock_mode() -> None:
 
     assert config.openai_credential_available is False
     assert config.public_snapshot()["openai_credential_configured"] is False
+
+
+def test_provider_secrets_are_loaded_separately_and_redacted() -> None:
+    secrets = load_llm_provider_secrets(
+        {
+            "GOOGLE_API_KEY": "test-key-not-real",
+            "OPENAI_API_KEY": "test-openai-key-not-real",
+        }
+    )
+
+    assert secrets.google_credential_available is True
+    assert secrets.openai_credential_available is True
+    assert secrets.public_snapshot() == {
+        "google_credential_configured": True,
+        "openai_credential_configured": True,
+    }
+    assert "test-key-not-real" not in repr(secrets)
+    assert "test-openai-key-not-real" not in repr(secrets)
+
+
+def test_provider_secrets_default_to_empty_without_process_env() -> None:
+    secrets = LLMProviderSecrets()
+
+    assert secrets.google_api_key is None
+    assert secrets.openai_api_key is None
+    assert secrets.public_snapshot()["google_credential_configured"] is False

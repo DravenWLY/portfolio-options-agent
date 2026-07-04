@@ -2,14 +2,15 @@
 
 This test is EXCLUDED from the default suite (``external``/``slow`` markers, see
 pytest.ini ``addopts``) AND skipped unless explicitly opted in via
-``POA_LLM_LIVE_TESTS=1`` with ``GOOGLE_API_KEY`` present. It makes a real Gemini
+``RUN_LIVE_LLM_TESTS=true`` (or legacy ``POA_LLM_LIVE_TESTS=1``) with
+``GOOGLE_API_KEY`` present. It makes a real Gemini
 call ONLY when opted in, uses synthetic workspace data only, and never prints or
 inspects the API key value.
 
 Run it manually (GOOGLE_API_KEY must already be exported in your shell; do not
 pass a key inline):
     cd backend
-    POA_LLM_LIVE_TESTS=1 \
+    RUN_LIVE_LLM_TESTS=true \
       ./.venv/bin/python -m pytest tests/services/agent_team/test_gemini_live_smoke.py -m external -q
 """
 
@@ -25,7 +26,7 @@ from app.services.agent_team.llm_provider import (
     find_prohibited_llm_phrases,
     find_secret_like_values,
 )
-from app.services.agent_team.provider_config import DEFAULT_LIVE_MODEL, LLMProviderConfig
+from app.services.agent_team.provider_config import DEFAULT_LIVE_MODEL, LLMProviderConfig, live_llm_tests_enabled
 from app.services.agent_team.provider_factory import resolve_llm_provider
 from app.services.agent_team.review_runner import ReviewRunner
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
@@ -36,14 +37,14 @@ pytestmark = [pytest.mark.external, pytest.mark.slow, pytest.mark.adapter]
 
 
 def _live_opt_in() -> bool:
-    flag = os.environ.get("POA_LLM_LIVE_TESTS", "").strip().lower() in {"1", "true", "yes", "on"}
+    flag = live_llm_tests_enabled(os.environ)
     has_key = bool(os.environ.get("GOOGLE_API_KEY", "").strip())
     return flag and has_key
 
 
 @pytest.mark.skipif(
     not _live_opt_in(),
-    reason="opt-in Gemini live smoke disabled; set POA_LLM_LIVE_TESTS=1 and GOOGLE_API_KEY to run",
+    reason="opt-in Gemini live smoke disabled; set RUN_LIVE_LLM_TESTS=true and GOOGLE_API_KEY to run",
 )
 def test_gemini_live_smoke_runs_through_safety_and_eval() -> None:
     api_key = os.environ["GOOGLE_API_KEY"]  # presence verified above; never logged

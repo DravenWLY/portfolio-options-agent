@@ -12,7 +12,13 @@ from app.services.agent_team.llm_provider import (
 )
 from app.services.agent_team.mock_provider import MockLLMProvider
 from app.services.agent_team.openai_provider import OpenAILLMProvider
-from app.services.agent_team.provider_config import LLMProviderConfig, LLMProviderConfigurationError, load_llm_provider_config
+from app.services.agent_team.provider_config import (
+    LLMProviderConfig,
+    LLMProviderConfigurationError,
+    LLMProviderSecrets,
+    load_llm_provider_config,
+    load_llm_provider_secrets,
+)
 
 
 @dataclass(frozen=True)
@@ -32,12 +38,17 @@ class LLMProviderResolution:
 def resolve_llm_provider(
     config: LLMProviderConfig | None = None,
     *,
+    secrets: LLMProviderSecrets | None = None,
     google_api_key: str | None = None,
     openai_api_key: str | None = None,
 ) -> LLMProviderResolution:
     """Resolve the configured provider without allowing client-side selection."""
 
     cfg = config or LLMProviderConfig()
+    provider_secrets = secrets or LLMProviderSecrets(
+        google_api_key=google_api_key,
+        openai_api_key=openai_api_key,
+    )
     if cfg.mode == "mock":
         return LLMProviderResolution(
             provider=MockLLMProvider(model=cfg.model),
@@ -46,7 +57,7 @@ def resolve_llm_provider(
             model=cfg.model,
         )
     if cfg.provider == "google":
-        if not google_api_key:
+        if not provider_secrets.google_api_key:
             return LLMProviderResolution(
                 provider=UnavailableLLMProvider(
                     provider_name="google",
@@ -63,7 +74,7 @@ def resolve_llm_provider(
         return LLMProviderResolution(
             provider=GoogleGeminiLLMProvider(
                 model=cfg.model,
-                api_key=google_api_key,
+                api_key=provider_secrets.google_api_key,
                 timeout_seconds=cfg.timeout_seconds,
                 max_retries=cfg.max_retries,
             ),
@@ -72,7 +83,7 @@ def resolve_llm_provider(
             model=cfg.model,
         )
     if cfg.provider == "openai":
-        if not openai_api_key:
+        if not provider_secrets.openai_api_key:
             return LLMProviderResolution(
                 provider=UnavailableLLMProvider(
                     provider_name="openai",
@@ -89,7 +100,7 @@ def resolve_llm_provider(
         return LLMProviderResolution(
             provider=OpenAILLMProvider(
                 model=cfg.model,
-                api_key=openai_api_key,
+                api_key=provider_secrets.openai_api_key,
                 timeout_seconds=cfg.timeout_seconds,
                 max_retries=cfg.max_retries,
             ),
@@ -127,11 +138,7 @@ def resolve_llm_provider_from_env(env: dict[str, str] | os._Environ[str] | None 
             error_code="provider_config_error",
             error_message="LLM provider configuration is invalid.",
         )
-    return resolve_llm_provider(
-        config,
-        google_api_key=values.get("GOOGLE_API_KEY"),
-        openai_api_key=values.get("OPENAI_API_KEY"),
-    )
+    return resolve_llm_provider(config, secrets=load_llm_provider_secrets(values))
 
 
 class UnavailableLLMProvider:

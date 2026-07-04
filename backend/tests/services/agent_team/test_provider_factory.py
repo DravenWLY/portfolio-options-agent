@@ -4,7 +4,7 @@ import pytest
 
 from app.services.agent_team.mock_provider import MockLLMProvider
 from app.services.agent_team.openai_provider import OpenAILLMProvider
-from app.services.agent_team.provider_config import LLMProviderConfig, load_llm_provider_config
+from app.services.agent_team.provider_config import LLMProviderConfig, LLMProviderSecrets, load_llm_provider_config
 from app.services.agent_team.provider_factory import UnavailableLLMProvider, resolve_llm_provider, resolve_llm_provider_from_env
 
 
@@ -39,7 +39,7 @@ def test_live_google_mode_returns_google_provider_when_backend_key_is_passed() -
             "GOOGLE_API_KEY": "synthetic-test-key-not-returned",
         }
     )
-    resolution = resolve_llm_provider(config, google_api_key="synthetic-test-key-not-returned")
+    resolution = resolve_llm_provider(config, secrets=LLMProviderSecrets(google_api_key="synthetic-test-key-not-returned"))
 
     assert resolution.available is True
     assert resolution.provider is not None
@@ -87,7 +87,10 @@ def test_live_openai_mode_returns_openai_provider_when_backend_key_is_passed() -
             "OPENAI_API_KEY": "synthetic-openai-key-not-returned",
         }
     )
-    resolution = resolve_llm_provider(config, openai_api_key="synthetic-openai-key-not-returned")
+    resolution = resolve_llm_provider(
+        config,
+        secrets=LLMProviderSecrets(openai_api_key="synthetic-openai-key-not-returned"),
+    )
 
     assert resolution.available is True
     assert resolution.status == "ok"
@@ -132,3 +135,21 @@ def test_mock_mode_does_not_import_openai_sdk() -> None:
 
     assert resolution.available is True
     assert "openai" not in after - before
+
+
+def test_resolve_provider_uses_injected_fake_secrets_without_process_env_or_sdk_import() -> None:
+    before = set(sys.modules)
+    config = LLMProviderConfig(
+        mode="live",
+        provider="google",
+        model="gemini-synthetic",
+        google_credential_available=True,
+    )
+
+    resolution = resolve_llm_provider(config, secrets=LLMProviderSecrets(google_api_key="test-key-not-real"))
+
+    after = set(sys.modules)
+    assert resolution.available is True
+    assert resolution.provider_name == "google"
+    assert "test-key-not-real" not in repr(resolution)
+    assert "google.genai" not in after - before

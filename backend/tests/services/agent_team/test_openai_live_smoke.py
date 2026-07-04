@@ -4,7 +4,7 @@ WARNING: PAID API USAGE. Do not run without explicit founder approval.
 
 This test is EXCLUDED from the default suite (``external``/``slow`` markers, see
 pytest.ini ``addopts``) AND skipped unless explicitly opted in via BOTH
-``POA_LLM_LIVE_TESTS=1`` and the dedicated paid-usage acknowledgement
+``RUN_LIVE_LLM_TESTS=true`` (or legacy ``POA_LLM_LIVE_TESTS=1``) and the dedicated paid-usage acknowledgement
 ``POA_LLM_OPENAI_LIVE=1``, with ``OPENAI_API_KEY`` present. The extra
 ``POA_LLM_OPENAI_LIVE`` gate ensures enabling the (free-tier) Gemini smoke never
 accidentally triggers a paid OpenAI call.
@@ -15,7 +15,7 @@ workspace data only, and never prints or inspects the API key value.
 Run it manually (paid, with approval; OPENAI_API_KEY must already be exported in
 your shell; do not pass a key inline):
     cd backend
-    POA_LLM_LIVE_TESTS=1 POA_LLM_OPENAI_LIVE=1 \
+    RUN_LIVE_LLM_TESTS=true POA_LLM_OPENAI_LIVE=1 \
       ./.venv/bin/python -m pytest tests/services/agent_team/test_openai_live_smoke.py -m external -q
     # optional model override, e.g. POA_LLM_MODEL=gpt-5-nano (falls back to gpt-4o-mini)
 """
@@ -32,7 +32,7 @@ from app.services.agent_team.llm_provider import (
     find_prohibited_llm_phrases,
     find_secret_like_values,
 )
-from app.services.agent_team.provider_config import DEFAULT_OPENAI_MODEL, LLMProviderConfig
+from app.services.agent_team.provider_config import DEFAULT_OPENAI_MODEL, LLMProviderConfig, live_llm_tests_enabled
 from app.services.agent_team.provider_factory import resolve_llm_provider
 from app.services.agent_team.review_runner import ReviewRunner
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
@@ -45,7 +45,7 @@ _SAFE_TERMINAL_STATUSES = {"completed", "partially_completed", "failed_safe"}
 
 
 def _openai_live_opt_in() -> bool:
-    live = os.environ.get("POA_LLM_LIVE_TESTS", "").strip().lower() in {"1", "true", "yes", "on"}
+    live = live_llm_tests_enabled(os.environ)
     paid_ack = os.environ.get("POA_LLM_OPENAI_LIVE", "").strip().lower() in {"1", "true", "yes", "on"}
     has_key = bool(os.environ.get("OPENAI_API_KEY", "").strip())
     return live and paid_ack and has_key
@@ -54,7 +54,7 @@ def _openai_live_opt_in() -> bool:
 @pytest.mark.skipif(
     not _openai_live_opt_in(),
     reason=(
-        "opt-in PAID OpenAI live smoke disabled; set POA_LLM_LIVE_TESTS=1, "
+        "opt-in PAID OpenAI live smoke disabled; set RUN_LIVE_LLM_TESTS=true, "
         "POA_LLM_OPENAI_LIVE=1, and OPENAI_API_KEY to run (paid usage)"
     ),
 )

@@ -1,6 +1,11 @@
-"""Backend-owned provider configuration for the Phase 19B LLM provider gate."""
+"""Backend-owned provider configuration for the LLM provider gate.
 
-from dataclasses import asdict, dataclass
+Normal tests should pass explicit mappings/secrets and never depend on process
+environment, ``.env`` files, or real API keys. Live tests remain opt-in and
+external.
+"""
+
+from dataclasses import asdict, dataclass, field
 from typing import Literal, Mapping
 
 from app.services.agent_team.llm_provider import validate_llm_provider_payload
@@ -76,6 +81,37 @@ class LLMProviderConfig:
         }
 
 
+@dataclass(frozen=True)
+class LLMProviderSecrets:
+    """Secret provider values kept out of repr/public snapshots.
+
+    Tests may construct this with fake values such as ``"test-key-not-real"``.
+    The object is intentionally separate from ``LLMProviderConfig`` so safe
+    diagnostics/config snapshots never contain credential values.
+    """
+
+    google_api_key: str | None = field(default=None, repr=False)
+    openai_api_key: str | None = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "google_api_key", _optional_secret(self.google_api_key))
+        object.__setattr__(self, "openai_api_key", _optional_secret(self.openai_api_key))
+
+    @property
+    def google_credential_available(self) -> bool:
+        return self.google_api_key is not None
+
+    @property
+    def openai_credential_available(self) -> bool:
+        return self.openai_api_key is not None
+
+    def public_snapshot(self) -> dict[str, bool]:
+        return {
+            "google_credential_configured": self.google_credential_available,
+            "openai_credential_configured": self.openai_credential_available,
+        }
+
+
 def load_llm_provider_config(env: Mapping[str, str] | None = None) -> LLMProviderConfig:
     """Build provider config from an explicit environment mapping.
 
@@ -100,9 +136,36 @@ def load_llm_provider_config(env: Mapping[str, str] | None = None) -> LLMProvide
         max_retries=_int(values.get("POA_LLM_MAX_RETRIES"), default=0),
         token_budget_per_run=_int(values.get("POA_LLM_TOKEN_BUDGET_PER_RUN"), default=4000),
         rate_limit_fallback=_text(values.get("POA_LLM_RATE_LIMIT_FALLBACK"), default="partial_report"),  # type: ignore[arg-type]
-        live_tests_enabled=_bool(values.get("POA_LLM_LIVE_TESTS"), default=False),
+        live_tests_enabled=live_llm_tests_enabled(values),
         google_credential_available=bool(_text(values.get("GOOGLE_API_KEY"), default="")),
         openai_credential_available=bool(_text(values.get("OPENAI_API_KEY"), default="")),
+    )
+
+
+def load_llm_provider_secrets(env: Mapping[str, str] | None = None) -> LLMProviderSecrets:
+    """Load provider secrets from an explicit mapping.
+
+    Passing ``None`` returns an empty secret set. Process environment access is
+    centralized in provider_factory's ``*_from_env`` boundary.
+    """
+
+    values = env or {}
+    return LLMProviderSecrets(
+        google_api_key=values.get("GOOGLE_API_KEY"),
+        openai_api_key=values.get("OPENAI_API_KEY"),
+    )
+
+
+def live_llm_tests_enabled(env: Mapping[str, str] | None = None) -> bool:
+    """Return whether live LLM tests are explicitly enabled.
+
+    ``RUN_LIVE_LLM_TESTS`` is the generic test flag; ``POA_LLM_LIVE_TESTS`` is
+    kept as the existing project-specific alias.
+    """
+
+    values = env or {}
+    return _bool(values.get("RUN_LIVE_LLM_TESTS"), default=False) or _bool(
+        values.get("POA_LLM_LIVE_TESTS"), default=False
     )
 
 
@@ -126,3 +189,10 @@ def _bool(value: str | None, *, default: bool) -> bool:
     if value is None or not value.strip():
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _optional_secret(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip()
+    return text or None

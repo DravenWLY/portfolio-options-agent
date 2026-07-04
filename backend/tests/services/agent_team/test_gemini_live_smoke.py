@@ -3,9 +3,10 @@
 This test is EXCLUDED from the default suite (``external``/``slow`` markers, see
 pytest.ini ``addopts``) AND skipped unless explicitly opted in via
 ``RUN_LIVE_LLM_TESTS=true`` (or legacy ``POA_LLM_LIVE_TESTS=1``) with
-``GOOGLE_API_KEY`` present. It makes a real Gemini
-call ONLY when opted in, uses synthetic workspace data only, and never prints or
-inspects the API key value.
+``GOOGLE_API_KEY`` present. The opt-in values may come from the shell or from
+``backend/config.local.live-llm.env`` / ``backend/secrets/live-llm.env``. It
+makes a real Gemini call ONLY when opted in, uses synthetic workspace data only,
+and never prints or inspects the API key value.
 
 Run it manually (GOOGLE_API_KEY must already be exported in your shell; do not
 pass a key inline):
@@ -31,12 +32,14 @@ from app.services.agent_team.provider_factory import resolve_llm_provider
 from app.services.agent_team.review_runner import ReviewRunner
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.trade_review.frontend_read import build_trade_review_workspace_portfolio_preview
+from tests.live_llm_config import load_live_llm_test_config
 
 
 pytestmark = [pytest.mark.external, pytest.mark.slow, pytest.mark.adapter]
 
 
 def _live_opt_in() -> bool:
+    load_live_llm_test_config()
     flag = live_llm_tests_enabled(os.environ)
     has_key = bool(os.environ.get("GOOGLE_API_KEY", "").strip())
     return flag and has_key

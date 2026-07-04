@@ -70,8 +70,8 @@ class GoogleGeminiLLMProvider:
             return self._failure_response(request, status="provider_timeout")
         except ValueError:
             return self._failure_response(request, status="safety_validation_failed")
-        except Exception:
-            return self._failure_response(request, status="provider_unavailable")
+        except Exception as exc:
+            return self._failure_response(request, status=_google_client_error_status(exc))
 
     def _build_default_client(self) -> GoogleGeminiClient:
         if not self._api_key:
@@ -135,6 +135,22 @@ def _safe_status(status: str) -> LLMProviderStatus:
         "failed",
     }
     return status if status in allowed else "failed"  # type: ignore[return-value]
+
+
+def _google_client_error_status(exc: Exception) -> LLMProviderStatus:
+    """Map Google SDK errors to approved safe provider statuses."""
+
+    status = str(getattr(exc, "status", "") or "").strip().upper()
+    code = getattr(exc, "code", None)
+    if status == "RESOURCE_EXHAUSTED" or code == 429:
+        return "quota_exceeded"
+    if status in {"UNAUTHENTICATED", "PERMISSION_DENIED"} or code in {401, 403}:
+        return "provider_auth_error"
+    if status in {"DEADLINE_EXCEEDED", "CANCELLED"} or code == 504:
+        return "provider_timeout"
+    if status == "INVALID_ARGUMENT" or code == 400:
+        return "invalid_response"
+    return "provider_unavailable"
 
 
 def _safe_error_message(status: str) -> str:

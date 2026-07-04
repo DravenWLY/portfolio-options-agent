@@ -72,6 +72,20 @@ def test_google_provider_maps_timeout_and_invalid_response_safely() -> None:
     assert "raw timeout body" not in repr(timeout_response)
 
 
+def test_google_provider_maps_google_sdk_quota_error_safely() -> None:
+    class GoogleSdkQuotaError(Exception):
+        status = "RESOURCE_EXHAUSTED"
+        code = 429
+
+    provider = GoogleGeminiLLMProvider(model="gemini-synthetic", client=FakeGoogleClient(GoogleSdkQuotaError()))
+
+    response = provider.complete(_request())
+
+    assert response.status == "quota_exceeded"
+    assert response.error_code == "quota_exceeded"
+    assert response.content_markdown is None
+
+
 def test_google_provider_maps_safety_validation_failure_without_raw_output() -> None:
     provider = GoogleGeminiLLMProvider(model="gemini-synthetic", client=FakeGoogleClient("Generated output includes $50."))
 

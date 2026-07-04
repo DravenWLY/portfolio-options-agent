@@ -33,6 +33,7 @@ from app.services.agent_team.provider_factory import resolve_llm_provider
 from app.services.agent_team.review_runner import ReviewRunner
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.trade_review.frontend_read import build_trade_review_workspace_portfolio_preview
+from tests.agent_team_report_artifacts import write_agent_review_run_state_artifacts
 from tests.live_llm_config import load_live_llm_test_config
 
 
@@ -81,6 +82,9 @@ def test_gemini_live_smoke_runs_through_safety_and_eval() -> None:
     # Output leaks no private data, introduces no advice/execution wording, and
     # exposes no raw provider details on failure (reuses the app's validators).
     _assert_live_run_state_safe(state)
+    markdown_path, json_path = write_agent_review_run_state_artifacts(state, label="gemini-live-smoke")
+    assert markdown_path.exists()
+    assert json_path.exists()
 
 
 def _assert_live_run_state_safe(state) -> None:

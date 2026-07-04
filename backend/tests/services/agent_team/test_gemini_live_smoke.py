@@ -21,6 +21,7 @@ import os
 
 import pytest
 
+from app.core.config import get_settings
 from app.schemas.trade_review_workspace import TradeReviewPortfolioPreviewRequest
 from app.services.agent_team.llm_provider import (
     find_forbidden_string_values,
@@ -41,7 +42,7 @@ pytestmark = [pytest.mark.external, pytest.mark.slow, pytest.mark.adapter]
 def _live_opt_in() -> bool:
     load_live_llm_test_config()
     flag = live_llm_tests_enabled(os.environ)
-    has_key = bool(os.environ.get("GOOGLE_API_KEY", "").strip())
+    has_key = bool(get_settings().google_api_key)
     return flag and has_key
 
 
@@ -50,7 +51,7 @@ def _live_opt_in() -> bool:
     reason="opt-in Gemini live smoke disabled; set RUN_LIVE_LLM_TESTS=true and GOOGLE_API_KEY to run",
 )
 def test_gemini_live_smoke_runs_through_safety_and_eval() -> None:
-    api_key = os.environ["GOOGLE_API_KEY"]  # presence verified above; never logged
+    api_key = get_settings().require_google_api_key()
     config = LLMProviderConfig(
         mode="live",
         provider="google",

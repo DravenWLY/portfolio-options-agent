@@ -8,6 +8,14 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+_LIVE_LLM_TESTS_ENABLED = os.environ.get("RUN_LIVE_LLM_TESTS", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+} or os.environ.get("POA_LLM_LIVE_TESTS", "").strip().lower() in {"1", "true", "yes", "on"}
+if not _LIVE_LLM_TESTS_ENABLED:
+    os.environ.setdefault("POA_DOTENV_DISABLED", "1")
 os.environ.setdefault("LOCAL_DEV_ACCESS_TOKEN", "test-local-dev-access-token")
 os.environ.setdefault("SNAPTRADE_SECRET_ENCRYPTION_KEY", "test_snaptrade_secret_encryption_key_32_chars")
 

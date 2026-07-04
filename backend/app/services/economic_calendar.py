@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 import hashlib
 import json
-import os
 import re
 import time
 from pathlib import Path
@@ -16,6 +15,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from app.core.config import get_settings
 from app.schemas.economic_calendar import EconomicCalendarEventListRead, EconomicCalendarEventRead
 
 
@@ -917,7 +917,7 @@ def refresh_economic_calendar_unconfigured() -> EconomicCalendarSnapshot:
 def build_fmp_economic_calendar_refresh_runner_from_environment() -> Any:
     """Build the route refresh runner from backend environment only."""
 
-    api_key = os.environ.get("FMP_API_KEY", "").strip()
+    api_key = get_settings().fmp_api_key
     if not api_key:
         return refresh_economic_calendar_unconfigured
     return build_fmp_economic_calendar_refresh_runner(api_key=api_key)
@@ -926,7 +926,7 @@ def build_fmp_economic_calendar_refresh_runner_from_environment() -> Any:
 def build_fred_economic_calendar_refresh_runner_from_environment() -> Any:
     """Build the route refresh runner from backend FRED environment only."""
 
-    api_key = os.environ.get("FRED_API_KEY", "").strip()
+    api_key = get_settings().fred_api_key
     if not api_key:
         return refresh_economic_calendar_unconfigured
     return build_fred_economic_calendar_refresh_runner(api_key=api_key)

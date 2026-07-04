@@ -28,6 +28,7 @@ import os
 
 import pytest
 
+from app.core.config import get_settings
 from app.schemas.trade_review_workspace import TradeReviewPortfolioPreviewRequest
 from app.services.agent_team.llm_provider import (
     find_forbidden_string_values,
@@ -51,7 +52,7 @@ def _openai_live_opt_in() -> bool:
     load_live_llm_test_config()
     live = live_llm_tests_enabled(os.environ)
     paid_ack = os.environ.get("POA_LLM_OPENAI_LIVE", "").strip().lower() in {"1", "true", "yes", "on"}
-    has_key = bool(os.environ.get("OPENAI_API_KEY", "").strip())
+    has_key = bool(get_settings().openai_api_key)
     return live and paid_ack and has_key
 
 
@@ -63,7 +64,7 @@ def _openai_live_opt_in() -> bool:
     ),
 )
 def test_openai_live_smoke_runs_through_safety_and_eval() -> None:
-    api_key = os.environ["OPENAI_API_KEY"]  # presence verified above; never logged
+    api_key = get_settings().require_openai_api_key()
     config = LLMProviderConfig(
         mode="live",
         provider="openai",

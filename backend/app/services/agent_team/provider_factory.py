@@ -12,6 +12,7 @@ from app.services.agent_team.llm_provider import (
 )
 from app.services.agent_team.mock_provider import MockLLMProvider
 from app.services.agent_team.openai_provider import OpenAILLMProvider
+from app.core.config import get_settings
 from app.services.agent_team.provider_config import (
     LLMProviderConfig,
     LLMProviderConfigurationError,
@@ -121,7 +122,20 @@ def resolve_llm_provider(
 def resolve_llm_provider_from_env(env: dict[str, str] | os._Environ[str] | None = None) -> LLMProviderResolution:
     """Resolve provider from process environment without exposing credential values."""
 
-    values = env if env is not None else os.environ
+    if env is not None:
+        values = env
+        secrets = load_llm_provider_secrets(values)
+    else:
+        values = dict(os.environ)
+        settings = get_settings()
+        if settings.google_api_key and not values.get("GOOGLE_API_KEY"):
+            values["GOOGLE_API_KEY"] = settings.google_api_key
+        if settings.openai_api_key and not values.get("OPENAI_API_KEY"):
+            values["OPENAI_API_KEY"] = settings.openai_api_key
+        secrets = LLMProviderSecrets(
+            google_api_key=settings.google_api_key or values.get("GOOGLE_API_KEY"),
+            openai_api_key=settings.openai_api_key or values.get("OPENAI_API_KEY"),
+        )
     try:
         config = load_llm_provider_config(values)
     except LLMProviderConfigurationError:
@@ -138,7 +152,7 @@ def resolve_llm_provider_from_env(env: dict[str, str] | os._Environ[str] | None 
             error_code="provider_config_error",
             error_message="LLM provider configuration is invalid.",
         )
-    return resolve_llm_provider(config, secrets=load_llm_provider_secrets(values))
+    return resolve_llm_provider(config, secrets=secrets)
 
 
 class UnavailableLLMProvider:

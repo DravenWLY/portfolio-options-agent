@@ -4,10 +4,10 @@ from datetime import UTC, date, datetime
 import pytest
 
 from app.schemas.trade_review_workspace import TradeReviewPortfolioPreviewRequest
-from app.services.agent_team.llm_provider import AGENT_TEAM_ROLES, find_forbidden_string_values
-from app.services.agent_team.mock_provider import MockLLMProvider
-from app.services.agent_team.orchestrator import AgentTeamOrchestrator
-from app.services.agent_team.review_runner import ReviewRunner, dispatch_roles_sequentially
+from app.services.agent_team.llm_clients.contracts import AGENT_TEAM_ROLES, find_forbidden_string_values
+from app.services.agent_team.llm_clients.mock import MockLLMProvider
+from app.services.agent_team.legacy_console.orchestrator import AgentTeamOrchestrator
+from app.services.agent_team.legacy_console.review_runner import ReviewRunner, dispatch_roles_sequentially
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.trade_review.frontend_read import build_trade_review_workspace_portfolio_preview
 
@@ -40,6 +40,37 @@ def test_review_runner_normal_mock_run_completes(flow: str) -> None:
     assert state.market_quote_freshness["freshness_scope"] == "market_quote"
     assert state.final_synthesis.startswith("Portfolio-team synthesis")
     assert find_forbidden_keys(asdict(state), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS) == set()
+
+
+def test_review_runner_withholds_ok_content_carrying_private_value_tokens() -> None:
+    """P34A-T10A follow-up: live prose mentioning holdings/positions/cash tokens
+    is withheld and the role degrades safely instead of persisting the text."""
+
+    class _TokenLeakingProvider(MockLLMProvider):
+        def complete(self, request):  # noqa: ANN001, ANN201
+            response = super().complete(request)
+            if request.role_name != "risk_management_agent" or response.status != "ok":
+                return response
+            from dataclasses import replace
+
+            return replace(
+                response,
+                content_markdown=(
+                    "Qualitative review context that casually mentions your positions "
+                    "and cash allocation as background."
+                ),
+            )
+
+    state = ReviewRunner(provider=_TokenLeakingProvider()).run(workspace=_workspace("stock_buy"))
+
+    risk = next(output for output in state.role_outputs if output.role_name == "risk_management_agent")
+    assert risk.status == "unavailable"
+    assert risk.content_markdown is None
+    assert risk.provider_status == "safety_validation_failed"
+    assert "token safety guard" in (risk.unavailable_reason or "")
+    assert "risk_management_agent:safety_validation_failed" in state.provider_warnings
+    assert state.run_status == "partially_completed"
+    assert find_forbidden_string_values(asdict(state)) == set()
 
 
 def test_review_runner_preserves_deterministic_evidence_on_provider_failure() -> None:

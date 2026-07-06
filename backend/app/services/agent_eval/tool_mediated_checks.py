@@ -28,12 +28,12 @@ from app.services.agent_eval.results import (
     DETAIL_SYNTHESIS_UNAUDITED,
     EvalFinding,
 )
-from app.services.agent_team.llm_provider import (
+from app.services.agent_team.llm_clients.contracts import (
     find_forbidden_string_values,
     find_prohibited_llm_phrases,
     find_secret_like_values,
 )
-from app.services.agent_team.report_output_safety import (
+from app.services.agent_team.safety.report_output_safety import (
     INVENTED_LEVEL_PATTERNS,
     SOURCE_LEAK_PATTERNS,
 )
@@ -218,7 +218,7 @@ def check_missing_context_surfaced(summary: SavedAgentTeamSummaryRead) -> EvalFi
     has_skipped_reason = any(
         role.role_status == "skipped" and bool(role.unavailable_reason) for role in summary.role_summaries
     )
-    has_gap_warning = any(code.endswith("_unavailable") for code in _warning_codes(summary))
+    has_gap_warning = any(code.endswith(("_unavailable", "_not_available")) for code in _warning_codes(summary))
     return _finding(
         "tool_missing_context_surfaced",
         ok=has_skipped_reason or has_gap_warning,

@@ -121,6 +121,7 @@ def _public_company_profile_section(
 def _evidence_package(
     *,
     public_company_profile: SavedPublicEvidenceSectionRead | None = None,
+    public_events_calendar: SavedPublicEvidenceSectionRead | None = None,
     economic_awareness_snapshot: SavedEvidenceSectionRead | None = None,
 ) -> SavedEvidencePackageRead:
     caveat_codes = ("selected_context_scope", "account_level_feasibility_not_evaluated")
@@ -213,7 +214,7 @@ def _evidence_package(
             public_company_profile=public_section,
             public_fundamentals_snapshot=_not_reviewed_public_section("public_fundamentals_snapshot"),
             public_news_snapshot=_not_reviewed_public_section("public_news_snapshot"),
-            public_events_calendar=_not_reviewed_public_section("public_events_calendar"),
+            public_events_calendar=public_events_calendar or _not_reviewed_public_section("public_events_calendar"),
             public_technical_context=_not_reviewed_public_section("public_technical_context"),
             public_market_context=_not_reviewed_public_section("public_market_context"),
             limitations=("Only reviewed normalized public evidence sections are attached.",),
@@ -232,10 +233,52 @@ def _fred_economic_awareness_section(*, availability: str = "available") -> Save
     ).model_copy(
         update={
             "detail_labels": (
-                "Consumer Price Index release",
-                "Federal Open Market Committee calendar",
+                "release_name: Consumer Price Index release",
+                "release_date: 2026-07-15",
+                "event_name: Federal Open Market Committee calendar",
+                "event_date: 2026-07-29",
             )
         }
+    )
+
+
+def _sec_recent_filings_section(*, availability: str = "available") -> SavedPublicEvidenceSectionRead:
+    is_citable = availability in {"available", "limited"}
+    return SavedPublicEvidenceSectionRead(
+        section_key="public_events_calendar",
+        section_label="Public events calendar",
+        availability=availability,
+        freshness_category="fresh" if is_citable else "not_available",
+        freshness_label="Recent filing metadata collection timestamp available" if is_citable else "Not available",
+        source_label="SEC EDGAR recent filing metadata - company events only",
+        source_key="sec_edgar_recent_filings" if is_citable else None,
+        rights_status="internal_demo_only" if is_citable else "not_reviewed",
+        as_of=datetime(2026, 6, 1, tzinfo=UTC) if is_citable else None,
+        collected_at=datetime(2026, 6, 1, 12, tzinfo=UTC) if is_citable else None,
+        summary_label=(
+            "SEC EDGAR recent filing metadata is available as company-event context only."
+            if is_citable
+            else "SEC EDGAR recent filing metadata was not available."
+        ),
+        facts=(
+            SavedPublicEvidenceFactRead(fact_key="form_type", fact_label="Form type", value_label="Form 8-K"),
+            SavedPublicEvidenceFactRead(
+                fact_key="filing_date",
+                fact_label="Filing date",
+                value_label="Filed 2026-05-29",
+            ),
+            SavedPublicEvidenceFactRead(
+                fact_key="filing_reference",
+                fact_label="Normalized filing reference",
+                value_label="filref_recent_event_001",
+            ),
+        )
+        if is_citable
+        else (),
+        limitations=(
+            "Recent filing metadata is company-event context only; filing contents are not interpreted.",
+        ),
+        caveat_codes=("sec_edgar_recent_filings_metadata",) if is_citable else (),
     )
 
 
@@ -576,12 +619,17 @@ def test_default_tool_registry_contains_initial_p33a_allowlist() -> None:
         "market_quote_freshness",
         "public_company_profile",
         "economic_awareness_context",
+        "sec_recent_filings_metadata",
         "evidence_gap_inspector",
     }
     assert registry["trade_intent_summary"].evidence_tier == "public"
     assert registry["market_quote_freshness"].allows_role("technical_analyst")
     assert registry["economic_awareness_context"].evidence_tier == "public"
     assert registry["economic_awareness_context"].allows_role("news_analyst")
+    assert registry["sec_recent_filings_metadata"].evidence_tier == "public"
+    assert registry["sec_recent_filings_metadata"].allows_role("news_analyst")
+    assert registry["sec_recent_filings_metadata"].allows_role("portfolio_manager_agent")
+    assert not registry["sec_recent_filings_metadata"].allows_role("fundamentals_analyst")
     assert registry["portfolio_scope_context"].evidence_tier == "agent_safe"
     assert not registry["portfolio_scope_context"].allows_role("fundamentals_analyst")
     assert all(entry.mode == "sync" for entry in registry.values())
@@ -633,6 +681,7 @@ def test_tool_request_rejects_forbidden_args(bad_args: dict[str, str]) -> None:
         ("market_quote_freshness", "technical_analyst", "public", ("market_quote_freshness",)),
         ("public_company_profile", "fundamentals_analyst", "public", ("public_company_profile",)),
         ("economic_awareness_context", "news_analyst", "public", ()),
+        ("sec_recent_filings_metadata", "news_analyst", "public", ()),
         ("evidence_gap_inspector", "portfolio_manager_agent", "agent_safe", ("trade_intent_summary",)),
     ),
 )
@@ -806,6 +855,7 @@ def test_fred_economic_awareness_context_returns_safe_saved_metadata() -> None:
     assert result.evidence_refs == ("economic_awareness_snapshot",)
     assert set(result.summary_payload) == {
         "reviewed_release_event_labels",
+        "reviewed_release_metadata",
         "attribution",
         "notice",
         "caveat",
@@ -813,6 +863,16 @@ def test_fred_economic_awareness_context_returns_safe_saved_metadata() -> None:
     assert result.summary_payload["reviewed_release_event_labels"] == (
         "Consumer Price Index release",
         "Federal Open Market Committee calendar",
+    )
+    assert result.summary_payload["reviewed_release_metadata"] == (
+        {"fact_key": "release_name", "fact_label": "Release Name", "value_label": "Consumer Price Index release"},
+        {"fact_key": "release_date", "fact_label": "Release Date", "value_label": "2026-07-15"},
+        {
+            "fact_key": "event_name",
+            "fact_label": "Event Name",
+            "value_label": "Federal Open Market Committee calendar",
+        },
+        {"fact_key": "event_date", "fact_label": "Event Date", "value_label": "2026-07-29"},
     )
     assert (
         result.summary_payload["attribution"]
@@ -839,6 +899,120 @@ def test_fred_approval_marker_must_be_in_caveat_codes_not_release_labels() -> No
 
     result = execute_tool_request(
         ToolRequest(tool_name="economic_awareness_context", requesting_role="news_analyst"),
+        evidence=evidence,
+    )
+
+    assert result.status == "unavailable"
+    assert result.evidence_refs == ()
+
+
+def test_fred_economic_awareness_filters_unapproved_value_fields() -> None:
+    section = _fred_economic_awareness_section().model_copy(
+        update={
+            "detail_labels": (
+                "release_name: Consumer Price Index release",
+                "release_date: 2026-07-15",
+                "release_date: actual 3.0",
+                "actual_label: 3.0",
+                "event_date: forecast 2.9",
+                "forecast_label: 2.9",
+                "previous_label: 2.8",
+                "observation_value: raw observation",
+            )
+        }
+    )
+    evidence = _evidence_package(economic_awareness_snapshot=section)
+
+    result = execute_tool_request(
+        ToolRequest(tool_name="economic_awareness_context", requesting_role="news_analyst"),
+        evidence=evidence,
+    )
+
+    assert result.status == "ok"
+    assert result.summary_payload["reviewed_release_metadata"] == (
+        {"fact_key": "release_name", "fact_label": "Release Name", "value_label": "Consumer Price Index release"},
+        {"fact_key": "release_date", "fact_label": "Release Date", "value_label": "2026-07-15"},
+    )
+    rendered = repr(result.model_dump(mode="python")).lower() if hasattr(result, "model_dump") else repr(result).lower()
+    for forbidden in (
+        "actual_label",
+        "forecast_label",
+        "previous_label",
+        "observation_value",
+        "raw observation",
+        "actual 3.0",
+        "forecast 2.9",
+    ):
+        assert forbidden not in rendered
+
+
+def test_sec_recent_filings_metadata_returns_safe_saved_event_metadata() -> None:
+    evidence = _evidence_package(public_events_calendar=_sec_recent_filings_section())
+
+    result = execute_tool_request(
+        ToolRequest(tool_name="sec_recent_filings_metadata", requesting_role="news_analyst"),
+        evidence=evidence,
+    )
+
+    assert result.status == "ok"
+    assert result.evidence_tier == "public"
+    assert result.data_mode == "public"
+    assert result.source_key == "sec_edgar_recent_filings"
+    assert result.source_label == "SEC EDGAR recent filing metadata - company events only"
+    assert result.evidence_refs == ("public_events_calendar",)
+    assert set(result.summary_payload) == {
+        "reviewed_filing_metadata",
+        "attribution",
+        "caveat",
+        "non_endorsement",
+        "limitations",
+    }
+    assert result.summary_payload["reviewed_filing_metadata"] == (
+        {"fact_key": "form_type", "fact_label": "Form type", "value_label": "Form 8-K"},
+        {"fact_key": "filing_date", "fact_label": "Filing date", "value_label": "Filed 2026-05-29"},
+        {
+            "fact_key": "filing_reference",
+            "fact_label": "Normalized filing reference",
+            "value_label": "filref_recent_event_001",
+        },
+    )
+    assert (
+        result.summary_payload["attribution"]
+        == "Source: SEC EDGAR submissions/index metadata. Recent filing metadata only. "
+        "Not investment advice or a trading signal."
+    )
+    assert "does not interpret filing contents" in result.summary_payload["caveat"]
+    assert (
+        result.summary_payload["non_endorsement"]
+        == "Use of SEC EDGAR data does not imply endorsement by the U.S. Securities and Exchange Commission."
+    )
+    rendered = repr(result).lower()
+    for forbidden in (
+        "raw_payload",
+        "source_url",
+        "http://",
+        "https://",
+        "filing_text",
+        "article_body",
+        "api_key",
+        "newsapi",
+        "fmp economic calendar",
+    ):
+        assert forbidden not in rendered
+
+
+def test_sec_recent_filings_tool_rejects_non_edgar_event_source() -> None:
+    generic_event_section = _sec_recent_filings_section().model_copy(
+        update={
+            "source_key": "sec_edgar_submissions",
+            "source_label": "SEC EDGAR metadata - company profile only",
+            "caveat_codes": ("sec_edgar_recent_filings_metadata",),
+        }
+    )
+    evidence = _evidence_package(public_events_calendar=generic_event_section)
+
+    result = execute_tool_request(
+        ToolRequest(tool_name="sec_recent_filings_metadata", requesting_role="news_analyst"),
         evidence=evidence,
     )
 
@@ -873,6 +1047,116 @@ def test_non_fred_market_macro_sources_are_not_available_to_agent_tools(section:
 
     assert result.status == "unavailable"
     assert result.evidence_refs == ()
+
+
+def test_sec_recent_filings_tool_drops_raw_sec_file_paths_from_filing_reference() -> None:
+    section = _sec_recent_filings_section().model_copy(
+        update={
+            "facts": (
+                SavedPublicEvidenceFactRead(fact_key="form_type", fact_label="Form type", value_label="Form 8-K"),
+                SavedPublicEvidenceFactRead(
+                    fact_key="filing_date",
+                    fact_label="Filing date",
+                    value_label="Filed 2026-05-29",
+                ),
+                SavedPublicEvidenceFactRead(
+                    fact_key="filing_reference",
+                    fact_label="Normalized filing reference",
+                    value_label="/Archives/edgar/data/0000320193/0000320193-26-000001/aapl-20260601.htm",
+                ),
+            )
+        }
+    )
+    evidence = _evidence_package(public_events_calendar=section)
+
+    result = execute_tool_request(
+        ToolRequest(tool_name="sec_recent_filings_metadata", requesting_role="news_analyst"),
+        evidence=evidence,
+    )
+
+    assert result.status == "ok"
+    assert result.evidence_refs == ("public_events_calendar",)
+    assert result.summary_payload["reviewed_filing_metadata"] == (
+        {"fact_key": "form_type", "fact_label": "Form type", "value_label": "Form 8-K"},
+        {"fact_key": "filing_date", "fact_label": "Filing date", "value_label": "Filed 2026-05-29"},
+    )
+    rendered = repr(result).lower()
+    assert "/archives/" not in rendered
+    assert "aapl-20260601.htm" not in rendered
+
+
+def test_sec_recent_filings_tool_drops_raw_sec_file_paths_from_any_metadata_value() -> None:
+    section = _sec_recent_filings_section().model_copy(
+        update={
+            "facts": (
+                SavedPublicEvidenceFactRead(
+                    fact_key="form_type",
+                    fact_label="Form type",
+                    value_label="/Archives/edgar/data/0000320193/0000320193-26-000001/aapl-20260601.htm",
+                ),
+                SavedPublicEvidenceFactRead(
+                    fact_key="filing_date",
+                    fact_label="Filing date",
+                    value_label="edgar/data/0000320193/0000320193-26-000001.txt",
+                ),
+                SavedPublicEvidenceFactRead(
+                    fact_key="form_type",
+                    fact_label="Form type",
+                    value_label="aapl-20260601.pdf",
+                ),
+                SavedPublicEvidenceFactRead(
+                    fact_key="filing_reference",
+                    fact_label="Normalized filing reference",
+                    value_label="filref_recent_event_001",
+                ),
+            )
+        }
+    )
+    evidence = _evidence_package(public_events_calendar=section)
+
+    result = execute_tool_request(
+        ToolRequest(tool_name="sec_recent_filings_metadata", requesting_role="news_analyst"),
+        evidence=evidence,
+    )
+
+    assert result.status == "ok"
+    assert result.summary_payload["reviewed_filing_metadata"] == (
+        {
+            "fact_key": "filing_reference",
+            "fact_label": "Normalized filing reference",
+            "value_label": "filref_recent_event_001",
+        },
+    )
+    rendered = repr(result).lower()
+    assert "/archives/" not in rendered
+    assert "edgar/data" not in rendered
+    assert "aapl-20260601.htm" not in rendered
+    assert "aapl-20260601.pdf" not in rendered
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {"source_url": "https://www.sec.gov/raw/disallowed"},
+        {"filing_text": "Filing text is outside the approved metadata lane."},
+        {"article_body": "News article text is outside the approved metadata lane."},
+        {"summary_payload": {"raw_payload": "not allowed"}},
+    ),
+)
+def test_sec_recent_filings_tool_result_rejects_raw_source_shapes(payload: dict[str, object]) -> None:
+    with pytest.raises(ValueError):
+        ToolResult(
+            tool_name="sec_recent_filings_metadata",
+            role_name="news_analyst",
+            status="ok",
+            evidence_tier="public",
+            data_mode="public",
+            source_key="sec_edgar_recent_filings",
+            source_label="SEC EDGAR recent filing metadata - company events only",
+            availability="available",
+            evidence_refs=("public_events_calendar",),
+            summary_payload=payload,
+        )
 
 
 def test_unavailable_market_quote_freshness_is_not_cited_as_evidence() -> None:

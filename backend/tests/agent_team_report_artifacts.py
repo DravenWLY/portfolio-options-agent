@@ -9,8 +9,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from app.core.config import PROJECT_ROOT
-from app.services.agent_team.run_state import AgentReviewRunState
+from app.config import PROJECT_ROOT
+from app.services.agent_team.legacy_console.run_state import AgentReviewRunState
 
 REPORT_ARTIFACT_DIR = PROJECT_ROOT / "reports" / "agent-team-test-results"
 

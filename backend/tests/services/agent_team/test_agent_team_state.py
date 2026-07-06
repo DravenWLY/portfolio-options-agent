@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.services.agent_team.state import (
+from app.services.agent_team.legacy_console.state import (
     DEFAULT_AGENT_TEAM_STAGE_ORDER,
     AgentTeamAnalysisState,
     AgentTeamRoleOutput,

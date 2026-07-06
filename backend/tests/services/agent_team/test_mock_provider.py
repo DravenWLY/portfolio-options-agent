@@ -4,8 +4,8 @@ from dataclasses import asdict
 
 import pytest
 
-from app.services.agent_team.llm_provider import AGENT_TEAM_ROLES, LLMProviderMessage, LLMProviderRequest
-from app.services.agent_team.mock_provider import MockLLMProvider
+from app.services.agent_team.llm_clients.contracts import AGENT_TEAM_ROLES, LLMProviderMessage, LLMProviderRequest
+from app.services.agent_team.llm_clients.mock import MockLLMProvider
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 
 

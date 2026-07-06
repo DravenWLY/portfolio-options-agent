@@ -12,9 +12,13 @@ from app.schemas.reports import (
     SavedReviewArtifactRead,
 )
 from app.services.reports import crud as report_service
-from app.services.reports.agent_team_report import generate_agent_team_report_for_thread
+from app.services.reports import agent_team_report as agent_team_report_service
 
 router = APIRouter(tags=["reports"])
+
+# Compatibility seam for fixture tests that assert Skyframe POST interception
+# happens before saved-report generation can reach the real service.
+generate_agent_team_report_for_thread = agent_team_report_service.generate_agent_team_report_for_thread
 
 
 @router.post("/users/{user_id}/reports", response_model=ReportThreadRead, status_code=status.HTTP_201_CREATED)
@@ -51,7 +55,19 @@ def generate_report_agent_team_summary(
     thread_id: UUID,
     db: Session = Depends(get_db),
 ) -> SavedReviewArtifactRead:
-    agent_summary = generate_agent_team_report_for_thread(db, user_id, thread_id)
+    generation_mode = agent_team_report_service.resolve_backend_agent_team_report_generation_mode()
+    provider_resolution = (
+        agent_team_report_service.resolve_agent_team_report_provider_resolution()
+        if generation_mode == "tool_mediated"
+        else None
+    )
+    agent_summary = agent_team_report_service.generate_agent_team_report_for_thread(
+        db,
+        user_id,
+        thread_id,
+        mode=generation_mode,
+        provider_resolution=provider_resolution,
+    )
     if agent_summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved review artifact not found")
     report_thread = report_service.get_report_thread(db, user_id, thread_id)

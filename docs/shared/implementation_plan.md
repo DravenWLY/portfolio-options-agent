@@ -639,30 +639,204 @@ Detailed verification history is archived in:
 
 - `P34A-T6A` - SEC EDGAR recent filing metadata tool.
   - Owner: Codex C. Reviewer: Codex B.
-  - Status: next. Implement a backend-only, disabled-by-default,
-    fake/replay-tested `public_events_calendar`/company-event tool over
-    normalized SEC EDGAR recent filing metadata. The tool may expose only
-    reviewed source labels, availability/freshness/as-of, form type, filing
-    date, reviewed company identity metadata, opaque normalized filing refs if
-    needed for audit, and caveats/limitations. No raw SEC payloads, raw URLs,
-    filing text, exhibits, XBRL facts, press/news text, filing interpretation,
-    frontend changes, web search, MCP, TradingAgents runtime, or live provider
-    tests.
+  - Status: done 2026-07-01 by Codex C; Codex B-style review PASS after raw SEC
+    path/file-name leakage risk was fixed and narrowly re-reviewed. Added the
+    backend-only `sec_recent_filings_metadata` tool over frozen saved
+    `public_evidence.public_events_calendar`, citing only approved
+    `source_key="sec_edgar_recent_filings"` sections with `available`/`limited`
+    availability. Tool output is normalized metadata only (`form_type`,
+    `filing_date`, and opaque `filref_...` references), plus backend-owned
+    attribution/caveat/non-endorsement/limitations. `public_news_snapshot`
+    remains unavailable/not_reviewed unless separately approved. No NewsAPI,
+    Benzinga, Finnhub, Polygon, FMP, GDELT, CNN, web search, scraping, MCP,
+    TradingAgents, LangGraph, frontend work, or live provider tests. Verification
+    PASS: `test_tools.py` 74 passed; tool-mediated report + eval tests 66
+    passed; report schema unit tests 90 passed; `git diff --check` clean.
+
+- `P34A-T6B` - SEC recent filing metadata role behavior design.
+  - Owner: Claude E. Reviewer: Codex B.
+  - Design reference:
+    `docs/claude-e-agentic/PHASE_34A_T6B_SEC_FILING_METADATA_ROLE_DESIGN.md`.
+  - Status: done 2026-07-01 by Claude E; Codex B review PASS with one binding
+    implementation clarification. Decisions: Q1 confirmed neutral
+    filing-metadata listing stays backend-deterministic and live prompt
+    envelopes remain stripped of `summary_payload`; Q2 confirmed the SEC/event
+    `news_analyst` finding is not live-overwritten in M1; Q3 confirmed extending
+    generic metadata-available phrasing to a deterministic backend listing of
+    `form_type`/`filing_date` is in scope for Codex C; Q4 confirmed no new
+    schema/read-contract field and reuse of existing `claim_text` +
+    `public_events_calendar`. Additive backend-only `SEC_INTERPRETATION_TOKENS`
+    guard approved. Implementation must add an SEC-specific role/citation guard:
+    only `news_analyst` and `portfolio_manager_agent` may cite SEC recent filing
+    metadata even though older generic report allowlists may include
+    `public_events_calendar` for other public roles.
+
+- `P34A-T6C` - SEC recent filing metadata role behavior implementation.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-07-02 by Codex C; Codex B-style review PASS after
+    SEC urgency-token false positives were narrowed to SEC/filing context and
+    re-reviewed. Implemented deterministic backend rendering of SEC recent
+    filing metadata for the news role (`form_type` and `filing_date` only),
+    kept `filing_reference` opaque/audit-only, prevented live LLM overwrite of
+    the SEC news finding in M1, kept live prompt envelopes stripped of filing
+    facts, degraded unavailable/not-approved SEC metadata to a gap citing
+    `trade_intent_summary` only, added SEC interpretation/source-leak hard
+    blocks, and enforced that only `news_analyst` and
+    `portfolio_manager_agent` may cite SEC recent filing metadata. Verification
+    PASS: `test_tools.py` 74 passed; tool-mediated report + eval tests 73
+    passed; report schema unit tests 91 passed; `git diff --check` clean.
+
+- `P34A-T6D` - SEC EDGAR recent filing metadata replay/acquisition boundary.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-07-02 by Codex C; review-only Codex B subagent PASS.
+    Implemented backend-only replay/acquisition boundary, disabled by default and
+    requiring explicit policy/client. Normalizes only approved saved evidence
+    into `public_evidence.public_events_calendar` with
+    `source_key="sec_edgar_recent_filings"`, source label,
+    availability/freshness/as-of/collected-at, `form_type`, `filing_date`,
+    opaque `filref_...` reference, attribution, caveat, and non-endorsement. No
+    schema/read-contract expansion, frontend work, live EDGAR call, provider/
+    broker/private-data access, raw SEC URL/path/file/accession/body/payload
+    persistence, or refetch on saved report readback. Verification PASS:
+    `test_tools.py` 74 passed; tool-mediated report + eval tests 73 passed;
+    report schema unit tests 104 passed; `git diff --check` clean.
+
+- `P34A-T7A` - Live prototype readiness audit.
+  - Owner: Codex B. Reviewer: Codex A/founder for go/no-go awareness.
+  - Architecture reference:
+    `docs/codex-b-architecture/PHASE_34A_T7A_LIVE_PROTOTYPE_READINESS_AUDIT.md`.
+  - Status: done 2026-07-02 by Codex B. Verdict: no-go for a true end-to-end
+    live saved-report smoke until the saved-report generation route is wired to
+    the tool-mediated runner behind a backend-only disabled-by-default gate. The
+    service-level live runner is ready enough for a backend-only smoke with
+    explicit credential authorization, but the golden-path Reports endpoint still
+    calls the deterministic-template generator. No secrets, `.env`, logs, DB
+    contents, broker payloads, or real reports were inspected.
+
+- `P34A-T7B` - Tool-mediated saved-report generation route wiring.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-07-02 by Codex C; Codex B review PASS. `POST
+    /users/{user_id}/reports/{thread_id}/agent-team-report` can optionally use
+    the reviewed tool-mediated summary builder through backend-only
+    `POA_AGENT_TEAM_REPORT_GENERATION_MODE=tool_mediated`; deterministic-template
+    generation remains default. Client request body cannot select mode/provider.
+    Providers resolve only through `LLMProviderResolution`; `tool_run_artifact`
+    persists; saved report readback stays frozen; no schema/read-contract,
+    frontend, new-source, web/MCP, TradingAgents, LangGraph, or secret/log
+    exposure was added.
+
+- `P34A-T7C` - Disposable DB verification for route-backed tool-mediated reports.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-07-02 by Codex C; Codex B accepted. Verified Alembic
+    upgrade head and DB-backed report/trade-review API suites against isolated
+    disposable Postgres (`poa_t7c_test`), including the route-backed
+    tool-mediated report-generation tests. No `.env`, secrets, real DB contents,
+    broker data, raw provider payloads, live LLM, EDGAR/FRED, frontend paths, or
+    schema/read-contract changes were used.
+
+- `P34A-T7D` - Route-backed live LLM saved-report smoke harness.
+  - Owner: Codex B. Reviewer: Codex B/founder for live-smoke acceptance.
+  - Status: done 2026-07-02 by Codex B. Added and ran opt-in external/slow test
+    `backend/tests/api/test_tool_mediated_route_live_smoke.py` covering the real
+    route spine with synthetic saved evidence: selected review account
+    portfolio-preview -> save evidence snapshot -> `agent-team-report` route with
+    backend tool-mediated live Gemini config -> frozen `tool_run_artifact` +
+    provider-run metadata -> list/detail readback without rerunning tools or
+    provider resolution. Passed against isolated disposable Postgres
+    (`poa_t7d_test`) with `POA_LLM_PROVIDER=google`,
+    `POA_LLM_MODEL=gemini-2.5-flash-lite`, and the key supplied through a
+    temporary launchctl bridge; `google-genai` was installed via the optional
+    backend `live-llm` extra. The disposable DB container was stopped/removed and
+    the launchctl key bridge was unset. No `.env`, secret value, real DB contents,
+    broker data, raw provider payloads, prompt text, response text, or frontend
+    route was inspected or printed.
 
 - `P34A-T7` - Live end-to-end prototype smoke.
   - Owner: Codex B. Reviewers: Codex A/founder for usefulness; Claude B if UI
     changes.
-  - Status: pending T1-T3 and any approved T4/T5 sources. Run one stock/ETF and
-    one simple-options saved report with live LLM role output, real reviewed
-    saved evidence, approved tools only, frozen readback, no private leaks, and no
-    advice/order/execution wording. Requires explicit credential authorization
-    without reading or printing secrets.
+  - Status: active. Provider-level Gemini live smoke passed in founder terminal
+    on 2026-07-02 (`test_gemini_live_smoke.py`, synthetic data only). Route-backed
+    live saved-report smoke passed in Codex on an explicitly authorized
+    disposable stack via P34A-T7D. Initial proven scope is one stock/ETF saved
+    report. Simple-options live route smoke remains a follow-up candidate.
+    Approved tools only, frozen readback, no private leaks, and no
+    advice/order/execution wording remain mandatory.
 
 - `P34A-T8` - LangGraph architecture spike.
   - Owner: Claude E. Reviewer: Codex B.
-  - Status: optional after P34A-M1. Compare the app-owned runner against LangGraph
-    for durable Agent Console and multi-turn orchestration. LangGraph may wrap
-    reviewed app-owned nodes but must not become the privacy/safety boundary.
+  - Status: design PASS and implementation deferred 2026-07-03 by Codex B/founder.
+    Reviewed Claude E T8 and T8R against the P34A live tool-mediated contract and
+    current app-owned runner. ADR 0010 records the binding architecture decision:
+    LangGraph may later wrap reviewed app-owned nodes as an orchestration shell,
+    with LangGraph owning sequencing only while app-owned validators, tool
+    execution, citation ownership, output safety, and freeze/readback remain the
+    safety boundary. No LangGraph dependency or T8A implementation should start
+    now; Phase 34A returns to the current app-owned runner, live Agent Team
+    quality, and approved real-evidence/tool depth.
+
+- `P34A-T9` - Current-runner live Agent Team quality and evidence-use design.
+  - Owner: Claude E. Reviewer: Codex B.
+  - Design reference:
+    `docs/claude-e-agentic/PHASE_34A_T9_LIVE_QUALITY_EVIDENCE_USE_DESIGN.md`.
+  - Status: design PASS 2026-07-03 by Codex B. Accepted the diagnosis that live
+    reports feel shallow because role findings collapse into one generic sentence,
+    deterministic floors often omit specific freshness/caveat/gap names, and PM
+    synthesis is too static. Decisions: FRED release-name/date deterministic
+    listing is approved inside the existing FRED metadata lane only when sourced
+    from frozen approved metadata and still excludes values/forecasts/observations;
+    compositional PM synthesis is still within the M1 deterministic-PM decision
+    because it assembles audited backend-owned findings without LLM authorship;
+    additive `fred_interpretation_blocked` eval flag is approved; P34A-T9B
+    provider-seam/per-finding live prose changes require separate Codex B review.
+
+- `P34A-T9A` - Deterministic specificity pack for tool-mediated reports.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-07-03 by Codex C; Codex B-style review PASS after a
+    narrow FRED value-smuggling blocker was fixed and re-reviewed. Implemented
+    Layer 1 from the T9 design: freshness category naming, readable scope caveat
+    text, named evidence-gap sections, FRED metadata-only release/date listing
+    from frozen approved metadata plus unavailable warning and interpretation
+    hard block, and compositional deterministic PM synthesis with offline eval
+    coverage. No provider-seam changes, no new sources, no frontend, no
+    LangGraph/LangChain/MCP/TradingAgents, no live calls, and no schema/read
+    contract expansion.
+
+- `P34A-T9B` - Additive live connective overlay.
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-07-03 by Codex C; review-only subagent PASS. Live provider
+    success is now additive-only: deterministic T9A findings persist verbatim,
+    provider output may append at most one validated `live_connective_context`
+    finding per eligible role, hard-blocked/invalid provider output drops only
+    the added live finding, provider failure/timeout keeps the deterministic
+    floor plus `live_provider_*` warnings, prompt version is
+    `p34a-tool-mediated-role-v2`, prompt envelopes remain unchanged, and PM
+    synthesis digests the first deterministic finding rather than appended live
+    connective prose. Verification PASS: `test_tools.py` 75 passed; tool-mediated
+    report + eval tests 85 passed; report schema unit tests 104 passed;
+    `git diff --check` clean.
+
+- `P34A-T10` - Route-backed live smoke after T9A/T9B.
+  - Owner: Codex B. Reviewer: founder/Codex A for live-smoke usefulness.
+  - Status: next. Run the existing opt-in route-backed live Gemini smoke on
+    synthetic/disposable saved evidence to verify the post-T9B no-subtraction
+    behavior through the real report-generation route: deterministic findings
+    remain verbatim, live connective findings are additive only, provider-run
+    metadata freezes, saved report readback reruns neither tools nor provider,
+    and no private data or unsafe action wording appears. Do not inspect `.env`
+    or print secrets; use only explicit temporary credential authorization.
+
+- `P34A-T11` - Integrated Trade Review Agent Console direction.
+  - Owner: Codex B. Reviewers: Claude E for agentic behavior; Claude A/Claude B
+    for later frontend/product UX.
+  - Status: opened 2026-07-03 by Codex B/founder. Agent Console is no longer a
+    parked separate surface. The intended product direction is a single Trade
+    Review workspace where the user enters a potential trade, runs the Agent Team
+    review, sees each agent's findings in-place, and then saves/freezes the final
+    Agent Team report as the historical report artifact. The composer/chat
+    remains out of scope for now; this slice is about an integrated read-only
+    run surface, role findings, progress/state, provenance, and the frozen saved
+    report handoff. No order/execution behavior, frontend financial computation,
+    raw private data exposure, LangGraph dependency, or new source expansion.
 
 ### Closed Context - Phase 30B Golden Path Prototype Hardening And Demo Readiness
 

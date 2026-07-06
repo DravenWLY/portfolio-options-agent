@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core.config import (
+from app.config import (
     DEFAULT_DATABASE_URL,
     DEFAULT_JBLANKED_CALENDAR_BASE_URL,
     ConfigurationError,

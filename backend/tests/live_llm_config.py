@@ -13,10 +13,13 @@ from pathlib import Path
 from typing import MutableMapping
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
+_PROJECT_DOTENV_PATH = _BACKEND_ROOT.parent / ".env"
 _DEFAULT_CONFIG_PATHS: tuple[Path, ...] = (
     _BACKEND_ROOT / "config.local.live-llm.env",
     _BACKEND_ROOT / "secrets" / "live-llm.env",
 )
+_LIVE_FLAG_KEYS: frozenset[str] = frozenset({"RUN_LIVE_LLM_TESTS", "POA_LLM_LIVE_TESTS"})
+_PROJECT_DOTENV_KEY_ALLOWLIST: frozenset[str] = frozenset({"GOOGLE_API_KEY", "OPENAI_API_KEY"})
 _ALLOWED_KEYS: frozenset[str] = frozenset(
     {
         "GOOGLE_API_KEY",
@@ -42,7 +45,14 @@ def load_live_llm_test_config(environ: MutableMapping[str, str] | None = None) -
     - ``secrets/live-llm.env``
 
     ``POA_LIVE_LLM_TEST_CONFIG`` may point to another narrowly-scoped local
-    config file. Generic ``.env`` files are intentionally rejected.
+    config file. Generic ``.env`` files are intentionally rejected for explicit
+    config paths.
+
+    For founder-approved live smoke runs, setting ``RUN_LIVE_LLM_TESTS=true``
+    (or legacy ``POA_LLM_LIVE_TESTS=1``) allows this helper to retrieve only the
+    named LLM API key variables from the project ``.env`` file. It does not load
+    flags, provider config, database settings, broker credentials, or unrelated
+    secrets from the project dotenv.
     """
 
     env = environ if environ is not None else os.environ
@@ -57,6 +67,8 @@ def load_live_llm_test_config(environ: MutableMapping[str, str] | None = None) -
             if key in _ALLOWED_KEYS and key not in env:
                 env[key] = value
         return path
+    if _live_tests_explicitly_enabled(env):
+        return _load_project_dotenv_llm_keys(env)
     return None
 
 
@@ -65,7 +77,7 @@ def _reject_generic_env_path(path: Path) -> None:
         raise RuntimeError("live LLM tests must use a dedicated live-test config file, not a generic .env file")
 
 
-def _parse_config(path: Path) -> dict[str, str]:
+def _parse_config(path: Path, *, allowed_keys: frozenset[str] = _ALLOWED_KEYS) -> dict[str, str]:
     values: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
@@ -77,10 +89,24 @@ def _parse_config(path: Path) -> dict[str, str]:
             continue
         key, value = line.split("=", 1)
         key = key.strip()
-        if key not in _ALLOWED_KEYS:
+        if key not in allowed_keys:
             continue
         values[key] = _strip_quotes(value.strip())
     return values
+
+
+def _load_project_dotenv_llm_keys(env: MutableMapping[str, str]) -> Path | None:
+    if not _PROJECT_DOTENV_PATH.exists():
+        return None
+    values = _parse_config(_PROJECT_DOTENV_PATH, allowed_keys=_PROJECT_DOTENV_KEY_ALLOWLIST)
+    for key, value in values.items():
+        if key not in env:
+            env[key] = value
+    return _PROJECT_DOTENV_PATH if values else None
+
+
+def _live_tests_explicitly_enabled(env: MutableMapping[str, str]) -> bool:
+    return any((env.get(key) or "").strip().lower() in {"1", "true", "yes", "on"} for key in _LIVE_FLAG_KEYS)
 
 
 def _strip_quotes(value: str) -> str:

@@ -27,7 +27,7 @@ from app.services.agent_team.tool_mediated_report import (
     RoleFindingSet,
     build_tool_mediated_agent_team_summary,
 )
-from app.services.agent_team.llm_provider import LLMProviderRequest, LLMProviderResponse, LLMProviderStatus
+from app.services.agent_team.llm_clients.contracts import LLMProviderRequest, LLMProviderResponse, LLMProviderStatus
 from app.services.reports.agent_team_report import build_agent_team_summary_from_evidence
 
 FIXED_GENERATED_AT = datetime(2026, 6, 1, 12, tzinfo=UTC)

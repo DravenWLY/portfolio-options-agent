@@ -1,7 +1,7 @@
 import pytest
 
-from app.services.agent_team.llm_provider import LLMProviderMessage, LLMProviderRequest
-from app.services.agent_team.openai_provider import (
+from app.services.agent_team.llm_clients.contracts import LLMProviderMessage, LLMProviderRequest
+from app.services.agent_team.llm_clients.openai import (
     OpenAILLMProvider,
     OpenAIProviderError,
     _map_openai_exception,

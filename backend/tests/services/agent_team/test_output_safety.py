@@ -1,7 +1,7 @@
 import pytest
 
-from app.services.agent_team.llm_provider import LLMProviderResponse
-from app.services.agent_team.output_safety import validate_llm_provider_output
+from app.services.agent_team.llm_clients.contracts import LLMProviderResponse
+from app.services.agent_team.safety.output_safety import validate_llm_provider_output
 
 
 pytestmark = [pytest.mark.unit]

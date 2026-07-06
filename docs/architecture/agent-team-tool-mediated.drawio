@@ -1,0 +1,375 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram name="Agent Team Architecture">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1750" pageHeight="1720" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Portfolio Copilot — Tool-Mediated Agent Team Architecture (P34A)&#xa;Read-only decision support · locked question: &quot;What would I be ignoring if I acted manually now?&quot; · no advice, no orders, no execution" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="140" y="0" width="1100" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== Lane: Frontend ===================== -->
+        <mxCell id="lf" value="Frontend" style="swimlane;horizontal=0;startSize=30;html=1;fillColor=#fafafa;strokeColor=#999999;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="1620" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="f1" value="Trade Review&#xa;(manual TradeIntent)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="lf">
+          <mxGeometry x="60" y="45" width="230" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="f2" value="Save Evidence Snapshot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="lf">
+          <mxGeometry x="370" y="45" width="230" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="f3" value="Reports&#xa;(list / detail)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="lf">
+          <mxGeometry x="680" y="45" width="230" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="f4" value="Generate Agent Team Report" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="lf">
+          <mxGeometry x="990" y="45" width="230" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="f5" value="Reopen Saved Report&#xa;(frozen)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="lf">
+          <mxGeometry x="1300" y="45" width="230" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="fNote" value="No LLM calls · no tools · no provider keys in the browser" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fontColor=#666666;" vertex="1" parent="lf">
+          <mxGeometry x="60" y="118" width="400" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== Lane: Backend API ===================== -->
+        <mxCell id="la" value="Backend API" style="swimlane;horizontal=0;startSize=30;html=1;fillColor=#fafafa;strokeColor=#999999;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="230" width="1620" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="POST /trade-reviews/portfolio-preview&#xa;deterministic review run" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="la">
+          <mxGeometry x="50" y="40" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="POST /users/{uid}/reports/from-trade-review&#xa;save frozen evidence package" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="la">
+          <mxGeometry x="370" y="40" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" value="POST …/reports/{thread}/agent-team-report&#xa;generate saved report" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="la">
+          <mxGeometry x="690" y="40" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a4" value="Generation mode gate (backend-only)&#xa;POA_AGENT_TEAM_REPORT_&#xa;GENERATION_MODE&#xa;default: deterministic template" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="la">
+          <mxGeometry x="1000" y="40" width="280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a5" value="GET reports list / detail&#xa;frozen readback" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="la">
+          <mxGeometry x="1330" y="40" width="250" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== Lane: Evidence / Tools ===================== -->
+        <mxCell id="le" value="Evidence &amp; Tools (backend-owned)" style="swimlane;horizontal=0;startSize=30;html=1;fillColor=#fafafa;strokeColor=#999999;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="420" width="1620" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="Deterministic trade review calculations&#xa;(tested backend Python)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="le">
+          <mxGeometry x="50" y="40" width="250" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="Saved review artifact&#xa;+ source reference" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="le">
+          <mxGeometry x="350" y="40" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="SavedEvidencePackageRead — frozen,&#xa;tiered public / agent_safe&#xa;(private_forbidden never enters)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="le">
+          <mxGeometry x="640" y="40" width="260" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="ToolResult envelopes — sanitized + validated&#xa;(p33a_tool_result_v1)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="le">
+          <mxGeometry x="640" y="150" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="Tool registry — role-allowlisted, evidence-tiered&#xa;&#xa;trade_intent_summary · portfolio_scope_context&#xa;deterministic_review_findings&#xa;broker_snapshot_freshness · market_quote_freshness&#xa;public_company_profile · evidence_gap_inspector" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=middle;" vertex="1" parent="le">
+          <mxGeometry x="950" y="30" width="330" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="economic_awareness_context&#xa;FRED calendar metadata only —&#xa;from frozen evidence (rights-gated)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="le">
+          <mxGeometry x="1310" y="30" width="280" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="sec_recent_filings_metadata&#xa;SEC EDGAR metadata only —&#xa;from frozen evidence (rights-gated)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="le">
+          <mxGeometry x="1310" y="135" width="280" height="85" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== Lane: Agent Runtime ===================== -->
+        <mxCell id="lr" value="Agent Runtime (app-owned runner)" style="swimlane;horizontal=0;startSize=30;html=1;fillColor=#fafafa;strokeColor=#999999;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="700" width="1620" height="360" as="geometry" />
+        </mxCell>
+        <mxCell id="rw" value="" style="rounded=1;html=1;fillColor=none;strokeColor=#d79b00;dashed=1;dashPattern=8 6;strokeWidth=2;" vertex="1" parent="lr">
+          <mxGeometry x="50" y="35" width="1530" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="rwText" value="Optional dev-only LangGraph wrapper (P34A-T8): sequencing + local redacted tracing only · same app-owned nodes and validators · no hosted tracing (env kill-switch) · no checkpoint persistence until separate contract" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fontColor=#b57700;whiteSpace=wrap;" vertex="1" parent="lr">
+          <mxGeometry x="60" y="230" width="420" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="r5" value="Bounded re-pass — max 1, fixable claims only, never hard blocks" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="lr">
+          <mxGeometry x="520" y="55" width="250" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="r1" value="Planner — deterministic, clamped&#xa;(≤8 calls/role · ≤16 total)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="lr">
+          <mxGeometry x="70" y="130" width="180" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="Backend tool execution&#xa;execute_tool_request&#xa;(app-owned)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="lr">
+          <mxGeometry x="280" y="130" width="180" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="r3" value="Role agents&#xa;Fundamentals · News · Technical · Risk&#xa;(deterministic floor + optional live prose)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="lr">
+          <mxGeometry x="490" y="130" width="180" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="r4" value="Evidence Auditor&#xa;refs ∩ usable ∩ available&#xa;hard blocks drop claims" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="lr">
+          <mxGeometry x="700" y="130" width="180" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="r6" value="PM synthesis&#xa;deterministic template" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="lr">
+          <mxGeometry x="910" y="130" width="180" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="r7" value="Output safety validators&#xa;wording · privacy · invented metrics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="lr">
+          <mxGeometry x="1120" y="130" width="180" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="r8" value="Freeze&#xa;SavedAgentTeamSummary&#xa;+ tool_run_artifact" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="lr">
+          <mxGeometry x="1330" y="130" width="180" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="r9" value="Deterministic fallback — fail-closed safe draft (terminal)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" vertex="1" parent="lr">
+          <mxGeometry x="1120" y="235" width="300" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== Lane: External Providers ===================== -->
+        <mxCell id="lx" value="External Providers (gated)" style="swimlane;horizontal=0;startSize=30;html=1;fillColor=#fafafa;strokeColor=#999999;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1090" width="1620" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="x1" value="Live LLM provider — Gemini via&#xa;LLMProviderResolution&#xa;disabled by default · backend gate only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="lx">
+          <mxGeometry x="490" y="40" width="280" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="x2" value="• receives sanitized ToolResult envelopes only&#xa;• prose output validated (safety + auditor)&#xa;• unsafe / failed → deterministic finding fallback&#xa;• saved readback never re-runs the provider" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fontColor=#8a6d00;" vertex="1" parent="lx">
+          <mxGeometry x="800" y="40" width="330" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="x3" value="Gated acquisition — backend-only, outside agent runs (rights-gated)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;verticalAlign=top;container=1;pointerEvents=0;" vertex="1" parent="lx">
+          <mxGeometry x="1150" y="30" width="430" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="x3a" value="FRED macro calendar&#xa;metadata" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="x3">
+          <mxGeometry x="15" y="45" width="195" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="x3b" value="SEC EDGAR recent filing&#xa;metadata" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="x3">
+          <mxGeometry x="220" y="45" width="195" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== Lane: Persistence ===================== -->
+        <mxCell id="lp" value="Persistence (frozen)" style="swimlane;horizontal=0;startSize=30;html=1;fillColor=#fafafa;strokeColor=#999999;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1310" width="1620" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="Frozen readback: reopening a saved report never recomputes from current&#xa;account state and never re-runs tools or providers.&#xa;No raw prompts / traces / provider payloads are ever persisted." style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fontColor=#333333;" vertex="1" parent="lp">
+          <mxGeometry x="700" y="40" width="400" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="p1" value="Reports DB — saved review artifacts ·&#xa;evidence packages · saved reports ·&#xa;frozen tool_run_artifact" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;boundedLbl=1;" vertex="1" parent="lp">
+          <mxGeometry x="1140" y="35" width="320" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== Blocked band ===================== -->
+        <mxCell id="bb" value="Blocked — must not exist in Portfolio Copilot" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f7f7f7;strokeColor=#b85450;dashed=1;dashPattern=8 6;verticalAlign=top;fontStyle=1;fontSize=12;fontColor=#b85450;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1490" width="1290" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="bl1" value="Broker execution / order placement / staging" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="bb">
+          <mxGeometry x="30" y="50" width="185" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="bl2" value="Raw brokerage / private data in prompts or tool results (balances · positions · quantities · IDs)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="bb">
+          <mxGeometry x="235" y="50" width="185" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="bl3" value="Generic public news providers (NewsAPI · Benzinga · Finnhub · Polygon · GDELT)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="bb">
+          <mxGeometry x="440" y="50" width="185" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="bl4" value="Web search · MCP · TradingAgents runtime" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="bb">
+          <mxGeometry x="645" y="50" width="185" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="bl5" value="Frontend LLM / tool calls (no provider keys in browser)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="bb">
+          <mxGeometry x="850" y="50" width="185" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="bl6" value="Direct LLM tool calling — the LLM never selects or executes tools" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="bb">
+          <mxGeometry x="1055" y="50" width="185" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== Legend ===================== -->
+        <mxCell id="lg" value="Legend" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;verticalAlign=top;fontStyle=1;fontSize=12;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="1380" y="1490" width="280" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="lg1" value="" style="rounded=0;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="lg">
+          <mxGeometry x="15" y="35" width="30" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="lg1t" value="Approved path (reviewed)" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" vertex="1" parent="lg">
+          <mxGeometry x="55" y="33" width="210" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lg2" value="" style="rounded=0;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="lg">
+          <mxGeometry x="15" y="70" width="30" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="lg2t" value="Gated / opt-in / approval required" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" vertex="1" parent="lg">
+          <mxGeometry x="55" y="68" width="210" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lg3" value="" style="rounded=0;html=1;fillColor=none;strokeColor=#d79b00;dashed=1;dashPattern=8 6;" vertex="1" parent="lg">
+          <mxGeometry x="15" y="105" width="30" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="lg3t" value="Optional · dev-only (planned)" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" vertex="1" parent="lg">
+          <mxGeometry x="55" y="103" width="210" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lg4" value="" style="rounded=0;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="lg">
+          <mxGeometry x="15" y="140" width="30" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="lg4t" value="Blocked" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;" vertex="1" parent="lg">
+          <mxGeometry x="55" y="138" width="210" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== Edges: Frontend chain ===================== -->
+        <mxCell id="ef1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="f1" target="f2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ef2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="f2" target="f3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ef3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="f3" target="f4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ef4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="f4" target="f5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== Edges: Frontend -> API ===================== -->
+        <mxCell id="efa1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="f1" target="a1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="efa2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="f2" target="a2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="efa3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="f4" target="a3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1145" y="212" />
+              <mxPoint x="860" y="212" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="efa4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.3;entryY=0;" edge="1" parent="1" source="f3" target="a5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="835" y="222" />
+              <mxPoint x="1445" y="222" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="efa5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.7;entryY=0;" edge="1" parent="1" source="f5" target="a5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== Edges: API internal + API -> Evidence ===================== -->
+        <mxCell id="eaa1" value="opt-in" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d79b00;fontSize=10;fontColor=#8a6d00;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="a3" target="a4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eae1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="a1" target="e1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eae2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="a2" target="e2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== Edges: Evidence spine ===================== -->
+        <mxCell id="eee1" value="frozen at save" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="e1" target="e2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eee2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="e2" target="e3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eee3" value="read-only projections" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.3;entryX=0;entryY=0.3;" edge="1" parent="1" source="e3" target="e4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="eee4" value="sanitized results" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;exitX=0;exitY=0.7;entryX=1;entryY=0.5;" edge="1" parent="1" source="e4" target="e7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== Edges: gate -> planner, runtime chain ===================== -->
+        <mxCell id="ear1" value="tool-mediated run" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d79b00;fontSize=10;fontColor=#8a6d00;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="a4" target="r1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1140" y="400" />
+              <mxPoint x="965" y="400" />
+              <mxPoint x="965" y="715" />
+              <mxPoint x="200" y="715" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="err1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r1" target="r2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="err2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r2" target="r3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="err3" value="findings" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r3" target="r4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="err4" value="audited" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r4" target="r6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="err5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r6" target="r7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="err6" value="validated" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="r7" target="r8">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="erp1" value="fixable issues" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d79b00;dashed=1;fontSize=10;fontColor=#8a6d00;labelBackgroundColor=#ffffff;exitX=0.3;exitY=0;entryX=1;entryY=0.5;" edge="1" parent="1" source="r4" target="r5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="erp2" value="re-run roles once" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d79b00;dashed=1;fontSize=10;fontColor=#8a6d00;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="r5" target="r3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="erf1" value="validation failure" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#666666;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="r7" target="r9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="erf2" value="any hard failure" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#666666;dashed=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="r4" target="r9">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="830" y="958" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ===================== Edges: runtime <-> evidence/tools ===================== -->
+        <mxCell id="ert1" value="planner-approved tool requests" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="r2" target="e4">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="410" y="678" />
+              <mxPoint x="1155" y="678" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ert2" value="sanitized envelopes only — no raw payloads" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=1;entryX=0;entryY=0.3;" edge="1" parent="1" source="e7" target="r3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="745" y="690" />
+              <mxPoint x="515" y="690" />
+              <mxPoint x="515" y="857" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ===================== Edges: live LLM boundary ===================== -->
+        <mxCell id="exl1" value="gated live request — sanitized envelopes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d79b00;dashed=1;fontSize=10;fontColor=#8a6d00;labelBackgroundColor=#ffffff;exitX=0.35;exitY=1;entryX=0.25;entryY=0;" edge="1" parent="1" source="r3" target="x1">
+          <mxGeometry x="-0.55" relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="exl2" value="validated prose only" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d79b00;dashed=1;fontSize=10;fontColor=#8a6d00;labelBackgroundColor=#ffffff;exitX=0.75;exitY=0;entryX=0.7;entryY=1;" edge="1" parent="1" source="x1" target="r3">
+          <mxGeometry x="-0.55" relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===================== Edges: gated acquisition -> frozen evidence ===================== -->
+        <mxCell id="exe1" value="normalized metadata → frozen evidence only (no URLs / bodies / raw payloads)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#d79b00;dashed=1;fontSize=10;fontColor=#8a6d00;labelBackgroundColor=#ffffff;exitX=0.6;exitY=0;entryX=1;entryY=0.5;" edge="1" parent="1" source="x3" target="e6">
+          <mxGeometry x="-0.85" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1448" y="1072" />
+              <mxPoint x="1642" y="1072" />
+              <mxPoint x="1642" y="598" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ===================== Edges: freeze -> persistence, readback ===================== -->
+        <mxCell id="erp3" value="freeze saved report + artifact" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0.75;entryY=0;" edge="1" parent="1" source="r8" target="p1">
+          <mxGeometry x="0.35" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1652" y="875" />
+              <mxPoint x="1652" y="1295" />
+              <mxPoint x="1420" y="1295" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="earb" value="reads frozen artifacts — never recompute, never re-run tools / provider" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#82b366;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="a5" target="p1">
+          <mxGeometry x="-0.92" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1700" y="350" />
+              <mxPoint x="1700" y="1390" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

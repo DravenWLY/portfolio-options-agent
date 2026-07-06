@@ -3,8 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.agent_team.llm_provider import LLMProviderRequest, LLMProviderResponse, LLMProviderStatus
-from app.services.agent_team.provider_factory import LLMProviderResolution
+from app.services.agent_team.llm_clients.contracts import LLMProviderRequest, LLMProviderResponse, LLMProviderStatus
+from app.services.agent_team.llm_clients.factory import ChainedLLMProvider, LLMProviderResolution
 from app.services.agent_team import tool_mediated_report as subject
 from app.services.agent_team.tool_mediated_report import (
     MAX_PLANNER_REPASSES,
@@ -29,6 +29,7 @@ from tests.services.agent_team.test_tools import (
     _evidence_package,
     _fred_economic_awareness_section,
     _public_company_profile_section,
+    _sec_recent_filings_section,
     _section,
 )
 
@@ -38,7 +39,9 @@ pytestmark = [pytest.mark.unit]
 
 EXPECTED_USABLE_CONTENT = {
     "fundamentals_analyst": frozenset({"trade_intent_summary", "public_company_profile"}),
-    "news_analyst": frozenset({"trade_intent_summary", "economic_awareness_snapshot"}),
+    "news_analyst": frozenset(
+        {"trade_intent_summary", "economic_awareness_snapshot", "public_events_calendar"}
+    ),
     "technical_analyst": frozenset({"trade_intent_summary", "market_quote_freshness"}),
     "risk_management_agent": frozenset(
         {
@@ -65,6 +68,7 @@ EXPECTED_USABLE_CONTENT = {
             "options_exposure_summary",
             "market_quote_freshness",
             "economic_awareness_snapshot",
+            "public_events_calendar",
             "public_company_profile",
         }
     ),
@@ -73,7 +77,7 @@ EXPECTED_USABLE_CONTENT = {
 
 EXPECTED_PLAN = {
     "fundamentals_analyst": ("trade_intent_summary", "public_company_profile"),
-    "news_analyst": ("trade_intent_summary", "economic_awareness_context"),
+    "news_analyst": ("trade_intent_summary", "economic_awareness_context", "sec_recent_filings_metadata"),
     "technical_analyst": ("trade_intent_summary", "market_quote_freshness"),
     "risk_management_agent": (
         "trade_intent_summary",
@@ -207,6 +211,14 @@ def _finding_set(role_name: str, finding: RoleFinding) -> RoleFindingSet:
     )
 
 
+def _findings_by_role(state) -> dict[str, tuple[str, ...]]:
+    return {item.role_name: tuple(finding.claim_text for finding in item.findings) for item in state.audited_findings}
+
+
+def _finding_counts_by_role(state) -> dict[str, int]:
+    return {item.role_name: len(item.findings) for item in state.audited_findings}
+
+
 def test_u1_usable_content_by_role_matches_pinned_spec() -> None:
     assert usable_content_by_role() == EXPECTED_USABLE_CONTENT
 
@@ -237,7 +249,7 @@ def test_p1_to_p5_planner_matches_pinned_plan_and_limits() -> None:
     assert plan.dimensions == PLAN_DIMENSIONS
     actual = {item.role_name: tuple(request.tool_name for request in item.tool_requests) for item in plan.role_plan}
     assert actual == EXPECTED_PLAN
-    assert sum(len(item.tool_requests) for item in plan.role_plan) == 12
+    assert sum(len(item.tool_requests) for item in plan.role_plan) == 13
     assert sum(len(item.tool_requests) for item in plan.role_plan) <= MAX_TOOL_CALLS_TOTAL
     assert all(len(item.tool_requests) <= MAX_TOOL_CALLS_PER_ROLE for item in plan.role_plan)
     assert MAX_PLANNER_REPASSES == 1
@@ -261,9 +273,12 @@ def test_r1_to_r4_role_results_keep_public_roles_public_and_news_degraded() -> N
         "public_company_profile",
     )
     news = _role_summary(summary, "news_analyst")
-    assert news.role_status == "skipped"
+    assert news.role_status == "completed"
     assert news.evidence_references == ("trade_intent_summary",)
-    assert news.warning_codes == ("public_news_context_unavailable",)
+    assert news.warning_codes == (
+        "fred_economic_awareness_not_available",
+        "sec_edgar_recent_filings_not_available",
+    )
     assert "public_company_profile" not in _role_summary(summary, "news_analyst").evidence_references
     assert "public_company_profile" not in _role_summary(summary, "technical_analyst").evidence_references
     assert "public_news_snapshot" not in summary.evidence_references
@@ -281,9 +296,16 @@ def test_fred_economic_awareness_context_can_complete_news_role_without_cnn_or_f
     assert news.role_status == "completed"
     assert news.evidence_references == ("trade_intent_summary", "economic_awareness_snapshot")
     assert "fred_economic_awareness_context_only" in news.warning_codes
+    assert "Consumer Price Index release (2026-07-15)" in (news.summary_markdown or "")
+    assert "Federal Open Market Committee calendar (2026-07-29)" in (news.summary_markdown or "")
     assert "economic_awareness_snapshot" in summary.evidence_references
     assert "market_mood_snapshot" not in summary.evidence_references
     assert "public_news_snapshot" not in summary.evidence_references
+    pm = _role_summary(summary, "portfolio_manager_agent")
+    assert "FRED macro calendar metadata was included as background only." in (pm.summary_markdown or "")
+    assert "FRED macro calendar metadata was included as economic context only." in (
+        summary.final_synthesis_markdown or ""
+    )
     assert summary.tool_run_artifact is not None
     fred_results = tuple(
         result
@@ -298,13 +320,100 @@ def test_fred_economic_awareness_context_can_complete_news_role_without_cnn_or_f
     assert "raw_payload" not in rendered
 
 
+def test_fred_economic_awareness_without_safe_rows_uses_availability_sentence() -> None:
+    section = _fred_economic_awareness_section().model_copy(
+        update={"detail_labels": ("actual_label: 3.0", "forecast_label: 2.9")}
+    )
+    evidence = _evidence_package(economic_awareness_snapshot=section)
+
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+
+    news = _role_summary(summary, "news_analyst")
+    assert "FRED macro calendar metadata was checked and is available as economic context only." in (
+        news.summary_markdown or ""
+    )
+    rendered = repr(summary.model_dump(mode="json")).lower()
+    assert "actual_label" not in rendered
+    assert "forecast_label" not in rendered
+
+
+def test_fred_economic_awareness_unavailable_degrades_to_named_gap() -> None:
+    evidence = _evidence_package(economic_awareness_snapshot=_fred_economic_awareness_section(availability="not_available"))
+
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+
+    news = _role_summary(summary, "news_analyst")
+    assert news.role_status == "completed"
+    assert news.evidence_references == ("trade_intent_summary",)
+    assert "fred_economic_awareness_not_available" in news.warning_codes
+    assert "FRED macro calendar metadata was not available or not reviewed" in (news.summary_markdown or "")
+    assert "economic_awareness_snapshot" not in summary.evidence_references
+
+
+def test_sec_recent_filings_metadata_can_complete_news_role_without_public_news_provider() -> None:
+    evidence = _evidence_package(public_events_calendar=_sec_recent_filings_section())
+
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+
+    news = _role_summary(summary, "news_analyst")
+    assert news.role_status == "completed"
+    assert news.evidence_references == ("trade_intent_summary", "public_events_calendar")
+    assert "sec_edgar_recent_filings_metadata_only" in news.warning_codes
+    assert "Form 8-K (Filed 2026-05-29)" in (news.summary_markdown or "")
+    assert "filref_recent_event_001" not in (news.summary_markdown or "")
+    assert "public_events_calendar" in summary.evidence_references
+    assert "public_news_snapshot" not in summary.evidence_references
+    pm = _role_summary(summary, "portfolio_manager_agent")
+    assert "Company-event metadata was included as background only." in (pm.summary_markdown or "")
+    assert "Company-event metadata was included as background only." in (summary.final_synthesis_markdown or "")
+    assert summary.tool_run_artifact is not None
+    edgar_results = tuple(
+        result
+        for result in summary.tool_run_artifact.tool_results
+        if result.tool_name == "sec_recent_filings_metadata"
+    )
+    assert edgar_results
+    assert all(result.source_key == "sec_edgar_recent_filings" for result in edgar_results)
+    rendered = repr(summary.model_dump(mode="json")).lower()
+    assert "newsapi" not in rendered
+    assert "source_url" not in rendered
+    assert "filing_text" not in rendered
+    assert "raw_payload" not in rendered
+
+
+def test_sec_recent_filings_unavailable_degrades_to_trade_intent_gap_only() -> None:
+    evidence = _evidence_package(public_events_calendar=_sec_recent_filings_section(availability="not_available"))
+
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+
+    news = _role_summary(summary, "news_analyst")
+    assert news.role_status == "completed"
+    assert news.evidence_references == ("trade_intent_summary",)
+    assert "sec_edgar_recent_filings_not_available" in news.warning_codes
+    assert "not available or not reviewed" in (news.summary_markdown or "")
+    assert "public_events_calendar" not in summary.evidence_references
+
+
 def test_r5_missing_public_evidence_degrades_public_roles_without_agent_safe_leak() -> None:
     evidence = _evidence_package().model_copy(update={"public_evidence": None})
     summary = build_tool_mediated_agent_team_summary(evidence, report_generated_at=datetime(2026, 6, 1, tzinfo=UTC))
 
     assert _role_summary(summary, "fundamentals_analyst").role_status == "skipped"
     assert _role_summary(summary, "fundamentals_analyst").evidence_references == ("trade_intent_summary",)
-    assert _role_summary(summary, "news_analyst").role_status == "skipped"
+    assert _role_summary(summary, "news_analyst").role_status == "completed"
+    assert _role_summary(summary, "news_analyst").evidence_references == ("trade_intent_summary",)
     assert _role_summary(summary, "technical_analyst").role_status == "completed"
 
 
@@ -353,6 +462,11 @@ def test_a1_a3_a8_auditor_filters_unsupported_boundary_and_unavailable_refs() ->
         ("This includes provider_account_id_secret.", "private_leak_blocked"),
         ("You should buy this immediately.", "advice_wording_blocked"),
         ("This invents a $100 target.", "invented_metric_blocked"),
+        ("The 8-K signals a bullish catalyst.", "sec_interpretation_blocked"),
+        ("The filing states revenue rose.", "sec_interpretation_blocked"),
+        ("Raw SEC file aapl-20260601.pdf leaked.", "source_leak_blocked"),
+        ("The CPI release suggests a bullish macro signal.", "fred_interpretation_blocked"),
+        ("A likely rate cut makes this an urgent market move.", "fred_interpretation_blocked"),
     ),
 )
 def test_a4_to_a6_auditor_drops_private_advice_and_invented_number_findings(
@@ -379,6 +493,71 @@ def test_a4_to_a6_auditor_drops_private_advice_and_invented_number_findings(
     assert audited[0].findings == ()
     assert auditor.repass_triggered is False
     assert expected_flag in auditor.eval_flags
+
+
+def test_sec_recent_filings_role_boundary_filters_non_news_role_refs() -> None:
+    finding_sets = (
+        _finding_set(
+            "fundamentals_analyst",
+            RoleFinding(
+                finding_type="missing_context",
+                claim_text="SEC event metadata was incorrectly routed to fundamentals.",
+                evidence_refs=("public_events_calendar",),
+            ),
+        ),
+    )
+    results_by_role = {
+        "fundamentals_analyst": (
+            _result(role_name="fundamentals_analyst", evidence_refs=("public_events_calendar",)),
+        )
+    }
+
+    auditor, audited = audit_findings(
+        finding_sets,
+        results_by_role,
+        {"fundamentals_analyst": frozenset({"public_events_calendar"})},
+    )
+
+    assert audited[0].findings == ()
+    assert "citable_boundary_filtered" in auditor.dropped_claims
+
+
+def test_sec_interpretation_guard_does_not_block_non_sec_freshness_wording() -> None:
+    finding_sets = (
+        _finding_set(
+            "technical_analyst",
+            RoleFinding(
+                finding_type="missing_context",
+                claim_text="Market quote freshness is time-sensitive context for manual review.",
+                evidence_refs=("market_quote_freshness",),
+            ),
+        ),
+        _finding_set(
+            "risk_management_agent",
+            RoleFinding(
+                finding_type="missing_context",
+                claim_text="Market freshness should be reviewed before earnings as part of manual context checks.",
+                evidence_refs=("market_quote_freshness",),
+            ),
+        ),
+    )
+    results_by_role = {
+        "technical_analyst": (_result(role_name="technical_analyst", evidence_refs=("market_quote_freshness",)),),
+        "risk_management_agent": (_result(role_name="risk_management_agent", evidence_refs=("market_quote_freshness",)),),
+    }
+
+    auditor, audited = audit_findings(
+        finding_sets,
+        results_by_role,
+        {
+            "technical_analyst": frozenset({"market_quote_freshness"}),
+            "risk_management_agent": frozenset({"market_quote_freshness"}),
+        },
+    )
+
+    assert all(item.findings for item in audited)
+    assert "sec_interpretation_blocked" not in auditor.eval_flags
+    assert "fred_interpretation_blocked" not in auditor.eval_flags
 
 
 def test_a7_contradiction_becomes_open_question_and_one_repass() -> None:
@@ -470,6 +649,39 @@ def test_s1_to_s3_end_to_end_summary_is_valid_byte_stable_and_no_gaps_cited() ->
     assert "public_news_snapshot" not in first.evidence_references
 
 
+def test_p34a_t9_deterministic_specificity_names_freshness_scope_gaps_and_inventory() -> None:
+    evidence = _evidence_package().model_copy(
+        update={
+            "freshness": _evidence_package().freshness.model_copy(
+                update={
+                    "broker_snapshot_freshness_label": "Broker snapshot is stale",
+                    "market_quote_freshness_label": "Market quotes are stale",
+                }
+            ),
+            "market_quote_freshness": _section(
+                "market_quote_freshness",
+                summary_label="Market quote freshness is unknown",
+            ),
+        }
+    )
+
+    summary = build_tool_mediated_agent_team_summary(evidence, report_generated_at=datetime(2026, 6, 1, tzinfo=UTC))
+
+    risk = _role_summary(summary, "risk_management_agent")
+    technical = _role_summary(summary, "technical_analyst")
+    assert "Saved broker snapshot freshness is categorized as stale." in (risk.summary_markdown or "")
+    assert "Market quote freshness is categorized as unknown." in (risk.summary_markdown or "")
+    assert "account-level feasibility was not evaluated" in (risk.summary_markdown or "")
+    assert "scope is limited to the selected portfolio context" in (risk.summary_markdown or "")
+    assert "before/after portfolio impact" in (risk.summary_markdown or "")
+    assert "public fundamentals snapshot" in (risk.summary_markdown or "")
+    assert "Market quote freshness is categorized as unknown" in (technical.summary_markdown or "")
+    assert "saved quotes are not live prices" in (technical.summary_markdown or "")
+    assert "Role digests:" in (summary.final_synthesis_markdown or "")
+    assert "Not-reviewed or unavailable inventory:" in (summary.final_synthesis_markdown or "")
+    assert "before/after portfolio impact" in (summary.final_synthesis_markdown or "")
+
+
 def test_t4_tool_run_artifact_freezes_plan_results_auditor_and_citation_graph() -> None:
     generated_at = datetime(2026, 6, 1, tzinfo=UTC)
     summary = build_tool_mediated_agent_team_summary(_evidence_package(), report_generated_at=generated_at)
@@ -481,8 +693,8 @@ def test_t4_tool_run_artifact_freezes_plan_results_auditor_and_citation_graph() 
     assert artifact.plan_version == PLAN_VERSION
     assert artifact.audit_version == subject.AUDIT_VERSION
     assert artifact.locked_question == "what_would_be_ignored"
-    assert artifact.tool_result_count == 12
-    assert len(artifact.tool_results) == 12
+    assert artifact.tool_result_count == 13
+    assert len(artifact.tool_results) == 13
     assert artifact.frozen_at == generated_at
     assert artifact.synthesis_evidence_references == summary.evidence_references
     assert artifact.warning_codes == summary.warning_codes
@@ -511,7 +723,7 @@ def test_t4_tool_run_artifact_round_trips_through_saved_summary_json() -> None:
 
     assert round_tripped.model_dump(mode="json") == summary.model_dump(mode="json")
     assert round_tripped.tool_run_artifact is not None
-    assert round_tripped.tool_run_artifact.tool_result_count == 12
+    assert round_tripped.tool_run_artifact.tool_result_count == 13
 
 
 def test_t4_legacy_summary_without_tool_run_artifact_remains_valid() -> None:
@@ -601,8 +813,13 @@ def test_unavailable_deterministic_section_is_filtered_without_validation_fallba
 
 
 def test_e6_validation_backstop_falls_back_to_validation_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    # _synthesis_markdown lives in (and is called from) the relocated runner
+    # module after P34A-T11E; patch it there so the injected unsafe synthesis
+    # actually reaches the validation backstop.
+    from app.services.agent_team.orchestration import tool_mediated_runner
+
     monkeypatch.setattr(
-        subject,
+        tool_mediated_runner,
         "_synthesis_markdown",
         lambda *_args, **_kwargs: "You should buy because this is safe to trade.",
     )
@@ -616,10 +833,15 @@ def test_e6_validation_backstop_falls_back_to_validation_failed(monkeypatch: pyt
 
 def test_p34a_live_provider_gate_is_disabled_by_default_even_with_provider() -> None:
     provider = _FakeLiveProvider()
+    generated_at = datetime(2026, 6, 1, tzinfo=UTC)
+    deterministic = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=generated_at,
+    )
 
     summary = build_tool_mediated_agent_team_summary(
         _evidence_package(),
-        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        report_generated_at=generated_at,
         llm_provider=provider,
     )
 
@@ -627,6 +849,7 @@ def test_p34a_live_provider_gate_is_disabled_by_default_even_with_provider() -> 
     assert summary.provider_mode == "tool_mediated_mock"
     assert summary.tool_run_artifact is not None
     assert summary.tool_run_artifact.provider_mode == "tool_mediated_mock"
+    assert summary.model_dump(mode="json") == deterministic.model_dump(mode="json")
 
 
 def test_p34a_provider_factory_resolution_controls_live_gate() -> None:
@@ -685,7 +908,7 @@ def test_p34a_live_provider_success_uses_sanitized_tool_result_envelopes_only() 
     assert summary.report_status == "full_agent_report"
     assert summary.tool_run_artifact is not None
     assert summary.tool_run_artifact.provider_mode == "tool_mediated_live"
-    assert summary.tool_run_artifact.tool_result_count == 12
+    assert summary.tool_run_artifact.tool_result_count == 13
     assert summary.tool_run_artifact.provider_runs
     assert {request.role_name for request in provider.calls} == {
         "fundamentals_analyst",
@@ -699,16 +922,19 @@ def test_p34a_live_provider_success_uses_sanitized_tool_result_envelopes_only() 
     }
     assert all(run.provider == "fake_live_provider" for run in summary.tool_run_artifact.provider_runs)
     assert all(run.model == "fake-live-model" for run in summary.tool_run_artifact.provider_runs)
-    assert all(run.prompt_version == "p34a-tool-mediated-role-v1" for run in summary.tool_run_artifact.provider_runs)
+    assert all(run.prompt_version == "p34a-tool-mediated-role-v2" for run in summary.tool_run_artifact.provider_runs)
     assert all(run.status == "ok" for run in summary.tool_run_artifact.provider_runs)
-    assert _role_summary(summary, "fundamentals_analyst").summary_markdown == (
-        "Live fundamentals context cites reviewed public identity evidence as background."
-    )
+    fundamentals_summary = _role_summary(summary, "fundamentals_analyst").summary_markdown or ""
+    assert "Reviewed public company profile context is background that could be overlooked." in fundamentals_summary
+    assert "Live fundamentals context cites reviewed public identity evidence as background." in fundamentals_summary
     assert _role_summary(summary, "fundamentals_analyst").evidence_references == (
         "trade_intent_summary",
         "public_company_profile",
     )
     assert "live_provider_reasoning_used" in _role_summary(summary, "fundamentals_analyst").warning_codes
+    assert "live_connective_context" in (
+        summary.tool_run_artifact.audited_findings[0].findings[-1].caveat_codes
+    )
     rendered_requests = repr(tuple(request.messages for request in provider.calls)).lower()
     assert "summary_payload" not in rendered_requests
     assert "scope':" not in rendered_requests
@@ -720,6 +946,146 @@ def test_p34a_live_provider_success_uses_sanitized_tool_result_envelopes_only() 
     for request in provider.calls:
         for message in request.messages:
             validate_tool_payload({"content": message.content}, label="captured live prompt message")
+
+
+def test_p34a_t9b_live_overlay_preserves_all_deterministic_findings_and_adds_at_most_one() -> None:
+    evidence = _evidence_package()
+    provider = _FakeLiveProvider(
+        content_by_role={
+            "fundamentals_analyst": "Live fundamentals context cites reviewed public identity evidence as background.",
+            "technical_analyst": "Live technical context cites saved market freshness as background.",
+            "risk_management_agent": "Live risk context cites deterministic caveats as background.",
+        }
+    )
+
+    deterministic_state = run_tool_mediated_agent_team(evidence, registry=default_tool_registry())
+    live_state = run_tool_mediated_agent_team(
+        evidence,
+        registry=default_tool_registry(),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    deterministic_claims = _findings_by_role(deterministic_state)
+    live_claims = _findings_by_role(live_state)
+    deterministic_counts = _finding_counts_by_role(deterministic_state)
+    live_counts = _finding_counts_by_role(live_state)
+    provider_roles = {request.role_name for request in provider.calls}
+    for role_name, claims in deterministic_claims.items():
+        for claim in claims:
+            assert claim in live_claims[role_name]
+        assert live_counts[role_name] <= deterministic_counts[role_name] + 1
+        if role_name in provider_roles:
+            assert live_counts[role_name] == deterministic_counts[role_name] + 1
+            role_set = next(item for item in live_state.audited_findings if item.role_name == role_name)
+            assert role_set.findings[-1].caveat_codes == ("live_connective_context",)
+        else:
+            assert live_counts[role_name] == deterministic_counts[role_name]
+
+
+def test_p34a_t9b_pm_digest_uses_first_deterministic_finding_not_live_connective() -> None:
+    provider = _FakeLiveProvider(
+        content_by_role={
+            "fundamentals_analyst": "Live fundamentals context cites reviewed public identity evidence as background.",
+            "technical_analyst": "Live technical context cites saved market freshness as background.",
+            "risk_management_agent": "Live risk context cites deterministic caveats as background.",
+        }
+    )
+
+    summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    synthesis = summary.final_synthesis_markdown or ""
+    assert "Fundamentals Analyst: Reviewed public company profile context is background" in synthesis
+    assert "Technical Analyst: Market quote freshness is categorized" in synthesis
+    assert "Risk Manager: Saved deterministic risk flags" in synthesis
+    assert "Fundamentals Analyst: Live fundamentals context" not in synthesis
+    assert "Risk Manager: Live risk context" not in synthesis
+
+
+def test_sec_recent_filings_news_finding_stays_deterministic_in_live_mode() -> None:
+    provider = _FakeLiveProvider(
+        content_by_role={
+            "fundamentals_analyst": "Live fundamentals context cites reviewed public identity evidence as background.",
+            "technical_analyst": "Live technical context cites saved market freshness as background.",
+            "risk_management_agent": "Live risk context cites deterministic caveats as background.",
+            "news_analyst": "The filing signals a bullish catalyst.",
+        }
+    )
+    evidence = _evidence_package(public_events_calendar=_sec_recent_filings_section())
+    mock_summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    news = _role_summary(summary, "news_analyst")
+    mock_news = _role_summary(mock_summary, "news_analyst")
+    assert news.role_status == "completed"
+    assert news.evidence_references == ("trade_intent_summary", "public_events_calendar")
+    assert news.summary_markdown == mock_news.summary_markdown
+    assert "Form 8-K (Filed 2026-05-29)" in (news.summary_markdown or "")
+    assert "bullish catalyst" not in (news.summary_markdown or "")
+    assert {request.role_name for request in provider.calls} == {
+        "fundamentals_analyst",
+        "technical_analyst",
+        "risk_management_agent",
+    }
+    rendered_requests = repr(tuple(request.messages for request in provider.calls)).lower()
+    assert "summary_payload" not in rendered_requests
+    assert "reviewed_filing_metadata" not in rendered_requests
+    assert "form 8-k" not in rendered_requests
+    assert "filed 2026-05-29" not in rendered_requests
+
+
+def test_fred_economic_awareness_news_finding_stays_deterministic_in_live_mode() -> None:
+    provider = _FakeLiveProvider(
+        content_by_role={
+            "fundamentals_analyst": "Live fundamentals context cites reviewed public identity evidence as background.",
+            "technical_analyst": "Live technical context cites saved market freshness as background.",
+            "risk_management_agent": "Live risk context cites deterministic caveats as background.",
+            "news_analyst": "The CPI release suggests a bullish macro signal.",
+        }
+    )
+    evidence = _evidence_package(economic_awareness_snapshot=_fred_economic_awareness_section())
+    mock_summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    news = _role_summary(summary, "news_analyst")
+    mock_news = _role_summary(mock_summary, "news_analyst")
+    assert news.role_status == "completed"
+    assert news.evidence_references == ("trade_intent_summary", "economic_awareness_snapshot")
+    assert news.summary_markdown == mock_news.summary_markdown
+    assert "Consumer Price Index release (2026-07-15)" in (news.summary_markdown or "")
+    assert "bullish macro signal" not in (news.summary_markdown or "")
+    assert {request.role_name for request in provider.calls} == {
+        "fundamentals_analyst",
+        "technical_analyst",
+        "risk_management_agent",
+    }
+    rendered_requests = repr(tuple(request.messages for request in provider.calls)).lower()
+    assert "summary_payload" not in rendered_requests
+    assert "consumer price index" not in rendered_requests
+    assert "2026-07-15" not in rendered_requests
 
 
 @pytest.mark.parametrize("status", ("provider_auth_error", "provider_timeout", "rate_limited"))
@@ -769,6 +1135,10 @@ def test_p34a_live_provider_timeout_exception_degrades_to_deterministic_fallback
         "This references provider_account_id_secret.",
         "You should buy this.",
         "This invents a $100 target.",
+        "This connective sentence mentions 2026 context.",
+        "The filing signals a bullish catalyst.",
+        "The CPI release suggests a bullish macro signal.",
+        "Review https://example.com for more context.",
     ),
 )
 def test_p34a_live_provider_unsafe_output_is_rejected_before_persistence(unsafe_content: str) -> None:
@@ -787,6 +1157,10 @@ def test_p34a_live_provider_unsafe_output_is_rejected_before_persistence(unsafe_
     assert "provider_account_id_secret" not in rendered
     assert "you should buy" not in rendered
     assert "$100" not in rendered
+    assert "2026 context" not in rendered
+    assert "bullish catalyst" not in rendered
+    assert "bullish macro signal" not in rendered
+    assert "https://example.com" not in rendered
     assert summary.tool_run_artifact is not None
     assert all(
         role.role_status == "completed"
@@ -801,8 +1175,25 @@ def test_p34a_live_provider_unsafe_output_is_rejected_before_persistence(unsafe_
     assert summary.tool_run_artifact.auditor.repass_triggered is False
     assert any(
         flag in summary.tool_run_artifact.auditor.eval_flags
-        for flag in {"private_leak_blocked", "advice_wording_blocked", "invented_metric_blocked"}
+        for flag in {
+            "private_leak_blocked",
+            "advice_wording_blocked",
+            "invented_metric_blocked",
+            "sec_interpretation_blocked",
+            "fred_interpretation_blocked",
+            "source_leak_blocked",
+            "live_provider_validation_failed",
+        }
     )
+    deterministic_state = run_tool_mediated_agent_team(_evidence_package(), registry=default_tool_registry())
+    deterministic_claims = _findings_by_role(deterministic_state)
+    live_claims = {
+        item.role_name: tuple(finding.claim_text for finding in item.findings)
+        for item in summary.tool_run_artifact.audited_findings
+    }
+    for role_name in {"fundamentals_analyst", "technical_analyst", "risk_management_agent"}:
+        for claim in deterministic_claims[role_name]:
+            assert claim in live_claims[role_name]
 
 
 def test_p34a_live_provider_freeze_is_reproducible_with_fixed_inputs() -> None:
@@ -828,3 +1219,56 @@ def test_p34a_live_provider_freeze_is_reproducible_with_fixed_inputs() -> None:
     round_tripped = SavedAgentTeamSummaryRead.model_validate(first.model_dump(mode="json"))
     assert round_tripped.model_dump(mode="json") == first.model_dump(mode="json")
     assert len(first_provider.calls) == first_call_count
+
+
+class _ChainScriptedModelProvider(_FakeLiveProvider):
+    """Per-model fake whose first-model calls always fail with quota_exceeded."""
+
+    def __init__(self, *, model: str, always_status: LLMProviderStatus | None = None) -> None:
+        super().__init__()
+        self.model = model
+        self._always_status = always_status
+
+    def complete(self, request: LLMProviderRequest) -> LLMProviderResponse:
+        if self._always_status is not None:
+            self.status_by_role = {request.role_name: self._always_status}
+        return super().complete(request)
+
+
+def test_p34a_t10_chain_metadata_freezes_into_provider_runs_and_readback() -> None:
+    exhausted = _ChainScriptedModelProvider(model="chain-model-a", always_status="quota_exceeded")
+    serving = _ChainScriptedModelProvider(model="chain-model-b")
+    chain = ChainedLLMProvider(providers=(exhausted, serving))
+    resolution = LLMProviderResolution(
+        provider=chain,
+        status="ok",
+        provider_name="fake_live_provider",
+        model="chain-model-a",
+    )
+
+    summary = build_tool_mediated_agent_team_summary_from_provider_resolution(
+        _evidence_package(),
+        provider_resolution=resolution,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+
+    assert summary.provider_mode == "tool_mediated_live"
+    assert summary.tool_run_artifact is not None
+    runs = summary.tool_run_artifact.provider_runs
+    assert runs, "expected frozen provider runs for the chained live path"
+    assert all(run.status == "ok" for run in runs)
+    assert all(run.model == "chain-model-b" for run in runs)
+    assert all(run.model_chain_position == 1 for run in runs)
+    # The first role walks the chain; the sticky index means later roles go
+    # straight to the serving model.
+    attempted = [tuple(run.attempted_models) for run in runs]
+    assert attempted[0] == ("chain-model-a", "chain-model-b")
+    assert all(item == ("chain-model-b",) for item in attempted[1:])
+    assert len(exhausted.calls) == 1
+
+    round_tripped = SavedAgentTeamSummaryRead.model_validate(summary.model_dump(mode="json"))
+    frozen_runs = round_tripped.tool_run_artifact.provider_runs
+    assert [run.model_chain_position for run in frozen_runs] == [1] * len(frozen_runs)
+    assert [tuple(run.attempted_models) for run in frozen_runs] == attempted
+    rendered = repr(round_tripped.model_dump(mode="python")).lower()
+    assert "api_key" not in rendered and "prompt:" not in rendered

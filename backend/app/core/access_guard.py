@@ -2,7 +2,7 @@ import hmac
 
 from fastapi import Depends, Header, HTTPException, status
 
-from app.core.config import Settings, get_settings
+from app.config import Settings, get_settings
 
 LOCAL_ACCESS_HEADER = "X-Local-Access-Token"
 

@@ -3,11 +3,11 @@ from datetime import UTC, date, datetime
 import pytest
 
 from app.schemas.trade_review_workspace import TradeReviewPortfolioPreviewRequest
-from app.services.agent_team.evidence import public_evidence_from_workspace
-from app.services.agent_team.evidence_projection import build_agent_safe_deterministic_evidence
-from app.services.agent_team.llm_provider import AGENT_TEAM_ROLES, find_forbidden_string_values
-from app.services.agent_team.prompt_inputs import build_agent_team_prompt_input, build_all_role_prompt_inputs
-from app.services.agent_team.roles import PUBLIC_ANALYST_ROLES
+from app.services.agent_team.legacy_console.evidence import public_evidence_from_workspace
+from app.services.agent_team.legacy_console.evidence_projection import build_agent_safe_deterministic_evidence
+from app.services.agent_team.llm_clients.contracts import AGENT_TEAM_ROLES, find_forbidden_string_values
+from app.services.agent_team.legacy_console.prompt_inputs import build_agent_team_prompt_input, build_all_role_prompt_inputs
+from app.services.agent_team.agents.roles import PUBLIC_ANALYST_ROLES
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.trade_review.frontend_read import build_trade_review_workspace_portfolio_preview
 

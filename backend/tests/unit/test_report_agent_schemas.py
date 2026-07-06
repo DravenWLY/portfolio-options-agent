@@ -21,6 +21,7 @@ from app.schemas.reports import (
     SavedEvidencePackageRead,
     SavedEvidenceSectionRead,
     SavedPublicEvidencePackageRead,
+    SavedPublicEvidenceFactRead,
     SavedPublicEvidenceSectionRead,
     SavedPublicRoleEvidenceProjectionRead,
     SavedReviewArtifactCreateRequest,
@@ -40,12 +41,14 @@ from app.services.reports.agent_team_report import (
 from app.services.reports.public_evidence import (
     EdgarCompanyProfileHttpClient,
     EdgarCompanyProfileSourcePolicy,
+    EdgarRecentFilingsHttpClient,
+    EdgarRecentFilingsSourcePolicy,
     EdgarSourceUnavailableError,
     build_edgar_company_profile_live_smoke_projection,
     build_public_evidence_projection,
     build_public_role_evidence_projection,
 )
-from app.services.agent_team.report_output_safety import validate_agent_team_report_output
+from app.services.agent_team.safety.report_output_safety import validate_agent_team_report_output
 
 
 pytestmark = pytest.mark.unit
@@ -996,6 +999,274 @@ def test_edgar_company_profile_public_evidence_supports_package_aware_validation
     validate_agent_team_report_output(payload, label="agent-team saved report", evidence_package=evidence)
 
 
+def test_sec_recent_filings_policy_disabled_fails_closed_without_client_call() -> None:
+    client = _ReplayEdgarRecentFilingsClient(raise_on_call=True)
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_recent_filings_policy=EdgarRecentFilingsSourcePolicy(enabled=False),
+        edgar_recent_filings_client=client,
+    )
+
+    events = public_evidence.public_events_calendar
+    assert client.calls == ()
+    assert events.availability == "not_available"
+    assert events.source_key == "sec_edgar_recent_filings"
+    assert events.caveat_codes == ("sec_edgar_recent_filings_source_disabled",)
+    assert public_evidence.public_company_profile.availability == "not_reviewed"
+
+
+def test_sec_recent_filings_invalid_live_user_agent_policy_fails_closed_without_client_call() -> None:
+    client = _ReplayEdgarRecentFilingsClient(raise_on_call=True)
+    policy = EdgarRecentFilingsSourcePolicy(
+        enabled=True,
+        external_access_enabled=True,
+        runtime_environment="local",
+        declared_user_agent=None,
+    )
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_recent_filings_policy=policy,
+        edgar_recent_filings_client=client,
+    )
+
+    assert policy.live_client_ready() is False
+    assert client.calls == ()
+    assert public_evidence.public_events_calendar.availability == "not_available"
+    assert public_evidence.public_events_calendar.caveat_codes == (
+        "sec_edgar_recent_filings_live_policy_not_ready",
+    )
+
+
+def test_sec_recent_filings_http_client_requires_live_ready_policy() -> None:
+    with pytest.raises(EdgarSourceUnavailableError):
+        EdgarRecentFilingsHttpClient(
+            policy=EdgarRecentFilingsSourcePolicy(enabled=True, external_access_enabled=True),
+            transport=_FakeEdgarHttpTransport(),
+        )
+
+
+def test_sec_recent_filings_http_client_uses_injected_transport_without_network() -> None:
+    policy = _live_ready_recent_filings_policy()
+    client = EdgarRecentFilingsHttpClient(policy=policy, transport=_FakeEdgarHttpTransport())
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_recent_filings_policy=policy,
+        edgar_recent_filings_client=client,
+    )
+
+    events = public_evidence.public_events_calendar
+    facts = [(fact.fact_key, fact.value_label) for fact in events.facts]
+    assert events.availability == "available"
+    assert events.source_key == "sec_edgar_recent_filings"
+    assert ("form_type", "Form 8-K") in facts
+    assert ("filing_date", "Filed 2026-05-29") in facts
+    assert ("filing_reference", "filref_recent_001") in facts
+    assert client.request_count == 2
+
+
+def test_sec_recent_filings_http_client_enforces_request_budget() -> None:
+    policy = _live_ready_recent_filings_policy(request_budget_per_run=2)
+    client = EdgarRecentFilingsHttpClient(policy=policy, transport=_FakeEdgarHttpTransport())
+
+    client.fetch_company_tickers()
+    client.fetch_submissions("CIK 0000001234")
+
+    with pytest.raises(EdgarSourceUnavailableError):
+        client.fetch_company_tickers()
+
+
+def test_sec_recent_filings_replay_success_normalizes_public_events_calendar() -> None:
+    client = _ReplayEdgarRecentFilingsClient()
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="exmp",
+        edgar_recent_filings_policy=EdgarRecentFilingsSourcePolicy(enabled=True),
+        edgar_recent_filings_client=client,
+    )
+
+    events = public_evidence.public_events_calendar
+    facts = [(fact.fact_key, fact.fact_label, fact.value_label) for fact in events.facts]
+    rendered = repr(public_evidence.model_dump(mode="python")).lower()
+    assert public_evidence.public_evidence_mode == "provider_reference"
+    assert events.availability == "available"
+    assert events.rights_status == "reviewed"
+    assert events.source_key == "sec_edgar_recent_filings"
+    assert events.source_label == "SEC EDGAR recent filing metadata - company events only"
+    assert facts == [
+        ("form_type", "Form type", "Form 8-K"),
+        ("filing_date", "Filing date", "Filed 2026-05-29"),
+        ("filing_reference", "Filing reference", "filref_recent_001"),
+        ("form_type", "Form type", "Form 10-Q"),
+        ("filing_date", "Filing date", "Filed 2026-04-30"),
+        ("filing_reference", "Filing reference", "filref_recent_002"),
+    ]
+    assert events.limitations == (
+        "Source: SEC EDGAR submissions/index metadata. Recent filing metadata only. Not investment advice or a trading signal.",
+        "Normalized filing metadata only; raw EDGAR payloads are not retained.",
+        "EDGAR filing metadata may lag, be corrected, or omit filings that are not available through EDGAR. Portfolio Copilot does not interpret filing contents or treat filing metadata as a trading signal.",
+        "Use of SEC EDGAR data does not imply endorsement by the U.S. Securities and Exchange Commission.",
+    )
+    assert "accession" not in rendered
+    assert "primarydocument" not in rendered
+    assert "data.sec.gov" not in rendered
+    assert client.calls == ("fetch_company_tickers", "fetch_submissions:CIK 0000001234")
+
+
+def test_sec_recent_filings_replay_unresolved_symbol_does_not_guess_identity() -> None:
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXM",
+        edgar_recent_filings_policy=EdgarRecentFilingsSourcePolicy(enabled=True),
+        edgar_recent_filings_client=_ReplayEdgarRecentFilingsClient(),
+    )
+
+    events = public_evidence.public_events_calendar
+    assert events.availability == "not_available"
+    assert events.facts == ()
+    assert events.caveat_codes == ("sec_edgar_recent_filings_symbol_unresolved",)
+
+
+def test_sec_recent_filings_invalid_cik_fails_closed() -> None:
+    client = _ReplayEdgarRecentFilingsClient(
+        company_tickers={"0": {"cik_str": "not-a-cik", "ticker": "EXMP", "title": "Example Test Company"}}
+    )
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_recent_filings_policy=EdgarRecentFilingsSourcePolicy(enabled=True),
+        edgar_recent_filings_client=client,
+    )
+
+    events = public_evidence.public_events_calendar
+    assert events.availability == "not_available"
+    assert events.facts == ()
+    assert events.caveat_codes == ("sec_edgar_recent_filings_cik_unavailable",)
+    assert client.calls == ("fetch_company_tickers",)
+
+
+def test_sec_recent_filings_client_exception_fails_closed_without_raw_content() -> None:
+    client = _ReplayEdgarRecentFilingsClient(
+        exception_message="https://data.sec.gov/submissions/CIK0000001234.json raw_payload api_key=secret"
+    )
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_recent_filings_policy=EdgarRecentFilingsSourcePolicy(enabled=True),
+        edgar_recent_filings_client=client,
+    )
+
+    rendered = repr(public_evidence.model_dump(mode="python")).lower()
+    assert public_evidence.public_events_calendar.availability == "not_available"
+    assert public_evidence.public_events_calendar.caveat_codes == (
+        "sec_edgar_recent_filings_replay_unavailable",
+    )
+    assert "data.sec.gov" not in rendered
+    assert "raw_payload" not in rendered
+    assert "api_key" not in rendered
+    assert "secret" not in rendered
+
+
+def test_sec_recent_filings_raw_paths_and_filing_text_are_discarded_or_rejected() -> None:
+    client = _ReplayEdgarRecentFilingsClient(
+        submissions={
+            "filings": {
+                "recent": {
+                    "form": ["8-K", "bad.htm", "10-Q"],
+                    "filingDate": ["2026-05-29", "2026-05-01", "/Archives/edgar/data/file.htm"],
+                    "accessionNumber": ["0000000000-00-000001"],
+                    "primaryDocument": ["raw-document.htm"],
+                    "filing_body": "filing says revenue guidance changed",
+                }
+            },
+            "source_url": "https://data.sec.gov/submissions/CIK0000001234.json",
+        }
+    )
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_recent_filings_policy=EdgarRecentFilingsSourcePolicy(enabled=True),
+        edgar_recent_filings_client=client,
+    )
+
+    events = public_evidence.public_events_calendar
+    rendered = repr(public_evidence.model_dump(mode="python")).lower()
+    facts = [(fact.fact_key, fact.value_label) for fact in events.facts]
+    assert events.availability == "available"
+    assert facts == [
+        ("form_type", "Form 8-K"),
+        ("filing_date", "Filed 2026-05-29"),
+        ("filing_reference", "filref_recent_001"),
+    ]
+    assert "source_url" not in rendered
+    assert "data.sec.gov" not in rendered
+    assert "accession" not in rendered
+    assert "raw-document" not in rendered
+    assert "filing says" not in rendered
+
+
+def test_sec_recent_filings_missing_safe_rows_is_not_available() -> None:
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_recent_filings_policy=EdgarRecentFilingsSourcePolicy(enabled=True),
+        edgar_recent_filings_client=_ReplayEdgarRecentFilingsClient(
+            submissions={"filings": {"recent": {"form": ["bad.htm"], "filingDate": ["2026-05-29"]}}}
+        ),
+    )
+
+    events = public_evidence.public_events_calendar
+    assert events.availability == "not_available"
+    assert events.facts == ()
+    assert events.caveat_codes == ("sec_edgar_recent_filings_metadata_incomplete",)
+
+
+def test_sec_recent_filings_public_evidence_supports_news_role_package_validation() -> None:
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_recent_filings_policy=EdgarRecentFilingsSourcePolicy(enabled=True),
+        edgar_recent_filings_client=_ReplayEdgarRecentFilingsClient(),
+    )
+    evidence = _evidence_with_public_sections({"public_events_calendar": public_evidence.public_events_calendar})
+
+    projection = build_public_role_evidence_projection(evidence, role_name="news_analyst")
+    payload = {
+        "role_summaries": (
+            {
+                "role_name": "news_analyst",
+                "display_name": "News Analyst",
+                "role_status": "completed",
+                "provider_status": "ok",
+                "summary_markdown": "Recent filing metadata is available as neutral company-event context.",
+                "evidence_references": ("trade_intent_summary", "public_events_calendar"),
+                "warning_codes": (),
+            },
+        ),
+        "evidence_references": ("trade_intent_summary", "public_events_calendar"),
+    }
+
+    assert projection.citable_section_keys == ("public_events_calendar",)
+    validate_agent_team_report_output(payload, label="agent-team saved report", evidence_package=evidence)
+
+
+def test_sec_recent_filings_saved_readback_uses_frozen_public_evidence_without_refetch() -> None:
+    client = _ReplayEdgarRecentFilingsClient()
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="EXMP",
+        edgar_recent_filings_policy=EdgarRecentFilingsSourcePolicy(enabled=True),
+        edgar_recent_filings_client=client,
+    )
+    calls_after_generation = client.calls
+
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(
+        _saved_review_artifact().model_copy(update={"public_evidence": public_evidence})
+    )
+
+    assert client.calls == calls_after_generation
+    assert evidence.public_evidence is not None
+    assert evidence.public_evidence.public_events_calendar == public_evidence.public_events_calendar
+
+
 def test_public_role_evidence_projection_narrows_sections_to_role_boundary() -> None:
     public_evidence = SavedPublicEvidencePackageRead.not_reviewed("HOOD").model_copy(
         update={
@@ -1039,6 +1310,45 @@ def test_public_role_evidence_projection_narrows_sections_to_role_boundary() -> 
     assert {section.section_key for section in projection.sections} == set(projection.allowed_section_keys)
     assert "public_news_snapshot" not in projection.allowed_section_keys
     assert projection.degrade_reason is None
+
+
+def test_sec_recent_filings_public_events_are_not_citable_by_fundamentals_role() -> None:
+    sec_events = _reviewed_public_section(
+        "public_events_calendar",
+        "Public events calendar",
+        "SEC recent filing metadata is available.",
+    ).model_copy(
+        update={
+            "source_key": "sec_edgar_recent_filings",
+            "source_label": "SEC EDGAR recent filing metadata - company events only",
+            "facts": (
+                SavedPublicEvidenceFactRead(
+                    fact_key="form_type",
+                    fact_label="Form type",
+                    value_label="Form 8-K",
+                ),
+            ),
+            "caveat_codes": ("sec_edgar_recent_filings_metadata",),
+        }
+    )
+    evidence = _evidence_with_public_sections({"public_events_calendar": sec_events})
+    payload = {
+        "role_summaries": (
+            {
+                "role_name": "fundamentals_analyst",
+                "display_name": "Fundamentals Analyst",
+                "role_status": "completed",
+                "provider_status": "ok",
+                "summary_markdown": "SEC event metadata was incorrectly cited.",
+                "evidence_references": ("trade_intent_summary", "public_events_calendar"),
+                "warning_codes": (),
+            },
+        ),
+        "evidence_references": ("trade_intent_summary", "public_events_calendar"),
+    }
+
+    with pytest.raises(ValueError, match="SEC recent filing metadata is not citable"):
+        validate_agent_team_report_output(payload, label="agent-team saved report", evidence_package=evidence)
 
 
 def test_public_role_evidence_projection_defaults_to_no_reviewed_public_evidence() -> None:
@@ -2279,6 +2589,51 @@ class _ReplayEdgarProfileClient:
         return self.submissions
 
 
+class _ReplayEdgarRecentFilingsClient:
+    def __init__(
+        self,
+        *,
+        company_tickers: dict | None = None,
+        submissions: dict | None = None,
+        raise_on_call: bool = False,
+        exception_message: str | None = None,
+    ) -> None:
+        self.company_tickers = company_tickers or {
+            "0": {"cik_str": 1234, "ticker": "EXMP", "title": "Example Public Test Company, Inc."}
+        }
+        self.submissions = submissions or {
+            "filings": {
+                "recent": {
+                    "form": ["8-K", "10-Q"],
+                    "filingDate": ["2026-05-29", "2026-04-30"],
+                    "accessionNumber": ["0000001234-26-000001", "0000001234-26-000002"],
+                    "primaryDocument": ["exmp-20260529.htm", "exmp-20260430.htm"],
+                }
+            }
+        }
+        self.raise_on_call = raise_on_call
+        self.exception_message = exception_message
+        self._calls: list[str] = []
+
+    @property
+    def calls(self) -> tuple[str, ...]:
+        return tuple(self._calls)
+
+    def fetch_company_tickers(self) -> dict:
+        self._calls.append("fetch_company_tickers")
+        if self.raise_on_call:
+            raise AssertionError("EDGAR recent-filings replay client should not be called")
+        if self.exception_message is not None:
+            raise RuntimeError(self.exception_message)
+        return self.company_tickers
+
+    def fetch_submissions(self, cik_reference: str) -> dict:
+        self._calls.append(f"fetch_submissions:{cik_reference}")
+        if self.raise_on_call:
+            raise AssertionError("EDGAR recent-filings replay client should not be called")
+        return self.submissions
+
+
 def _live_ready_edgar_policy(**updates: object) -> EdgarCompanyProfileSourcePolicy:
     defaults = {
         "enabled": True,
@@ -2291,6 +2646,20 @@ def _live_ready_edgar_policy(**updates: object) -> EdgarCompanyProfileSourcePoli
     }
     defaults.update(updates)
     return EdgarCompanyProfileSourcePolicy(**defaults)
+
+
+def _live_ready_recent_filings_policy(**updates: object) -> EdgarRecentFilingsSourcePolicy:
+    defaults = {
+        "enabled": True,
+        "external_access_enabled": True,
+        "runtime_environment": "local",
+        "declared_user_agent": "Portfolio Copilot local demo contact engineering@example.test",
+        "request_timeout_seconds": 3.0,
+        "response_size_cap_bytes": 100_000,
+        "request_budget_per_run": 3,
+    }
+    defaults.update(updates)
+    return EdgarRecentFilingsSourcePolicy(**defaults)
 
 
 class _FakeEdgarHttpTransport:
@@ -2321,4 +2690,12 @@ class _FakeEdgarHttpTransport:
             "exchanges": ["Nasdaq"],
             "sicDescription": "Security Brokers, Dealers & Flotation Companies",
             "fiscalYearEnd": "1231",
+            "filings": {
+                "recent": {
+                    "form": ["8-K"],
+                    "filingDate": ["2026-05-29"],
+                    "accessionNumber": ["0000001234-26-000001"],
+                    "primaryDocument": ["exmp-20260529.htm"],
+                }
+            },
         }

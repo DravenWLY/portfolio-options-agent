@@ -3,13 +3,13 @@ from datetime import date
 import pytest
 
 from app.schemas.trade_review_workspace import TradeReviewPortfolioPreviewRequest
-from app.services.agent_team.evidence import (
+from app.services.agent_team.legacy_console.evidence import (
     deterministic_evidence_from_workspace,
     public_evidence_from_workspace,
 )
-from app.services.agent_team.llm_provider import AGENT_TEAM_ROLES
-from app.services.agent_team.prompts import render_role_messages
-from app.services.agent_team.roles import PUBLIC_ANALYST_ROLES
+from app.services.agent_team.llm_clients.contracts import AGENT_TEAM_ROLES
+from app.services.agent_team.legacy_console.prompts import render_role_messages
+from app.services.agent_team.agents.roles import PUBLIC_ANALYST_ROLES
 from app.services.trade_review.frontend_read import build_trade_review_workspace_portfolio_preview
 
 

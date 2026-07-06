@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.access_guard import LOCAL_ACCESS_HEADER
-from app.core.config import Settings, get_settings
+from app.config import Settings, get_settings
 
 
 SKYFRAME_FIXTURE_HEADER = "X-Skyframe-Fixture"

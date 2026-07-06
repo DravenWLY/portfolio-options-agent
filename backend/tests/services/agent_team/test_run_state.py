@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.services.agent_team.run_state import (
+from app.services.agent_team.legacy_console.run_state import (
     AgentReviewBudgetSummary,
     AgentReviewEvalFlag,
     AgentReviewRoleOutput,

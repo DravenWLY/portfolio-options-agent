@@ -3,9 +3,9 @@ from datetime import UTC, date, datetime
 import pytest
 
 from app.schemas.trade_review_workspace import TradeReviewPortfolioPreviewRequest
-from app.services.agent_team.evidence_projection import build_agent_safe_deterministic_evidence
-from app.services.agent_team.mock_provider import MockLLMProvider
-from app.services.agent_team.orchestrator import AgentTeamOrchestrator
+from app.services.agent_team.legacy_console.evidence_projection import build_agent_safe_deterministic_evidence
+from app.services.agent_team.llm_clients.mock import MockLLMProvider
+from app.services.agent_team.legacy_console.orchestrator import AgentTeamOrchestrator
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.trade_review.frontend_read import build_trade_review_workspace_portfolio_preview
 

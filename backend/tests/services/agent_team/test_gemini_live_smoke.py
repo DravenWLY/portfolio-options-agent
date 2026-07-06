@@ -4,9 +4,12 @@ This test is EXCLUDED from the default suite (``external``/``slow`` markers, see
 pytest.ini ``addopts``) AND skipped unless explicitly opted in via
 ``RUN_LIVE_LLM_TESTS=true`` (or legacy ``POA_LLM_LIVE_TESTS=1``) with
 ``GOOGLE_API_KEY`` present. The opt-in values may come from the shell or from
-``backend/config.local.live-llm.env`` / ``backend/secrets/live-llm.env``. It
-makes a real Gemini call ONLY when opted in, uses synthetic workspace data only,
-and never prints or inspects the API key value.
+``backend/config.local.live-llm.env`` / ``backend/secrets/live-llm.env``. When
+``RUN_LIVE_LLM_TESTS=true`` is already set, the test helper may also retrieve
+only the named ``GOOGLE_API_KEY`` variable from the project ``.env``; it never
+loads broad app config from that file. It makes a real Gemini call ONLY when
+opted in, uses synthetic workspace data only, and never prints or inspects the
+API key value.
 
 Run it manually (GOOGLE_API_KEY must already be exported in your shell; do not
 pass a key inline):
@@ -21,16 +24,20 @@ import os
 
 import pytest
 
-from app.core.config import get_settings
+from app.config import Settings, build_settings
 from app.schemas.trade_review_workspace import TradeReviewPortfolioPreviewRequest
-from app.services.agent_team.llm_provider import (
+from app.services.agent_team.llm_clients.contracts import (
     find_forbidden_string_values,
     find_prohibited_llm_phrases,
     find_secret_like_values,
 )
-from app.services.agent_team.provider_config import DEFAULT_LIVE_MODEL, LLMProviderConfig, live_llm_tests_enabled
-from app.services.agent_team.provider_factory import resolve_llm_provider
-from app.services.agent_team.review_runner import ReviewRunner
+from app.services.agent_team.llm_clients.config import (
+    DEFAULT_LIVE_MODEL,
+    live_llm_tests_enabled,
+    load_llm_provider_config,
+)
+from app.services.agent_team.llm_clients.factory import resolve_llm_provider
+from app.services.agent_team.legacy_console.review_runner import ReviewRunner
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.trade_review.frontend_read import build_trade_review_workspace_portfolio_preview
 from tests.agent_team_report_artifacts import write_agent_review_run_state_artifacts
@@ -43,8 +50,12 @@ pytestmark = [pytest.mark.external, pytest.mark.slow, pytest.mark.adapter]
 def _live_opt_in() -> bool:
     load_live_llm_test_config()
     flag = live_llm_tests_enabled(os.environ)
-    has_key = bool(get_settings().google_api_key)
+    has_key = bool(_live_settings().google_api_key)
     return flag and has_key
+
+
+def _live_settings() -> Settings:
+    return build_settings(env=os.environ, load_dotenv=False)
 
 
 @pytest.mark.skipif(
@@ -52,13 +63,19 @@ def _live_opt_in() -> bool:
     reason="opt-in Gemini live smoke disabled; set RUN_LIVE_LLM_TESTS=true and GOOGLE_API_KEY to run",
 )
 def test_gemini_live_smoke_runs_through_safety_and_eval() -> None:
-    api_key = get_settings().require_google_api_key()
-    config = LLMProviderConfig(
-        mode="live",
-        provider="google",
-        model=os.environ.get("POA_LLM_MODEL", "").strip() or DEFAULT_LIVE_MODEL,
-        live_tests_enabled=True,
-        google_credential_available=True,
+    api_key = _live_settings().require_google_api_key()
+    # POA_LLM_MODEL_CANDIDATES (comma-separated, max 4) enables the ordered
+    # same-provider model chain; single-model behavior is unchanged when unset.
+    # "configured" below is an availability sentinel only — never the key value.
+    config = load_llm_provider_config(
+        {
+            "POA_LLM_MODE": "live",
+            "POA_LLM_PROVIDER": "google",
+            "POA_LLM_MODEL": os.environ.get("POA_LLM_MODEL", "").strip() or DEFAULT_LIVE_MODEL,
+            "POA_LLM_MODEL_CANDIDATES": os.environ.get("POA_LLM_MODEL_CANDIDATES", ""),
+            "RUN_LIVE_LLM_TESTS": "true",
+            "GOOGLE_API_KEY": "configured",
+        }
     )
     resolution = resolve_llm_provider(config, google_api_key=api_key)
     assert resolution.available, "live Google provider failed to resolve"

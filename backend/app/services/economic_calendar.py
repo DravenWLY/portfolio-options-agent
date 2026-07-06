@@ -15,7 +15,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from app.core.config import get_settings
+from app.config import get_settings
 from app.schemas.economic_calendar import EconomicCalendarEventListRead, EconomicCalendarEventRead
 
 

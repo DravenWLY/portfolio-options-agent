@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app.core.config import Settings, get_settings
+from app.config import Settings, get_settings
 from app.db.session import get_db
 from app.services.broker_import.providers.snaptrade_sdk_client import SnapTradeSDKClient
 from app.schemas.broker_sync_api import (

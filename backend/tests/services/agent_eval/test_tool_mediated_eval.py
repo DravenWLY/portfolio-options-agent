@@ -83,8 +83,11 @@ def _unsafe_artifact_payload(summary: SavedAgentTeamSummaryRead, payload: dict[s
 def test_ev_u1_usable_content_and_full_scenario_pass() -> None:
     usable = usable_content_by_role()
 
-    assert usable["news_analyst"] == frozenset({"trade_intent_summary", "economic_awareness_snapshot"})
+    assert usable["news_analyst"] == frozenset(
+        {"trade_intent_summary", "economic_awareness_snapshot", "public_events_calendar"}
+    )
     assert "public_company_profile" in usable["fundamentals_analyst"]
+    assert "public_events_calendar" not in usable["fundamentals_analyst"]
     assert "liquidity_collateral_caveats" not in usable["fundamentals_analyst"]
     assert "liquidity_collateral_caveats" in usable["risk_management_agent"]
     assert usable["portfolio_manager_agent"].issuperset(usable["risk_management_agent"])

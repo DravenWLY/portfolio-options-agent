@@ -2,7 +2,7 @@ import sys
 
 import pytest
 
-from app.services.agent_team.llm_provider import (
+from app.services.agent_team.llm_clients.contracts import (
     AGENT_TEAM_ROLES,
     LLM_PROVIDER_STATUSES,
     LLMProviderMessage,

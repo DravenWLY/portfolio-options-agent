@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
+import re
 import threading
 import time
 from typing import Any, Mapping, Protocol
@@ -21,11 +22,30 @@ from app.schemas.reports import (
     SavedPublicRoleEvidenceProjectionRead,
     SavedPublicRoleInstrumentContextRead,
 )
-from app.services.agent_team.report_output_safety import ROLE_ALLOWED_EVIDENCE_KEYS
+from app.services.agent_team.safety.report_output_safety import ROLE_ALLOWED_EVIDENCE_KEYS
 
 _EDGAR_PROCESS_RATE_LIMIT_SECONDS = 1.0
 _EDGAR_PROCESS_RATE_LOCK = threading.Lock()
 _EDGAR_LAST_REQUEST_MONOTONIC = 0.0
+_SEC_RECENT_FILINGS_SOURCE_KEY = "sec_edgar_recent_filings"
+_SEC_RECENT_FILINGS_SOURCE_LABEL = "SEC EDGAR recent filing metadata - company events only"
+_SEC_RECENT_FILINGS_ATTRIBUTION = (
+    "Source: SEC EDGAR submissions/index metadata. Recent filing metadata only. "
+    "Not investment advice or a trading signal."
+)
+_SEC_RECENT_FILINGS_CAVEAT = (
+    "EDGAR filing metadata may lag, be corrected, or omit filings that are not available through EDGAR. "
+    "Portfolio Copilot does not interpret filing contents or treat filing metadata as a trading signal."
+)
+_SEC_RECENT_FILINGS_NON_ENDORSEMENT = (
+    "Use of SEC EDGAR data does not imply endorsement by the U.S. Securities and Exchange Commission."
+)
+_SEC_RAW_PATH_OR_FILE_RE = re.compile(
+    r"(/archives/|\\archives\\|edgar/data|(?:^|[\\/\s])[a-z0-9][a-z0-9_.-]*\.[a-z0-9]{2,8}\b)",
+    re.IGNORECASE,
+)
+_SEC_FORM_TYPE_RE = re.compile(r"^[A-Z0-9][A-Z0-9/ -]{0,20}$")
+_SEC_FILING_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 @dataclass(frozen=True)
@@ -72,8 +92,54 @@ class EdgarCompanyProfileSourcePolicy:
         )
 
 
+@dataclass(frozen=True)
+class EdgarRecentFilingsSourcePolicy:
+    """Fail-closed source policy for SEC EDGAR recent filing metadata evidence."""
+
+    enabled: bool = False
+    external_access_enabled: bool = False
+    runtime_environment: str = "test"
+    allowed_runtime_environments: tuple[str, ...] = ("local", "dev", "test")
+    declared_user_agent: str | None = None
+    request_timeout_seconds: float = 5.0
+    response_size_cap_bytes: int = 1_000_000
+    request_budget_per_run: int = 2
+    max_recent_filings: int = 5
+    source_key: str = _SEC_RECENT_FILINGS_SOURCE_KEY
+    source_label: str = _SEC_RECENT_FILINGS_SOURCE_LABEL
+    rights_status: SavedPublicEvidenceRightsStatus = "reviewed"
+    retention_label: str = "Normalized filing metadata only; raw EDGAR payloads are not retained."
+    attribution_label: str = _SEC_RECENT_FILINGS_ATTRIBUTION
+    caveat_label: str = _SEC_RECENT_FILINGS_CAVEAT
+    non_endorsement_label: str = _SEC_RECENT_FILINGS_NON_ENDORSEMENT
+
+    def live_client_ready(self) -> bool:
+        """Return whether policy allows a future live EDGAR recent-filings client to run."""
+
+        return (
+            self.enabled
+            and self.external_access_enabled
+            and self.runtime_environment in self.allowed_runtime_environments
+            and _valid_declared_user_agent(self.declared_user_agent)
+            and 0 < self.request_timeout_seconds <= 10
+            and 1_000 <= self.response_size_cap_bytes <= 5_000_000
+            and 2 <= self.request_budget_per_run <= 10
+            and 1 <= self.max_recent_filings <= 10
+        )
+
+
 class EdgarCompanyProfileClient(Protocol):
     """Replayable client boundary for SEC EDGAR submissions-shaped metadata."""
+
+    def fetch_company_tickers(self) -> Mapping[str, Any]:
+        """Return SEC-published company tickers mapping data."""
+
+    def fetch_submissions(self, cik_reference: str) -> Mapping[str, Any]:
+        """Return SEC submissions metadata for a normalized CIK reference."""
+
+
+class EdgarRecentFilingsClient(Protocol):
+    """Replayable client boundary for SEC EDGAR recent filing metadata."""
 
     def fetch_company_tickers(self) -> Mapping[str, Any]:
         """Return SEC-published company tickers mapping data."""
@@ -150,6 +216,50 @@ class EdgarCompanyProfileHttpClient:
     ) -> None:
         if not policy.live_client_ready():
             raise EdgarSourceUnavailableError("SEC EDGAR live-client policy is not ready")
+        self._policy = policy
+        self._transport = transport or UrllibEdgarHttpTransport()
+        self._request_count = 0
+
+    @property
+    def request_count(self) -> int:
+        return self._request_count
+
+    def fetch_company_tickers(self) -> Mapping[str, Any]:
+        return self._fetch_json(self._COMPANY_TICKERS_ENDPOINT)
+
+    def fetch_submissions(self, cik_reference: str) -> Mapping[str, Any]:
+        cik_digits = _cik_digits_from_reference(cik_reference)
+        if cik_digits is None:
+            raise EdgarSourceUnavailableError("SEC EDGAR CIK reference was invalid")
+        return self._fetch_json(self._SUBMISSIONS_ENDPOINT_TEMPLATE.format(cik_digits=cik_digits))
+
+    def _fetch_json(self, endpoint_url: str) -> Mapping[str, Any]:
+        if self._request_count >= self._policy.request_budget_per_run:
+            raise EdgarSourceUnavailableError("SEC EDGAR request budget was exhausted")
+        self._request_count += 1
+        assert self._policy.declared_user_agent is not None
+        return self._transport.fetch_json(
+            endpoint_url,
+            user_agent=self._policy.declared_user_agent,
+            timeout_seconds=self._policy.request_timeout_seconds,
+            response_size_cap_bytes=self._policy.response_size_cap_bytes,
+        )
+
+
+class EdgarRecentFilingsHttpClient:
+    """Policy-gated EDGAR submissions client for explicit future recent-filings slices."""
+
+    _COMPANY_TICKERS_ENDPOINT = "https://www.sec.gov/files/company_tickers.json"
+    _SUBMISSIONS_ENDPOINT_TEMPLATE = "https://data.sec.gov/submissions/CIK{cik_digits}.json"
+
+    def __init__(
+        self,
+        *,
+        policy: EdgarRecentFilingsSourcePolicy,
+        transport: EdgarHttpTransport | None = None,
+    ) -> None:
+        if not policy.live_client_ready():
+            raise EdgarSourceUnavailableError("SEC EDGAR recent-filings live-client policy is not ready")
         self._policy = policy
         self._transport = transport or UrllibEdgarHttpTransport()
         self._request_count = 0
@@ -312,20 +422,145 @@ class EdgarCompanyProfileProvider:
         )
 
 
+class EdgarRecentFilingsProvider:
+    """Normalize replayed EDGAR submissions metadata into public events-calendar evidence."""
+
+    def __init__(
+        self,
+        *,
+        client: EdgarRecentFilingsClient | None,
+        policy: EdgarRecentFilingsSourcePolicy,
+    ) -> None:
+        self._client = client
+        self._policy = policy
+
+    def snapshot(self, request: PublicEvidenceProjectionRequest) -> SavedPublicEvidencePackageRead:
+        public_evidence = SavedPublicEvidencePackageRead.not_reviewed(request.symbol_or_underlying)
+        events = self.recent_filings_section(request.symbol_or_underlying)
+        return public_evidence.model_copy(
+            update={
+                "public_evidence_mode": (
+                    "provider_reference" if events.availability in {"available", "limited"} else "not_reviewed"
+                ),
+                "public_events_calendar": events,
+                "limitations": _public_events_package_limitations(events),
+            }
+        )
+
+    def recent_filings_section(self, symbol_or_underlying: str | None) -> SavedPublicEvidenceSectionRead:
+        if not self._policy.enabled:
+            return _sec_recent_filings_unavailable_section(
+                source_label="SEC EDGAR recent filing source disabled",
+                summary_label="SEC EDGAR recent filing metadata is disabled for this run.",
+                caveat_codes=("sec_edgar_recent_filings_source_disabled",),
+            )
+        if self._policy.external_access_enabled and not self._policy.live_client_ready():
+            return _sec_recent_filings_unavailable_section(
+                source_label=self._policy.source_label,
+                summary_label=(
+                    "SEC EDGAR recent filing metadata is unavailable because live-client policy is not ready."
+                ),
+                caveat_codes=("sec_edgar_recent_filings_live_policy_not_ready",),
+            )
+        if self._client is None:
+            return _sec_recent_filings_unavailable_section(
+                source_label=self._policy.source_label,
+                summary_label=(
+                    "SEC EDGAR recent filing metadata is unavailable because no approved client is configured."
+                ),
+                caveat_codes=("sec_edgar_recent_filings_client_not_configured",),
+            )
+
+        symbol = _normalize_symbol(symbol_or_underlying)
+        if symbol is None:
+            return _sec_recent_filings_unavailable_section(
+                source_label=self._policy.source_label,
+                summary_label="SEC EDGAR recent filing metadata is unavailable because no normalized symbol was provided.",
+                caveat_codes=("sec_edgar_recent_filings_symbol_missing",),
+            )
+
+        try:
+            company_tickers = self._client.fetch_company_tickers()
+            if _payload_size_exceeds_cap(company_tickers, self._policy.response_size_cap_bytes):
+                return _sec_recent_filings_unavailable_section(
+                    source_label=self._policy.source_label,
+                    summary_label=(
+                        "SEC EDGAR recent filing metadata is unavailable because replay metadata exceeded the response-size cap."
+                    ),
+                    caveat_codes=("sec_edgar_recent_filings_response_too_large",),
+                )
+            ticker_row = _resolve_sec_ticker_row(company_tickers, symbol)
+            if ticker_row is None:
+                return _sec_recent_filings_unavailable_section(
+                    source_label=self._policy.source_label,
+                    summary_label=(
+                        "SEC EDGAR recent filing metadata is unavailable because the symbol was not resolved to a CIK."
+                    ),
+                    caveat_codes=("sec_edgar_recent_filings_symbol_unresolved",),
+                )
+            cik_reference = _format_cik_reference(ticker_row.get("cik_str"))
+            if cik_reference is None:
+                return _sec_recent_filings_unavailable_section(
+                    source_label=self._policy.source_label,
+                    summary_label=(
+                        "SEC EDGAR recent filing metadata is unavailable because the resolved CIK was invalid."
+                    ),
+                    caveat_codes=("sec_edgar_recent_filings_cik_unavailable",),
+                )
+            submissions = self._client.fetch_submissions(cik_reference)
+            if _payload_size_exceeds_cap(submissions, self._policy.response_size_cap_bytes):
+                return _sec_recent_filings_unavailable_section(
+                    source_label=self._policy.source_label,
+                    summary_label=(
+                        "SEC EDGAR recent filing metadata is unavailable because replay submissions metadata exceeded the response-size cap."
+                    ),
+                    caveat_codes=("sec_edgar_recent_filings_response_too_large",),
+                )
+        except Exception:
+            return _sec_recent_filings_unavailable_section(
+                source_label=self._policy.source_label,
+                summary_label="SEC EDGAR recent filing metadata is unavailable from the replay client.",
+                caveat_codes=("sec_edgar_recent_filings_replay_unavailable",),
+            )
+
+        return _normalize_sec_recent_filings_section(submissions=submissions, policy=self._policy)
+
+
 def build_public_evidence_projection(
     *,
     symbol_or_underlying: str | None,
     edgar_policy: EdgarCompanyProfileSourcePolicy | None = None,
     edgar_client: EdgarCompanyProfileClient | None = None,
+    edgar_recent_filings_policy: EdgarRecentFilingsSourcePolicy | None = None,
+    edgar_recent_filings_client: EdgarRecentFilingsClient | None = None,
 ) -> SavedPublicEvidencePackageRead:
     """Build the default generation-time public evidence projection."""
 
+    request = PublicEvidenceProjectionRequest(symbol_or_underlying=symbol_or_underlying)
     if edgar_policy is not None:
-        return EdgarCompanyProfileProvider(client=edgar_client, policy=edgar_policy).snapshot(
-            PublicEvidenceProjectionRequest(symbol_or_underlying=symbol_or_underlying)
-        )
-    return NoReviewedPublicEvidenceProvider().snapshot(
-        PublicEvidenceProjectionRequest(symbol_or_underlying=symbol_or_underlying)
+        public_evidence = EdgarCompanyProfileProvider(client=edgar_client, policy=edgar_policy).snapshot(request)
+    else:
+        public_evidence = NoReviewedPublicEvidenceProvider().snapshot(request)
+
+    if edgar_recent_filings_policy is None:
+        return public_evidence
+
+    events = EdgarRecentFilingsProvider(
+        client=edgar_recent_filings_client,
+        policy=edgar_recent_filings_policy,
+    ).recent_filings_section(symbol_or_underlying)
+    mode = (
+        "provider_reference"
+        if public_evidence.public_evidence_mode == "provider_reference"
+        or events.availability in {"available", "limited"}
+        else "not_reviewed"
+    )
+    return public_evidence.model_copy(
+        update={
+            "public_evidence_mode": mode,
+            "public_events_calendar": events,
+            "limitations": _public_combined_limitations(public_evidence, events),
+        }
     )
 
 
@@ -520,6 +755,115 @@ def _normalize_edgar_profile_section(
     )
 
 
+def _normalize_sec_recent_filings_section(
+    *,
+    submissions: Mapping[str, Any],
+    policy: EdgarRecentFilingsSourcePolicy,
+) -> SavedPublicEvidenceSectionRead:
+    rows = _safe_recent_filing_rows(submissions, limit=policy.max_recent_filings)
+    if not rows:
+        return _sec_recent_filings_unavailable_section(
+            source_label=policy.source_label,
+            summary_label=(
+                "SEC EDGAR recent filing metadata is unavailable because no safe recent filing metadata was present."
+            ),
+            caveat_codes=("sec_edgar_recent_filings_metadata_incomplete",),
+        )
+
+    facts: list[SavedPublicEvidenceFactRead] = []
+    for index, row in enumerate(rows, start=1):
+        facts.extend(
+            fact
+            for fact in (
+                _public_fact("form_type", "Form type", row["form_type"], source_label=policy.source_label),
+                _public_fact("filing_date", "Filing date", row["filing_date"], source_label=policy.source_label),
+                _public_fact(
+                    "filing_reference",
+                    "Filing reference",
+                    f"filref_recent_{index:03d}",
+                    source_label=policy.source_label,
+                ),
+            )
+            if fact is not None
+        )
+
+    as_of = _latest_filing_datetime(row["filing_date"] for row in rows)
+    return SavedPublicEvidenceSectionRead(
+        section_key="public_events_calendar",
+        section_label="Public events calendar",
+        availability="available",
+        freshness_category="fresh",
+        freshness_label="Collected from SEC EDGAR recent filing metadata for this saved report",
+        source_label=policy.source_label,
+        source_key=policy.source_key,
+        rights_status=policy.rights_status,
+        as_of=as_of,
+        collected_at=datetime.now(UTC),
+        summary_label="SEC EDGAR recent filing metadata is available as company-event context only.",
+        facts=tuple(facts),
+        limitations=(
+            policy.attribution_label,
+            policy.retention_label,
+            policy.caveat_label,
+            policy.non_endorsement_label,
+        ),
+        caveat_codes=("sec_edgar_recent_filings_metadata_only",),
+    )
+
+
+def _safe_recent_filing_rows(submissions: Mapping[str, Any], *, limit: int) -> tuple[dict[str, str], ...]:
+    recent = submissions.get("filings")
+    if isinstance(recent, Mapping):
+        recent = recent.get("recent")
+    if not isinstance(recent, Mapping):
+        return ()
+    forms = recent.get("form")
+    filing_dates = recent.get("filingDate")
+    if not isinstance(forms, list) or not isinstance(filing_dates, list):
+        return ()
+
+    rows: list[dict[str, str]] = []
+    for index in range(min(len(forms), len(filing_dates))):
+        form_type = _format_sec_form_type(forms[index])
+        filing_date = _format_sec_filing_date(filing_dates[index])
+        if form_type is None or filing_date is None:
+            continue
+        rows.append({"form_type": form_type, "filing_date": filing_date})
+        if len(rows) >= limit:
+            break
+    return tuple(rows)
+
+
+def _format_sec_form_type(value: object) -> str | None:
+    raw = _first_non_empty(value)
+    if raw is None:
+        return None
+    cleaned = raw.upper()
+    if _SEC_RAW_PATH_OR_FILE_RE.search(cleaned) or _SEC_FORM_TYPE_RE.fullmatch(cleaned) is None:
+        return None
+    return f"Form {cleaned}"
+
+
+def _format_sec_filing_date(value: object) -> str | None:
+    raw = _first_non_empty(value)
+    if raw is None:
+        return None
+    if _SEC_RAW_PATH_OR_FILE_RE.search(raw) or _SEC_FILING_DATE_RE.fullmatch(raw) is None:
+        return None
+    return f"Filed {raw}"
+
+
+def _latest_filing_datetime(value_labels: object) -> datetime | None:
+    dates: list[datetime] = []
+    for value_label in value_labels:
+        raw = str(value_label).removeprefix("Filed ").strip()
+        try:
+            dates.append(datetime.fromisoformat(raw).replace(tzinfo=UTC))
+        except ValueError:
+            continue
+    return max(dates) if dates else None
+
+
 def _public_fact(
     fact_key: str,
     fact_label: str,
@@ -588,6 +932,27 @@ def _edgar_unavailable_section(
     )
 
 
+def _sec_recent_filings_unavailable_section(
+    *,
+    source_label: str,
+    summary_label: str,
+    caveat_codes: tuple[str, ...],
+) -> SavedPublicEvidenceSectionRead:
+    return SavedPublicEvidenceSectionRead(
+        section_key="public_events_calendar",
+        section_label="Public events calendar",
+        availability="not_available",
+        freshness_category="not_available",
+        freshness_label="SEC EDGAR recent filing metadata is not available for this saved report",
+        source_label=source_label,
+        source_key=_SEC_RECENT_FILINGS_SOURCE_KEY,
+        rights_status="reviewed",
+        summary_label=summary_label,
+        limitations=("SEC EDGAR recent filing metadata was not attached to this saved evidence package.",),
+        caveat_codes=caveat_codes,
+    )
+
+
 def _public_package_limitations(profile: SavedPublicEvidenceSectionRead) -> tuple[str, ...]:
     if profile.availability in {"available", "limited"}:
         return (
@@ -595,3 +960,24 @@ def _public_package_limitations(profile: SavedPublicEvidenceSectionRead) -> tupl
             "Other public evidence sections remain unavailable until separately reviewed.",
         )
     return ("Public company profile evidence was unavailable for this saved evidence package.",)
+
+
+def _public_events_package_limitations(events: SavedPublicEvidenceSectionRead) -> tuple[str, ...]:
+    if events.availability in {"available", "limited"}:
+        return (
+            "Public events calendar evidence is limited to reviewed SEC EDGAR recent filing metadata.",
+            "Other public evidence sections remain unavailable until separately reviewed.",
+        )
+    return ("SEC EDGAR recent filing metadata was unavailable for this saved evidence package.",)
+
+
+def _public_combined_limitations(
+    public_evidence: SavedPublicEvidencePackageRead,
+    events: SavedPublicEvidenceSectionRead,
+) -> tuple[str, ...]:
+    items = list(public_evidence.limitations)
+    if events.availability in {"available", "limited"}:
+        items.append("Public events calendar evidence is limited to reviewed SEC EDGAR recent filing metadata.")
+    elif events.availability == "not_available":
+        items.append("SEC EDGAR recent filing metadata was unavailable for this saved evidence package.")
+    return tuple(dict.fromkeys(items))

@@ -9,7 +9,7 @@ strings are fixed, generic, safe constants — they NEVER echo offending content
 from dataclasses import asdict, dataclass
 from typing import Literal
 
-from app.services.agent_team.prompt_safety import validate_agent_team_text
+from app.services.agent_team.safety.prompt_safety import validate_agent_team_text
 
 
 EvalStatus = Literal["passed", "flagged", "deferred"]

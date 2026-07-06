@@ -3,12 +3,12 @@ from datetime import UTC, date, datetime
 import pytest
 
 from app.schemas.trade_review_workspace import TradeReviewPortfolioPreviewRequest
-from app.services.agent_team.evidence_projection import (
+from app.services.agent_team.legacy_console.evidence_projection import (
     build_agent_safe_deterministic_evidence,
     projection_snapshot,
     validate_agent_safe_evidence,
 )
-from app.services.agent_team.llm_provider import find_forbidden_string_values
+from app.services.agent_team.llm_clients.contracts import find_forbidden_string_values
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.trade_review.frontend_read import build_trade_review_workspace_portfolio_preview
 

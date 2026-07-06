@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Literal
+import os
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
 from pydantic import ValidationError
@@ -16,8 +17,8 @@ from app.schemas.reports import (
     SavedAgentTeamSummaryRead,
     SavedEvidencePackageRead,
 )
-from app.services.agent_team.report_output_safety import validate_agent_team_report_output
-from app.services.agent_team.roles import role_registry
+from app.services.agent_team.safety.report_output_safety import validate_agent_team_report_output
+from app.services.agent_team.agents.roles import role_registry
 from app.services.reports.crud import saved_review_artifact_for_thread
 from app.services.reports.public_evidence import (
     EdgarCompanyProfileClient,
@@ -26,7 +27,13 @@ from app.services.reports.public_evidence import (
     build_public_role_evidence_projection,
 )
 
-AgentTeamReportGenerationMode = Literal["deterministic_template", "provider_unavailable"]
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from app.services.agent_team.llm_clients.factory import LLMProviderResolution
+
+AgentTeamReportGenerationMode = Literal["deterministic_template", "provider_unavailable", "tool_mediated"]
+BackendAgentTeamReportGenerationMode = Literal["deterministic_template", "tool_mediated"]
 
 _PUBLIC_ROLE_NAMES: frozenset[str] = frozenset(
     {"fundamentals_analyst", "news_analyst", "technical_analyst"}
@@ -77,6 +84,26 @@ def _now_utc() -> datetime:
     return datetime.now(UTC)
 
 
+def resolve_backend_agent_team_report_generation_mode(
+    env: "Mapping[str, str] | None" = None,
+) -> BackendAgentTeamReportGenerationMode:
+    """Resolve the backend-only report generation mode without client input."""
+
+    values = env if env is not None else os.environ
+    raw = values.get("POA_AGENT_TEAM_REPORT_GENERATION_MODE", "").strip().lower()
+    if raw in {"tool_mediated", "tool-mediated", "tool_mediated_mock", "tool_mediated_live"}:
+        return "tool_mediated"
+    return "deterministic_template"
+
+
+def resolve_agent_team_report_provider_resolution(env: "Mapping[str, str] | None" = None) -> "LLMProviderResolution":
+    """Resolve the backend-owned provider only after tool-mediated mode is enabled."""
+
+    from app.services.agent_team.llm_clients.factory import resolve_llm_provider_from_env
+
+    return resolve_llm_provider_from_env(env)
+
+
 def generate_agent_team_report_for_thread(
     db: Session,
     user_id: UUID,
@@ -85,6 +112,7 @@ def generate_agent_team_report_for_thread(
     mode: AgentTeamReportGenerationMode = "deterministic_template",
     edgar_policy: EdgarCompanyProfileSourcePolicy | None = None,
     edgar_client: EdgarCompanyProfileClient | None = None,
+    provider_resolution: "LLMProviderResolution | None" = None,
 ) -> SavedAgentTeamSummaryRead | None:
     """Persist a sanitized Agent Team report summary for an existing saved artifact."""
 
@@ -115,11 +143,18 @@ def generate_agent_team_report_for_thread(
         return None
 
     report_generated_at = _now_utc()
-    summary = build_agent_team_summary_from_evidence(
-        evidence,
-        mode=mode,
-        report_generated_at=report_generated_at,
-    )
+    if mode == "tool_mediated":
+        summary = _build_tool_mediated_summary(
+            evidence,
+            provider_resolution=provider_resolution,
+            report_generated_at=report_generated_at,
+        )
+    else:
+        summary = build_agent_team_summary_from_evidence(
+            evidence,
+            mode=mode,
+            report_generated_at=report_generated_at,
+        )
     summary = _validate_or_fallback(
         summary.model_dump(mode="python"),
         evidence,
@@ -133,6 +168,25 @@ def generate_agent_team_report_for_thread(
     db.add(report_thread)
     db.commit()
     return summary
+
+
+def _build_tool_mediated_summary(
+    evidence: SavedEvidencePackageRead,
+    *,
+    provider_resolution: "LLMProviderResolution | None",
+    report_generated_at: datetime,
+) -> SavedAgentTeamSummaryRead:
+    from app.services.agent_team.llm_clients.factory import resolve_llm_provider
+    from app.services.agent_team.tool_mediated_report import (
+        build_tool_mediated_agent_team_summary_from_provider_resolution,
+    )
+
+    resolution = provider_resolution or resolve_llm_provider()
+    return build_tool_mediated_agent_team_summary_from_provider_resolution(
+        evidence,
+        provider_resolution=resolution,
+        report_generated_at=report_generated_at,
+    )
 
 
 def build_agent_team_summary_from_evidence(

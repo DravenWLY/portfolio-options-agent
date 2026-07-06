@@ -2,8 +2,8 @@ import sys
 
 import pytest
 
-from app.services.agent_team.google_provider import GoogleGeminiLLMProvider, GoogleGeminiProviderError
-from app.services.agent_team.llm_provider import LLMProviderMessage, LLMProviderRequest
+from app.services.agent_team.llm_clients.google import GoogleGeminiLLMProvider, GoogleGeminiProviderError
+from app.services.agent_team.llm_clients.contracts import LLMProviderMessage, LLMProviderRequest
 
 
 pytestmark = [pytest.mark.unit]

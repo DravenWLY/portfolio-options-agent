@@ -2,10 +2,10 @@ import sys
 
 import pytest
 
-from app.services.agent_team.mock_provider import MockLLMProvider
-from app.services.agent_team.openai_provider import OpenAILLMProvider
-from app.services.agent_team.provider_config import LLMProviderConfig, LLMProviderSecrets, load_llm_provider_config
-from app.services.agent_team.provider_factory import UnavailableLLMProvider, resolve_llm_provider, resolve_llm_provider_from_env
+from app.services.agent_team.llm_clients.mock import MockLLMProvider
+from app.services.agent_team.llm_clients.openai import OpenAILLMProvider
+from app.services.agent_team.llm_clients.config import LLMProviderConfig, LLMProviderSecrets, load_llm_provider_config
+from app.services.agent_team.llm_clients.factory import UnavailableLLMProvider, resolve_llm_provider, resolve_llm_provider_from_env
 
 
 pytestmark = [pytest.mark.unit]

@@ -36,7 +36,7 @@ SavedPublicEvidenceSectionKey = Literal[
     "public_technical_context",
     "public_market_context",
 ]
-SavedPublicEvidenceSourceKey = Literal["sec_edgar_submissions"]
+SavedPublicEvidenceSourceKey = Literal["sec_edgar_submissions", "sec_edgar_recent_filings"]
 AgentTeamPublicRoleName = Literal["fundamentals_analyst", "news_analyst", "technical_analyst"]
 AgentTeamReportStatus = Literal[
     "source_snapshot",
@@ -103,6 +103,14 @@ _SAVED_REVIEW_ALLOWED_NEGATED_DISCLOSURES = (
     (
         "fred aggregates data from multiple sources; releases may lag, revise, or be subject to "
         "source-specific rights. portfolio copilot does not use this as a trade recommendation."
+    ),
+    (
+        "source: sec edgar submissions/index metadata. recent filing metadata only. "
+        "not investment advice or a trading signal."
+    ),
+    (
+        "edgar filing metadata may lag, be corrected, or omit filings that are not available through edgar. "
+        "portfolio copilot does not interpret filing contents or treat filing metadata as a trading signal."
     ),
 )
 _SAVED_REVIEW_FORBIDDEN_REFERENCE_TOKENS = (
@@ -400,7 +408,7 @@ class SavedAgentTeamRoleSummaryRead(BaseModel):
     @model_validator(mode="after")
     def agent_role_summary_must_be_safe(self) -> "SavedAgentTeamRoleSummaryRead":
         validate_saved_review_artifact_payload(self.model_dump(mode="python"))
-        from app.services.agent_team.report_output_safety import validate_agent_team_report_output
+        from app.services.agent_team.safety.report_output_safety import validate_agent_team_report_output
 
         validate_agent_team_report_output(
             {
@@ -542,6 +550,8 @@ class SavedToolMediatedProviderRunRead(BaseModel):
     tokens_out: int | None = Field(default=None, ge=0)
     estimated_cost: str | None = None
     is_mock: bool
+    model_chain_position: int | None = Field(default=None, ge=0)
+    attempted_models: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def provider_run_must_be_safe(self) -> "SavedToolMediatedProviderRunRead":
@@ -595,7 +605,7 @@ class SavedAgentTeamSummaryRead(BaseModel):
     @model_validator(mode="after")
     def agent_summary_must_be_safe(self) -> "SavedAgentTeamSummaryRead":
         validate_saved_review_artifact_payload(self.model_dump(mode="python"))
-        from app.services.agent_team.report_output_safety import validate_agent_team_report_output
+        from app.services.agent_team.safety.report_output_safety import validate_agent_team_report_output
 
         validate_agent_team_report_output(self.model_dump(mode="python"), label="agent-team summary")
         return self
@@ -1079,7 +1089,7 @@ class AgentTeamReportRoleSectionRead(BaseModel):
 
     @model_validator(mode="after")
     def role_section_must_be_safe(self) -> "AgentTeamReportRoleSectionRead":
-        from app.services.agent_team.report_output_safety import validate_agent_team_report_output
+        from app.services.agent_team.safety.report_output_safety import validate_agent_team_report_output
 
         validate_agent_team_report_output(
             {"role_sections": (self.model_dump(mode="python"),)},
@@ -1098,7 +1108,7 @@ class AgentTeamReportSynthesisRead(BaseModel):
 
     @model_validator(mode="after")
     def synthesis_must_be_safe(self) -> "AgentTeamReportSynthesisRead":
-        from app.services.agent_team.report_output_safety import validate_agent_team_report_output
+        from app.services.agent_team.safety.report_output_safety import validate_agent_team_report_output
 
         validate_agent_team_report_output(self.model_dump(mode="python"), label="agent-team report synthesis")
         return self
@@ -1194,7 +1204,7 @@ class AgentTeamReportRead(BaseModel):
 
     @model_validator(mode="after")
     def agent_team_report_must_be_safe(self) -> "AgentTeamReportRead":
-        from app.services.agent_team.report_output_safety import validate_agent_team_report_output
+        from app.services.agent_team.safety.report_output_safety import validate_agent_team_report_output
 
         validate_agent_team_report_output(self.model_dump(mode="python"), label="agent-team report")
         return self

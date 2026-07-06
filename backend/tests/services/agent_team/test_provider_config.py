@@ -1,6 +1,6 @@
 import pytest
 
-from app.services.agent_team.provider_config import (
+from app.services.agent_team.llm_clients.config import (
     DEFAULT_MOCK_MODEL,
     DEFAULT_OPENAI_MODEL,
     LLMProviderConfig,

@@ -7,7 +7,9 @@ pytest.ini ``addopts``) AND skipped unless explicitly opted in via BOTH
 ``RUN_LIVE_LLM_TESTS=true`` (or legacy ``POA_LLM_LIVE_TESTS=1``) and the dedicated paid-usage acknowledgement
 ``POA_LLM_OPENAI_LIVE=1``, with ``OPENAI_API_KEY`` present. The opt-in values may
 come from the shell or from ``backend/config.local.live-llm.env`` /
-``backend/secrets/live-llm.env``. The extra
+``backend/secrets/live-llm.env``. When ``RUN_LIVE_LLM_TESTS=true`` is already
+set, the test helper may also retrieve only the named ``OPENAI_API_KEY`` variable
+from the project ``.env``; it never loads broad app config from that file. The extra
 ``POA_LLM_OPENAI_LIVE`` gate ensures enabling the (free-tier) Gemini smoke never
 accidentally triggers a paid OpenAI call.
 
@@ -28,16 +30,16 @@ import os
 
 import pytest
 
-from app.core.config import get_settings
+from app.config import Settings, build_settings
 from app.schemas.trade_review_workspace import TradeReviewPortfolioPreviewRequest
-from app.services.agent_team.llm_provider import (
+from app.services.agent_team.llm_clients.contracts import (
     find_forbidden_string_values,
     find_prohibited_llm_phrases,
     find_secret_like_values,
 )
-from app.services.agent_team.provider_config import DEFAULT_OPENAI_MODEL, LLMProviderConfig, live_llm_tests_enabled
-from app.services.agent_team.provider_factory import resolve_llm_provider
-from app.services.agent_team.review_runner import ReviewRunner
+from app.services.agent_team.llm_clients.config import DEFAULT_OPENAI_MODEL, LLMProviderConfig, live_llm_tests_enabled
+from app.services.agent_team.llm_clients.factory import resolve_llm_provider
+from app.services.agent_team.legacy_console.review_runner import ReviewRunner
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.trade_review.frontend_read import build_trade_review_workspace_portfolio_preview
 from tests.agent_team_report_artifacts import write_agent_review_run_state_artifacts
@@ -53,8 +55,12 @@ def _openai_live_opt_in() -> bool:
     load_live_llm_test_config()
     live = live_llm_tests_enabled(os.environ)
     paid_ack = os.environ.get("POA_LLM_OPENAI_LIVE", "").strip().lower() in {"1", "true", "yes", "on"}
-    has_key = bool(get_settings().openai_api_key)
+    has_key = bool(_live_settings().openai_api_key)
     return live and paid_ack and has_key
+
+
+def _live_settings() -> Settings:
+    return build_settings(env=os.environ, load_dotenv=False)
 
 
 @pytest.mark.skipif(
@@ -65,7 +71,7 @@ def _openai_live_opt_in() -> bool:
     ),
 )
 def test_openai_live_smoke_runs_through_safety_and_eval() -> None:
-    api_key = get_settings().require_openai_api_key()
+    api_key = _live_settings().require_openai_api_key()
     config = LLMProviderConfig(
         mode="live",
         provider="openai",

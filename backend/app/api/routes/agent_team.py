@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 
 from app.schemas.agent_team import AgentTeamAnalysisConsoleRead, AgentTeamAnalysisPreviewRequest
-from app.services.agent_team.frontend_read import build_console_read_from_review_run_state
-from app.services.agent_team.review_runner import ReviewRunner
+from app.services.agent_team.legacy_console.frontend_read import build_console_read_from_review_run_state
+from app.services.agent_team.legacy_console.review_runner import ReviewRunner
 from app.services.trade_review.frontend_read import build_trade_review_workspace_portfolio_preview
 
 router = APIRouter(prefix="/agent-team", tags=["agent-team"])

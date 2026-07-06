@@ -1,6 +1,6 @@
 import pytest
 
-from app.core.config import get_settings
+from app.config import get_settings
 from app.services.broker_import.secrets import decrypt_secret, encrypt_secret, validate_secret_reference
 
 

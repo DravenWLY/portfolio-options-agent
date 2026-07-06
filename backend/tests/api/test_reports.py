@@ -13,6 +13,9 @@ from app.models.report_message import ReportMessage
 from app.models.saved_review_source import SavedReviewSource
 from app.schemas.reports import SavedEvidencePackageRead, SavedReviewArtifactCreateRequest, SavedReviewArtifactRead
 from app.schemas.trade_review_workspace import validate_trade_review_saved_source_reference
+from app.services.agent_team import tool_mediated_report
+from app.services.agent_team.llm_clients.contracts import LLMProviderRequest, LLMProviderResponse, LLMProviderStatus
+from app.services.agent_team.llm_clients.factory import LLMProviderResolution
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.reports import agent_team_report as agent_team_report_service
 from app.services.reports import crud as report_service
@@ -240,6 +243,207 @@ def test_generate_agent_team_report_persists_summary_and_projects_on_reports(
     } == immutable_saved_source
 
 
+def test_generate_agent_team_report_route_ignores_client_requested_tool_mode(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email="client-mode-ignored@example.com",
+        source_reference="workspace_clientmode1",
+    )
+
+    def _unexpected_provider_resolution() -> LLMProviderResolution:
+        raise AssertionError("Provider resolution should not run without backend tool-mediated opt-in")
+
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_agent_team_report_provider_resolution",
+        _unexpected_provider_resolution,
+    )
+    response = client.post(
+        f"/users/{user_id}/reports/{thread_id}/agent-team-report",
+        json={"mode": "tool_mediated", "provider": "fake_live_provider"},
+    )
+
+    assert response.status_code == 201
+    saved = response.json()
+    assert saved["agent_summary"]["provider_mode"] == "deterministic_template"
+    assert saved["agent_summary"]["tool_run_artifact"] is None
+
+
+def test_generate_agent_team_report_route_tool_mediated_mock_opt_in_persists_frozen_artifact(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email="tool-mediated-mock@example.com",
+        source_reference="workspace_toolmock1",
+    )
+    provider = _RouteFakeLiveProvider()
+    monkeypatch.setattr(agent_team_report_service, "_now_utc", lambda: datetime(2026, 7, 2, 14, 0, tzinfo=UTC))
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_backend_agent_team_report_generation_mode",
+        lambda: "tool_mediated",
+    )
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_agent_team_report_provider_resolution",
+        lambda: LLMProviderResolution(
+            provider=provider,
+            status="ok",
+            provider_name="mock",
+            model=provider.model,
+        ),
+    )
+
+    response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
+
+    assert response.status_code == 201
+    saved = response.json()
+    summary = saved["agent_summary"]
+    artifact = summary["tool_run_artifact"]
+    assert provider.calls == []
+    assert summary["provider_mode"] == "tool_mediated_mock"
+    assert artifact is not None
+    assert artifact["provider_mode"] == "tool_mediated_mock"
+    assert artifact["tool_result_count"] > 0
+    assert artifact["provider_runs"] == []
+    rendered = repr(saved).lower()
+    for forbidden in (
+        "raw_payload",
+        "source_url",
+        "https://",
+        "prompt:",
+        "api_key",
+        "access_token",
+        "buying_power",
+        "safe to trade",
+        "ready to trade",
+        "i recommend",
+        "place order",
+        "execute trade",
+    ):
+        assert forbidden not in rendered
+
+    def _unexpected_tool_execution(*args: object, **kwargs: object) -> object:
+        raise AssertionError("Saved report readback should not rerun tool execution")
+
+    monkeypatch.setattr(tool_mediated_report, "execute_tool_request", _unexpected_tool_execution)
+    detail_response = client.get(f"/users/{user_id}/reports/{thread_id}")
+    assert detail_response.status_code == 200
+    assert detail_response.json()["agent_summary"] == summary
+
+
+def test_generate_agent_team_report_route_tool_mediated_live_opt_in_freezes_provider_runs(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email="tool-mediated-live@example.com",
+        source_reference="workspace_toollive1",
+    )
+    provider = _RouteFakeLiveProvider(
+        content_by_role={
+            "fundamentals_analyst": "Live fundamentals context cites reviewed public evidence as background.",
+            "technical_analyst": "Live technical context cites saved market freshness as background.",
+            "risk_management_agent": "Live risk context cites deterministic caveats as background.",
+        }
+    )
+    monkeypatch.setattr(agent_team_report_service, "_now_utc", lambda: datetime(2026, 7, 2, 15, 0, tzinfo=UTC))
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_backend_agent_team_report_generation_mode",
+        lambda: "tool_mediated",
+    )
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_agent_team_report_provider_resolution",
+        lambda: LLMProviderResolution(
+            provider=provider,
+            status="ok",
+            provider_name=provider.provider_name,
+            model=provider.model,
+        ),
+    )
+
+    response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
+
+    assert response.status_code == 201
+    saved = response.json()
+    summary = saved["agent_summary"]
+    artifact = summary["tool_run_artifact"]
+    assert summary["provider_mode"] == "tool_mediated_live"
+    assert artifact["provider_mode"] == "tool_mediated_live"
+    assert provider.calls
+    assert {run["provider"] for run in artifact["provider_runs"]} == {"fake_live_provider"}
+    assert {run["model"] for run in artifact["provider_runs"]} == {"fake-live-model"}
+    assert {run["prompt_version"] for run in artifact["provider_runs"]} == {"p34a-tool-mediated-role-v1"}
+    assert all(run["status"] == "ok" for run in artifact["provider_runs"])
+    assert "live_provider_reasoning_used" in repr(summary).lower()
+
+    provider.calls.clear()
+    detail_response = client.get(f"/users/{user_id}/reports/{thread_id}")
+    list_response = client.get(f"/users/{user_id}/reports")
+    assert detail_response.status_code == 200
+    assert list_response.status_code == 200
+    assert provider.calls == []
+    assert detail_response.json()["agent_summary"] == summary
+    assert list_response.json()[0]["agent_summary"] == summary
+
+
+def test_generate_agent_team_report_route_unsafe_live_provider_output_fails_closed(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email="tool-mediated-unsafe@example.com",
+        source_reference="workspace_toolunsafe1",
+    )
+    provider = _RouteFakeLiveProvider(
+        content_by_role={"risk_management_agent": "You should submit order at $123."}
+    )
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_backend_agent_team_report_generation_mode",
+        lambda: "tool_mediated",
+    )
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_agent_team_report_provider_resolution",
+        lambda: LLMProviderResolution(
+            provider=provider,
+            status="ok",
+            provider_name=provider.provider_name,
+            model=provider.model,
+        ),
+    )
+
+    response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
+
+    assert response.status_code == 201
+    saved = response.json()
+    rendered = repr(saved["agent_summary"]).lower()
+    assert saved["agent_summary"]["provider_mode"] == "tool_mediated_live"
+    assert saved["agent_summary"]["tool_run_artifact"] is not None
+    assert "live_provider_safety_fallback" in rendered
+    assert "you should" not in rendered
+    assert "submit order" not in rendered
+    assert "$123" not in rendered
+
+
 @pytest.mark.parametrize(
     ("preview_payload", "expected_flow", "expected_symbol", "expected_preview_caveat"),
     (
@@ -376,6 +580,7 @@ def test_db_backed_golden_path_preview_save_generate_readback_and_regenerate(
     generated = generated_response.json()
     assert generated["agent_summary"]["report_generated_at"] == first_generated_at.isoformat().replace("+00:00", "Z")
     assert generated["agent_summary"]["provider_mode"] == "deterministic_template"
+    assert generated["agent_summary"]["tool_run_artifact"] is None
     assert generated["source_reference"] == saved["source_reference"]
     assert generated["scope_metadata"] == saved["scope_metadata"]
     assert generated["deterministic_summary"] == saved["deterministic_summary"]
@@ -908,6 +1113,89 @@ def test_get_report_thread_for_wrong_user_returns_404(client: TestClient, db_ses
     response = client.get(f"/users/{other_id}/reports/{report_response.json()['id']}")
 
     assert response.status_code == 404
+
+
+def _create_saved_agent_report_thread(
+    client: TestClient,
+    db_session: Session,
+    *,
+    email: str,
+    source_reference: str,
+    deterministic_summary: dict | None = None,
+) -> tuple[str, str]:
+    user_response = client.post("/users", json={"display_name": "Tool-Mediated Report User", "email": email})
+    assert user_response.status_code == 201
+    user_id = user_response.json()["id"]
+    source_payload = SavedReviewArtifactCreateRequest(
+        source_kind="trade_review_workspace",
+        source_reference=source_reference,
+        title="Saved tool-mediated review",
+        report_type="trade_review",
+        scope_metadata=_scope_metadata_payload("Primary reviewed account"),
+        deterministic_summary=deterministic_summary or _deterministic_summary_payload(),
+        limitations=("Generated from reviewed data available at the time.",),
+        caveat_codes=("selected_context_scope",),
+    )
+    assert report_service.record_saved_review_source(db_session, UUID(user_id), source_payload) is not None
+    save_response = client.post(
+        f"/users/{user_id}/reports/from-trade-review",
+        json={
+            "source_kind": "trade_review_workspace",
+            "source_reference": source_reference,
+            "title": "Saved tool-mediated review",
+            "report_type": "trade_review",
+        },
+    )
+    assert save_response.status_code == 201
+    thread_id = client.get(f"/users/{user_id}/reports").json()[0]["id"]
+    return user_id, thread_id
+
+
+class _RouteFakeLiveProvider:
+    provider_name = "fake_live_provider"
+    model = "fake-live-model"
+
+    def __init__(
+        self,
+        *,
+        status_by_role: dict[str, LLMProviderStatus] | None = None,
+        content_by_role: dict[str, str] | None = None,
+    ) -> None:
+        self.status_by_role = dict(status_by_role or {})
+        self.content_by_role = dict(content_by_role or {})
+        self.calls: list[LLMProviderRequest] = []
+
+    def complete(self, request: LLMProviderRequest) -> LLMProviderResponse:
+        self.calls.append(request)
+        status = self.status_by_role.get(request.role_name, "ok")
+        if status != "ok":
+            return LLMProviderResponse(
+                request_id=request.request_id,
+                role_name=request.role_name,
+                status=status,
+                provider=self.provider_name,
+                model=self.model,
+                prompt_version=request.prompt_version,
+                content_markdown=None,
+                is_mock=False,
+                error_code=status,
+                error_message="Provider unavailable; deterministic evidence remains available.",
+                metadata={"safe_partial_output": "true"},
+            )
+        return LLMProviderResponse(
+            request_id=request.request_id,
+            role_name=request.role_name,
+            status="ok",
+            provider=self.provider_name,
+            model=self.model,
+            prompt_version=request.prompt_version,
+            content_markdown=self.content_by_role.get(
+                request.role_name,
+                "Live role context cites supplied evidence as background for manual review.",
+            ),
+            is_mock=False,
+            metadata={"safe_partial_output": "false"},
+        )
 
 
 def _scope_metadata_payload(review_account_label: str) -> dict:

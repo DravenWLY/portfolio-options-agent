@@ -7,14 +7,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.actionability import ReviewActionabilityStatus
 from app.schemas.trade_review_workspace import TradeReviewPortfolioPreviewRequest
-from app.services.agent_team.llm_provider import (
+from app.services.agent_team.llm_clients.contracts import (
     AGENT_TEAM_ROLES,
     LLM_PROVIDER_STATUSES,
     AgentTeamRole,
     LLMProviderStatus,
     find_prohibited_llm_phrases,
 )
-from app.services.agent_team.output_safety import validate_llm_provider_output
+from app.services.agent_team.safety.output_safety import validate_llm_provider_output
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 
 

@@ -5,16 +5,16 @@ import sys
 import pytest
 
 from app.schemas.trade_review_workspace import TradeReviewPortfolioPreviewRequest
-from app.services.agent_team.llm_provider import (
+from app.services.agent_team.llm_clients.contracts import (
     AGENT_TEAM_ROLES,
     LLMProviderRequest,
     LLMProviderResponse,
     find_forbidden_string_values,
 )
-from app.services.agent_team.mock_provider import MockLLMProvider
-from app.services.agent_team.orchestrator import AgentTeamOrchestrator, default_agent_team_stage_order
-from app.services.agent_team.provider_factory import LLMProviderResolution, UnavailableLLMProvider
-from app.services.agent_team.roles import PUBLIC_ANALYST_ROLES
+from app.services.agent_team.llm_clients.mock import MockLLMProvider
+from app.services.agent_team.legacy_console.orchestrator import AgentTeamOrchestrator, default_agent_team_stage_order
+from app.services.agent_team.llm_clients.factory import LLMProviderResolution, UnavailableLLMProvider
+from app.services.agent_team.agents.roles import PUBLIC_ANALYST_ROLES
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.trade_review.frontend_read import build_trade_review_workspace_portfolio_preview
 

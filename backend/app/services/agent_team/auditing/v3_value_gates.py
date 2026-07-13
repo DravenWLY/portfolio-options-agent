@@ -157,7 +157,7 @@ def validate_v3_value_bearing_markdown(*, markdown: str, role_results: tuple[_To
     provenance_flag = _numeric_provenance_flag(markdown=markdown, allowed=allowed)
     if provenance_flag is not None:
         return provenance_flag
-    return _identifier_privacy_flag(markdown)
+    return _identifier_privacy_flag(markdown, allowed=allowed)
 
 
 def validate_p36_risk_analysis_section(*, markdown: str, role_results: tuple[_ToolResultLike, ...]) -> str | None:
@@ -345,7 +345,7 @@ def _ambiguous_identifier_context(markdown: str, start: int, end: int, token: st
     return bool(_IDENTIFIER_CONTEXT_RE.search(window))
 
 
-def _identifier_privacy_flag(markdown: str) -> str | None:
+def _identifier_privacy_flag(markdown: str, *, allowed: _AllowedNumbers) -> str | None:
     if any(pattern.search(markdown) for pattern in SOURCE_LEAK_PATTERNS) or SEC_RAW_PATH_OR_FILE_RE.search(markdown):
         return IDENTIFIER_PRIVACY_FLAG
     if find_secret_like_values(markdown):
@@ -355,15 +355,24 @@ def _identifier_privacy_flag(markdown: str) -> str | None:
     if _ACCOUNT_NUMBER_RE.search(markdown) or _MASKED_ACCOUNT_RE.search(markdown):
         return IDENTIFIER_PRIVACY_FLAG
     for match in NUMBER_RE.finditer(markdown):
-        if _ambiguous_identifier_context(markdown, match.start(), match.end(), match.group(0)):
+        if (
+            _ambiguous_identifier_context(markdown, match.start(), match.end(), match.group(0))
+            and not _numeric_allowed(match.group(0), allowed)
+        ):
             return IDENTIFIER_AMBIGUOUS_FLAG
     return None
 
 
 def _advice_boundary_flag(markdown: str) -> str | None:
+    # Execution phrases are rejected by the provider output contract before
+    # this gate runs. The runner then drops the entire live Risk section to its
+    # deterministic floor, so F-4 deliberately does not double-handle them.
     if any(pattern.search(markdown) for pattern in (_F4_FORECAST_RE, _F4_RATING_RE, _F4_SUITABILITY_RE, _F4_ACTION_RE, _F4_SIZING_HORIZON_RE)):
         return ADVICE_BOUNDARY_FLAG
-    for sentence in re.split(r"(?<=[.!?])\s+", markdown):
+    prose_without_headings = "\n".join(
+        line for line in markdown.splitlines() if not line.strip().startswith("#")
+    )
+    for sentence in re.split(r"(?<=[.!?])\s+", prose_without_headings):
         if _F4_INTERPRETATION_RE.search(sentence) and not any(marker in sentence.lower() for marker in P36_ATTRIBUTION_MARKERS):
             return ATTRIBUTION_REQUIRED_FLAG
     return None

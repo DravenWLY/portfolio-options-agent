@@ -14,6 +14,7 @@ from app.services.agent_team.auditing.v3_value_gates import (
     STRUCTURE_CONTRACT_FLAG,
     V2_ARTIFACT_SCHEMA_VERSION,
     WHAT_WAS_VERIFIED_FLAG,
+    _advice_boundary_flag,
     frozen_artifact_gate_version,
     validate_v3_value_bearing_markdown,
     validate_p36_risk_analysis_section,
@@ -793,6 +794,7 @@ class _P36RiskLoopProvider:
         mutated_numeric: bool = False,
         malformed: bool = False,
         excessive_requests: bool = False,
+        execution_phrase: bool = False,
     ) -> None:
         self.calls = []
         self.invalid_requests = invalid_requests
@@ -802,11 +804,14 @@ class _P36RiskLoopProvider:
         self.mutated_numeric = mutated_numeric
         self.malformed = malformed
         self.excessive_requests = excessive_requests
+        self.execution_phrase = execution_phrase
 
     def complete(self, request):
         self.calls.append(request)
         if self.truncate:
             content = _p36_risk_section()
+        elif self.execution_phrase:
+            content = "Please place an order."
         elif self.malformed:
             content = "not a structured request or final section"
         elif self.invalid_requests:
@@ -1024,6 +1029,21 @@ def test_p36_risk_loop_drops_truncated_or_unproven_numeric_provider_output() -> 
         assert risk.summary_markdown
 
 
+def test_p36_execution_phrase_uses_one_whole_section_fallback_path() -> None:
+    provider = _P36RiskLoopProvider(execution_phrase=True)
+    summary = build_tool_mediated_agent_team_summary(
+        _public_calculation_evidence(include_eod=True),
+        report_generated_at=datetime(2026, 7, 12, tzinfo=UTC),
+        llm_provider=provider,
+        p36_risk_live_enabled=True,
+    )
+
+    risk = next(item for item in summary.role_summaries if item.role_name == "risk_management_agent")
+    assert risk.live_report_markdown is None
+    assert "live_provider_safety_fallback" in risk.warning_codes
+    assert "live_advice_boundary_dropped" not in risk.warning_codes
+
+
 def test_p36_risk_dynamic_prompt_uses_opaque_calculation_ids_only() -> None:
     provider = _P36RiskLoopProvider()
     build_tool_mediated_agent_team_summary(
@@ -1122,3 +1142,24 @@ def test_p36_risk_gate_drops_whole_sections_for_provenance_privacy_structure_and
         markdown=valid.replace("historical review context", "filing says the context changed"),
         role_results=results,
     ) == GROUNDING_FLAG
+
+
+def test_p36_f6_ambiguous_identifier_residual_defers_to_f5_provenance() -> None:
+    allowed = (_calc_result(value_label="136559 dollars"),)
+
+    assert validate_v3_value_bearing_markdown(
+        markdown="The saved account context records 136559 dollars.",
+        role_results=allowed,
+    ) is None
+    assert validate_v3_value_bearing_markdown(
+        markdown="The saved account context records 136560 dollars.",
+        role_results=allowed,
+    ) == IDENTIFIER_AMBIGUOUS_FLAG
+    assert validate_v3_value_bearing_markdown(
+        markdown="The account number: 136559 was present.",
+        role_results=allowed,
+    ) == IDENTIFIER_PRIVACY_FLAG
+
+
+def test_p36_f4_attribution_does_not_treat_headings_as_interpretation() -> None:
+    assert _advice_boundary_flag("#### Concentration and reference points") is None

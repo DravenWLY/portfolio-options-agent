@@ -1,11 +1,28 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+from hashlib import sha256
 from types import SimpleNamespace
 
 import pytest
 
-from app.services.agent_team.llm_clients.contracts import LLMProviderRequest, LLMProviderResponse, LLMProviderStatus
+from app.services.agent_team.llm_clients.contracts import (
+    LLMProviderMessage,
+    LLMProviderFinishReason,
+    LLMProviderRequest,
+    LLMProviderResponse,
+    LLMProviderStatus,
+    register_static_system_prompts,
+    registered_static_system_prompts,
+)
 from app.services.agent_team.llm_clients.factory import ChainedLLMProvider, LLMProviderResolution
+from app.services.agent_team.auditing.live_report_gates import (
+    ASSERTION_CATEGORY_RE,
+    _normalize_category_capture,
+    validate_live_report_consistency,
+)
+from app.services.agent_team.auditing.evidence_auditor import _hard_block_flag
 from app.services.agent_team import tool_mediated_report as subject
+from app.services.agent_team.orchestration import tool_mediated_runner as runner_subject
 from app.services.agent_team.tool_mediated_report import (
     MAX_PLANNER_REPASSES,
     MAX_TOOL_CALLS_PER_ROLE,
@@ -24,7 +41,8 @@ from app.services.agent_team.tool_mediated_report import (
     usable_content_by_role,
 )
 from app.services.agent_team.tools import ToolResult, default_tool_registry, validate_tool_payload
-from app.schemas.reports import SavedAgentTeamSummaryRead
+from app.services.market_data.eod_history import market_context_execution_context_for_client
+from app.schemas.reports import SavedAgentTeamSummaryRead, SavedEvidenceSectionRead
 from tests.services.agent_team.test_tools import (
     _evidence_package,
     _fred_economic_awareness_section,
@@ -42,7 +60,7 @@ EXPECTED_USABLE_CONTENT = {
     "news_analyst": frozenset(
         {"trade_intent_summary", "economic_awareness_snapshot", "public_events_calendar"}
     ),
-    "technical_analyst": frozenset({"trade_intent_summary", "market_quote_freshness"}),
+    "technical_analyst": frozenset({"trade_intent_summary", "market_quote_freshness", "public_market_context"}),
     "risk_management_agent": frozenset(
         {
             "trade_intent_summary",
@@ -54,6 +72,7 @@ EXPECTED_USABLE_CONTENT = {
             "liquidity_collateral_caveats",
             "options_exposure_summary",
             "market_quote_freshness",
+            "public_market_context",
         }
     ),
     "portfolio_manager_agent": frozenset(
@@ -70,6 +89,7 @@ EXPECTED_USABLE_CONTENT = {
             "economic_awareness_snapshot",
             "public_events_calendar",
             "public_company_profile",
+            "public_market_context",
         }
     ),
 }
@@ -78,13 +98,14 @@ EXPECTED_USABLE_CONTENT = {
 EXPECTED_PLAN = {
     "fundamentals_analyst": ("trade_intent_summary", "public_company_profile"),
     "news_analyst": ("trade_intent_summary", "economic_awareness_context", "sec_recent_filings_metadata"),
-    "technical_analyst": ("trade_intent_summary", "market_quote_freshness"),
+    "technical_analyst": ("trade_intent_summary", "market_quote_freshness", "market_context_snapshot"),
     "risk_management_agent": (
         "trade_intent_summary",
         "portfolio_scope_context",
         "deterministic_review_findings",
         "broker_snapshot_freshness",
         "market_quote_freshness",
+        "market_context_snapshot",
         "evidence_gap_inspector",
     ),
     "portfolio_manager_agent": (),
@@ -102,6 +123,20 @@ def _role_summary(summary, role_name: str):
     return next(role for role in summary.role_summaries if role.role_name == role_name)
 
 
+def _valid_live_report(role_name: str, *, row_value: str = "available") -> str:
+    if role_name == "technical_analyst":
+        return (
+            f"Saved market context was {row_value} in the role envelopes. "
+            "Freshness and availability categories help frame whether reviewed values may have aged."
+        )
+    if role_name == "risk_management_agent":
+        return (
+            "Saved scope caveats remain important context for manual review. "
+            "Re-verify the exposure math in the reviewed app before comparing with current broker screens."
+        )
+    return "Reviewed public context is available as deterministic background."
+
+
 class _FakeLiveProvider:
     provider_name = "fake_live_provider"
     model = "fake-live-model"
@@ -111,9 +146,11 @@ class _FakeLiveProvider:
         *,
         status_by_role: dict[str, LLMProviderStatus] | None = None,
         content_by_role: dict[str, str] | None = None,
+        finish_reason_by_role: dict[str, LLMProviderFinishReason | None] | None = None,
     ) -> None:
         self.status_by_role = dict(status_by_role or {})
         self.content_by_role = dict(content_by_role or {})
+        self.finish_reason_by_role = dict(finish_reason_by_role or {})
         self.calls: list[LLMProviderRequest] = []
 
     def complete(self, request: LLMProviderRequest) -> LLMProviderResponse:
@@ -142,9 +179,10 @@ class _FakeLiveProvider:
             prompt_version=request.prompt_version,
             content_markdown=self.content_by_role.get(
                 request.role_name,
-                "Live role context cites supplied evidence as background for manual review.",
+                _valid_live_report(request.role_name),
             ),
             is_mock=False,
+            finish_reason=self.finish_reason_by_role.get(request.role_name),
             metadata={"safe_partial_output": "false"},
         )
 
@@ -219,6 +257,45 @@ def _finding_counts_by_role(state) -> dict[str, int]:
     return {item.role_name: len(item.findings) for item in state.audited_findings}
 
 
+class _FakeFmpEodClient:
+    def __init__(self, rows) -> None:
+        self.rows = tuple(rows)
+        self.calls: list[str] = []
+
+    def fetch_eod_history(self, *, symbol: str, limit: int = 260):
+        self.calls.append(symbol)
+        return self.rows
+
+
+def _linear_eod_rows_for_runner(count: int):
+    start = date(2025, 1, 1)
+    rows = []
+    for index in range(count):
+        close = Decimal(index + 1)
+        rows.append(
+            {
+                "date": (start + timedelta(days=index)).isoformat(),
+                "open": str(close),
+                "high": str(close + Decimal("1")),
+                "low": str(close - Decimal("1")),
+                "close": str(close),
+                "volume": 1001 + index,
+            }
+        )
+    return tuple(reversed(rows))
+
+
+def _technical_live_report_with_market_values(*, latest_close: str = "260.0", date_label: str = "2025-09-17") -> str:
+    return (
+        f"FMP end-of-day context was fresh as of {date_label}. "
+        f"Latest close {latest_close}, SMA200 160.5, and RSI14 100.0 were supplied as backend-computed context."
+    )
+
+
+def _technical_live_report_with_category_sentence(sentence: str) -> str:
+    return f"{sentence} Unavailable context remains not available."
+
+
 def test_u1_usable_content_by_role_matches_pinned_spec() -> None:
     assert usable_content_by_role() == EXPECTED_USABLE_CONTENT
 
@@ -249,7 +326,7 @@ def test_p1_to_p5_planner_matches_pinned_plan_and_limits() -> None:
     assert plan.dimensions == PLAN_DIMENSIONS
     actual = {item.role_name: tuple(request.tool_name for request in item.tool_requests) for item in plan.role_plan}
     assert actual == EXPECTED_PLAN
-    assert sum(len(item.tool_requests) for item in plan.role_plan) == 13
+    assert sum(len(item.tool_requests) for item in plan.role_plan) == 15
     assert sum(len(item.tool_requests) for item in plan.role_plan) <= MAX_TOOL_CALLS_TOTAL
     assert all(len(item.tool_requests) <= MAX_TOOL_CALLS_PER_ROLE for item in plan.role_plan)
     assert MAX_PLANNER_REPASSES == 1
@@ -677,8 +754,8 @@ def test_p34a_t9_deterministic_specificity_names_freshness_scope_gaps_and_invent
     assert "public fundamentals snapshot" in (risk.summary_markdown or "")
     assert "Market quote freshness is categorized as unknown" in (technical.summary_markdown or "")
     assert "saved quotes are not live prices" in (technical.summary_markdown or "")
-    assert "Role digests:" in (summary.final_synthesis_markdown or "")
-    assert "Not-reviewed or unavailable inventory:" in (summary.final_synthesis_markdown or "")
+    assert "## Risk and scope notes" in (summary.final_synthesis_markdown or "")
+    assert "Unavailable or not-reviewed context:" in (summary.final_synthesis_markdown or "")
     assert "before/after portfolio impact" in (summary.final_synthesis_markdown or "")
 
 
@@ -693,8 +770,8 @@ def test_t4_tool_run_artifact_freezes_plan_results_auditor_and_citation_graph() 
     assert artifact.plan_version == PLAN_VERSION
     assert artifact.audit_version == subject.AUDIT_VERSION
     assert artifact.locked_question == "what_would_be_ignored"
-    assert artifact.tool_result_count == 13
-    assert len(artifact.tool_results) == 13
+    assert artifact.tool_result_count == 15
+    assert len(artifact.tool_results) == 15
     assert artifact.frozen_at == generated_at
     assert artifact.synthesis_evidence_references == summary.evidence_references
     assert artifact.warning_codes == summary.warning_codes
@@ -723,7 +800,43 @@ def test_t4_tool_run_artifact_round_trips_through_saved_summary_json() -> None:
 
     assert round_tripped.model_dump(mode="json") == summary.model_dump(mode="json")
     assert round_tripped.tool_run_artifact is not None
-    assert round_tripped.tool_run_artifact.tool_result_count == 13
+    assert round_tripped.tool_run_artifact.tool_result_count == 15
+
+
+def test_fmp_eod_market_context_freezes_values_and_round_trips_without_refetch() -> None:
+    client = _FakeFmpEodClient(_linear_eod_rows_for_runner(260))
+    context = market_context_execution_context_for_client(
+        client,
+        collected_at=datetime(2025, 9, 18, tzinfo=UTC),
+    )
+    summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        market_context=context,
+    )
+
+    assert client.calls == ["XYZ"]
+    assert summary.tool_run_artifact is not None
+    market_results = [
+        result
+        for result in summary.tool_run_artifact.tool_results
+        if result.tool_name == "market_context_snapshot" and result.status == "ok"
+    ]
+    assert len(market_results) == 2
+    assert {result.role_name for result in market_results} == {"technical_analyst", "risk_management_agent"}
+    for result in market_results:
+        assert result.source_key == "fmp_eod_history"
+        assert result.evidence_refs == ("public_market_context",)
+        assert result.summary_payload["values"]["latest_close"] == 260.0
+        assert result.summary_payload["indicators"]["sma200"] == 160.5
+        assert "eod_not_live_prices" in result.caveat_codes
+    assert "public_market_context" in summary.evidence_references
+    assert "FMP end-of-day market context was included" in (summary.final_synthesis_markdown or "")
+
+    round_tripped = SavedAgentTeamSummaryRead.model_validate(summary.model_dump(mode="json"))
+
+    assert round_tripped.model_dump(mode="json") == summary.model_dump(mode="json")
+    assert client.calls == ["XYZ"]
 
 
 def test_t4_legacy_summary_without_tool_run_artifact_remains_valid() -> None:
@@ -891,9 +1004,8 @@ def test_p34a_provider_factory_resolution_controls_live_gate() -> None:
 def test_p34a_live_provider_success_uses_sanitized_tool_result_envelopes_only() -> None:
     provider = _FakeLiveProvider(
         content_by_role={
-            "fundamentals_analyst": "Live fundamentals context cites reviewed public identity evidence as background.",
-            "technical_analyst": "Live technical context cites saved market freshness as background.",
-            "risk_management_agent": "Live risk context cites deterministic caveats as background.",
+            "technical_analyst": _valid_live_report("technical_analyst"),
+            "risk_management_agent": _valid_live_report("risk_management_agent"),
         }
     )
 
@@ -908,53 +1020,244 @@ def test_p34a_live_provider_success_uses_sanitized_tool_result_envelopes_only() 
     assert summary.report_status == "full_agent_report"
     assert summary.tool_run_artifact is not None
     assert summary.tool_run_artifact.provider_mode == "tool_mediated_live"
-    assert summary.tool_run_artifact.tool_result_count == 13
+    assert summary.tool_run_artifact.tool_result_count == 15
     assert summary.tool_run_artifact.provider_runs
     assert {request.role_name for request in provider.calls} == {
-        "fundamentals_analyst",
         "technical_analyst",
         "risk_management_agent",
     }
     assert {run.role_name for run in summary.tool_run_artifact.provider_runs} == {
-        "fundamentals_analyst",
         "technical_analyst",
         "risk_management_agent",
     }
     assert all(run.provider == "fake_live_provider" for run in summary.tool_run_artifact.provider_runs)
     assert all(run.model == "fake-live-model" for run in summary.tool_run_artifact.provider_runs)
-    assert all(run.prompt_version == "p34a-tool-mediated-role-v2" for run in summary.tool_run_artifact.provider_runs)
+    assert all(run.prompt_version == "p35-role-note-v2" for run in summary.tool_run_artifact.provider_runs)
     assert all(run.status == "ok" for run in summary.tool_run_artifact.provider_runs)
-    fundamentals_summary = _role_summary(summary, "fundamentals_analyst").summary_markdown or ""
+    fundamentals = _role_summary(summary, "fundamentals_analyst")
+    fundamentals_summary = fundamentals.summary_markdown or ""
     assert "Reviewed public company profile context is background that could be overlooked." in fundamentals_summary
-    assert "Live fundamentals context cites reviewed public identity evidence as background." in fundamentals_summary
-    assert _role_summary(summary, "fundamentals_analyst").evidence_references == (
+    assert fundamentals.live_report_markdown is None
+    assert fundamentals.evidence_references == (
         "trade_intent_summary",
         "public_company_profile",
     )
-    assert "live_provider_reasoning_used" in _role_summary(summary, "fundamentals_analyst").warning_codes
-    assert "live_connective_context" in (
-        summary.tool_run_artifact.audited_findings[0].findings[-1].caveat_codes
-    )
+    technical = _role_summary(summary, "technical_analyst")
+    risk = _role_summary(summary, "risk_management_agent")
+    assert technical.live_report_markdown == _valid_live_report("technical_analyst")
+    assert risk.live_report_markdown == _valid_live_report("risk_management_agent")
+    assert "live_provider_reasoning_used" in technical.warning_codes
+    assert "live_provider_reasoning_used" in risk.warning_codes
     rendered_requests = repr(tuple(request.messages for request in provider.calls)).lower()
     assert "summary_payload" not in rendered_requests
     assert "scope':" not in rendered_requests
-    assert "as_of" not in rendered_requests
     assert "cash_secured_put" not in rendered_requests
     assert "buying_power" not in rendered_requests
     assert "raw_payload" not in rendered_requests
     assert "account_id" not in rendered_requests
     for request in provider.calls:
-        for message in request.messages:
-            validate_tool_payload({"content": message.content}, label="captured live prompt message")
+        assert request.request_id.startswith("p35_")
+        assert request.messages[0].content in runner_subject.LIVE_ROLE_SYSTEM_PROMPTS
+        validate_tool_payload({"content": request.messages[1].content}, label="captured live prompt user envelope")
+
+
+def test_manual_confirmation_actionability_still_reaches_fake_live_role_path() -> None:
+    evidence = _evidence_package()
+    evidence = evidence.model_copy(
+        update={
+            "actionability": evidence.actionability.model_copy(
+                update={
+                    "review_actionability_status": "manual_confirmation_required",
+                    "actionability_label": "Manual confirmation required",
+                }
+            )
+        }
+    )
+    provider = _FakeLiveProvider()
+
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    assert summary.report_status == "full_agent_report"
+    assert {request.role_name for request in provider.calls} == {
+        "technical_analyst",
+        "risk_management_agent",
+    }
+
+
+def test_p35_t7c_v2_system_prompts_are_registered_verbatim_and_current_live_roles_use_them() -> None:
+    provider = _FakeLiveProvider()
+    state = run_tool_mediated_agent_team(_evidence_package(), registry=default_tool_registry())
+    role_results = {
+        role_name: tuple(result for result in state.tool_results if result.role_name == role_name)
+        for role_name in runner_subject.LIVE_ROLE_PROMPT_BLOCKS
+    }
+    finding_sets = {finding.role_name: finding for finding in state.audited_findings}
+    shared_constraint_phrases = (
+        "what would a manual reviewer\nacting right now overlook in the saved evidence?",
+        "exactly one note of two to four plain-language sentences.",
+        "Plain prose only — no headings, no tables, no lists, no bullets, no field",
+        "envelope value, or write no number at all. Never compute, convert,",
+        "only exactly as the envelopes categorize each item.",
+        'say "not reviewed" or "not available" in plain words; caveat codes',
+        "not in digits, not in words, not by comparison.",
+        "no advice, no action instructions other than",
+    )
+    role_markers = {
+        "technical_analyst": '"Market context" heading',
+        "risk_management_agent": '"Risk and scope notes" heading',
+        "fundamentals_analyst": '"Company context" heading',
+        "news_analyst": '"Events and filings context" heading',
+    }
+
+    assert runner_subject.LIVE_ROLE_SYSTEM_PROMPTS.issubset(registered_static_system_prompts())
+    for role_name, block in runner_subject.LIVE_ROLE_PROMPT_BLOCKS.items():
+        finding_set = finding_sets[role_name]
+        evidence_refs = runner_subject._ordered_refs(runner_subject._union_refs(finding_set.findings))
+        request = runner_subject._live_provider_request(
+            role_name,
+            role_results[role_name],
+            evidence_refs=evidence_refs,
+            provider=provider,
+        )
+
+        assert request.request_id == f"p35_{role_name}_tool_mediated"
+        assert request.prompt_version == "p35-role-note-v2"
+        assert request.messages[0].content == runner_subject._render_live_role_system_prompt(role_name)
+        assert block in request.messages[0].content
+        assert role_markers[role_name] in request.messages[0].content
+        assert all(phrase in request.messages[0].content for phrase in shared_constraint_phrases)
+        assert request.messages[1].content == repr(
+            {
+                "allowed_evidence_refs": evidence_refs,
+                "tool_result_envelopes": tuple(
+                    runner_subject._prompt_tool_result_envelope(result) for result in role_results[role_name]
+                ),
+                "output_rule": "one connective note only; two to four sentences; no heading, table, list, symbol, or portfolio magnitude",
+            }
+        )
+
+    summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+    assert {request.role_name for request in provider.calls} == {
+        "technical_analyst",
+        "risk_management_agent",
+    }
+    assert _role_summary(summary, "fundamentals_analyst").live_report_markdown is None
+    assert _role_summary(summary, "news_analyst").live_report_markdown is None
+
+
+def test_p35_t7c_static_prompt_registry_pins_all_four_exact_rendered_prompts() -> None:
+    prompt_digests = {
+        role_name: sha256(runner_subject._render_live_role_system_prompt(role_name).encode()).hexdigest()
+        for role_name in runner_subject.LIVE_ROLE_PROMPT_BLOCKS
+    }
+
+    # These digests pin Claude E's approved verbatim text. Changing a prompt
+    # requires an intentional design/review update, not an implicit registry drift.
+    assert prompt_digests == {
+        "technical_analyst": "f0d9f5f9cc9f0f7f06e8b1b7ea1060fc49a15d78881068c05fcbb441cf1d63d6",
+        "risk_management_agent": "9fd8d3d2d359809de6bbde64db61a8c1f99319340d0eaec672d1295d001b2790",
+        "fundamentals_analyst": "c28c06d69e10e65199ffc6c53ce295a7fbf14ea8ba68866b42bc31dfd173510a",
+        "news_analyst": "6fb59bafaa2506a50cd917f16d618df52bedb98d849b669ff3a27e56f31f6db6",
+    }
+    assert frozenset(
+        runner_subject._render_live_role_system_prompt(role_name) for role_name in runner_subject.LIVE_ROLE_PROMPT_BLOCKS
+    ).issubset(registered_static_system_prompts())
+
+
+def test_p35_t7c_unmapped_live_role_fails_closed() -> None:
+    with pytest.raises(ValueError, match="unmapped live role prompt block: portfolio_manager_agent"):
+        runner_subject._live_role_prompt_block("portfolio_manager_agent")
+
+
+def test_p35_t7c_static_registry_does_not_bypass_dynamic_messages(monkeypatch: pytest.MonkeyPatch) -> None:
+    for forbidden_token in ("cash", "holdings", "account_id"):
+        with pytest.raises(ValueError, match="forbidden private value"):
+            LLMProviderMessage(role="user", content=f"Synthetic {forbidden_token} context.")
+    with pytest.raises(ValueError, match="forbidden private value"):
+        LLMProviderMessage(role="system", content="Synthetic non-registry holdings context.")
+
+    monkeypatch.setattr(
+        runner_subject,
+        "_prompt_tool_result_envelope",
+        lambda _result: {"availability": "available", "caveat_codes": ("cash",)},
+    )
+    with pytest.raises(ValueError, match="forbidden private value"):
+        runner_subject._live_provider_request(
+            "technical_analyst",
+            (object(),),
+            evidence_refs=("trade_intent_summary",),
+            provider=_FakeLiveProvider(),
+        )
+
+
+def test_p35_t7c_static_prompt_registration_rejects_poisoned_entries() -> None:
+    with pytest.raises(ValueError, match="secret-like"):
+        register_static_system_prompts(("Static instruction api_key=abc12345",))
+    with pytest.raises(ValueError, match="prohibited advice"):
+        register_static_system_prompts(("Static instruction says you should buy.",))
+
+
+def test_p35_t7c_length_truncated_live_note_keeps_deterministic_floor() -> None:
+    deterministic = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+    provider = _FakeLiveProvider(
+        content_by_role={
+            "technical_analyst": "Saved market context was available in the role envelopes. This trailing",
+        },
+        finish_reason_by_role={"technical_analyst": "length"},
+    )
+
+    summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    technical = _role_summary(summary, "technical_analyst")
+    deterministic_technical = _role_summary(deterministic, "technical_analyst")
+    assert technical.live_report_markdown is None
+    assert technical.summary_markdown == deterministic_technical.summary_markdown
+    assert "live_note_truncated_dropped" in technical.warning_codes
+    assert "live_provider_unavailable" in technical.warning_codes
+    assert "This trailing" not in (summary.final_synthesis_markdown or "")
+    assert "finish_reason" not in repr(summary.model_dump(mode="json"))
+
+
+@pytest.mark.parametrize("finish_reason", (None, "unknown"))
+def test_p35_t7c_absent_or_unknown_finish_reason_evaluates_live_note(finish_reason: str | None) -> None:
+    provider = _FakeLiveProvider(finish_reason_by_role={"technical_analyst": finish_reason})
+
+    summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    technical = _role_summary(summary, "technical_analyst")
+    assert technical.live_report_markdown == _valid_live_report("technical_analyst")
+    assert "live_note_truncated_dropped" not in technical.warning_codes
 
 
 def test_p34a_t9b_live_overlay_preserves_all_deterministic_findings_and_adds_at_most_one() -> None:
     evidence = _evidence_package()
     provider = _FakeLiveProvider(
         content_by_role={
-            "fundamentals_analyst": "Live fundamentals context cites reviewed public identity evidence as background.",
-            "technical_analyst": "Live technical context cites saved market freshness as background.",
-            "risk_management_agent": "Live risk context cites deterministic caveats as background.",
+            "technical_analyst": _valid_live_report("technical_analyst"),
+            "risk_management_agent": _valid_live_report("risk_management_agent"),
         }
     )
 
@@ -974,21 +1277,20 @@ def test_p34a_t9b_live_overlay_preserves_all_deterministic_findings_and_adds_at_
     for role_name, claims in deterministic_claims.items():
         for claim in claims:
             assert claim in live_claims[role_name]
-        assert live_counts[role_name] <= deterministic_counts[role_name] + 1
+        assert live_counts[role_name] == deterministic_counts[role_name]
         if role_name in provider_roles:
-            assert live_counts[role_name] == deterministic_counts[role_name] + 1
             role_set = next(item for item in live_state.audited_findings if item.role_name == role_name)
-            assert role_set.findings[-1].caveat_codes == ("live_connective_context",)
+            assert role_set.live_report_markdown is not None
         else:
-            assert live_counts[role_name] == deterministic_counts[role_name]
+            role_set = next(item for item in live_state.audited_findings if item.role_name == role_name)
+            assert role_set.live_report_markdown is None
 
 
-def test_p34a_t9b_pm_digest_uses_first_deterministic_finding_not_live_connective() -> None:
+def test_p34a_t17_pm_digest_uses_first_deterministic_finding_and_embeds_live_sections() -> None:
     provider = _FakeLiveProvider(
         content_by_role={
-            "fundamentals_analyst": "Live fundamentals context cites reviewed public identity evidence as background.",
-            "technical_analyst": "Live technical context cites saved market freshness as background.",
-            "risk_management_agent": "Live risk context cites deterministic caveats as background.",
+            "technical_analyst": _valid_live_report("technical_analyst"),
+            "risk_management_agent": _valid_live_report("risk_management_agent"),
         }
     )
 
@@ -1000,19 +1302,281 @@ def test_p34a_t9b_pm_digest_uses_first_deterministic_finding_not_live_connective
     )
 
     synthesis = summary.final_synthesis_markdown or ""
-    assert "Fundamentals Analyst: Reviewed public company profile context is background" in synthesis
-    assert "Technical Analyst: Market quote freshness is categorized" in synthesis
-    assert "Risk Manager: Saved deterministic risk flags" in synthesis
-    assert "Fundamentals Analyst: Live fundamentals context" not in synthesis
-    assert "Risk Manager: Live risk context" not in synthesis
+    assert "## Market context" in synthesis
+    assert "## Risk and scope notes" in synthesis
+    assert _valid_live_report("technical_analyst") in synthesis
+    assert _valid_live_report("risk_management_agent") in synthesis
+    assert "Audited live role sections:" not in synthesis
+    assert "###" not in synthesis
+    assert synthesis.index("Saved end-of-day market context was not available") < synthesis.index(
+        _valid_live_report("technical_analyst")
+    )
+
+
+def test_p34a_t17_live_report_numeric_gate_allows_frozen_market_values() -> None:
+    provider = _FakeLiveProvider(
+        content_by_role={
+            "technical_analyst": _technical_live_report_with_market_values(),
+        }
+    )
+    context = market_context_execution_context_for_client(
+        _FakeFmpEodClient(_linear_eod_rows_for_runner(260)),
+        collected_at=datetime(2025, 9, 18, tzinfo=UTC),
+    )
+
+    summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+        market_context=context,
+    )
+
+    technical = _role_summary(summary, "technical_analyst")
+    assert "Latest close 260.0" in (technical.live_report_markdown or "")
+    assert "SMA200 160.5" in (technical.live_report_markdown or "")
+    assert "numeric_consistency_blocked" not in technical.warning_codes
+    assert summary.tool_run_artifact is not None
+    technical_set = next(item for item in summary.tool_run_artifact.audited_findings if item.role_name == "technical_analyst")
+    assert technical_set.live_report_markdown == technical.live_report_markdown
+
+
+def test_p34a_t17_live_report_numeric_gate_drops_wrong_market_value() -> None:
+    provider = _FakeLiveProvider(
+        content_by_role={
+            "technical_analyst": _technical_live_report_with_market_values(latest_close="999.0"),
+        }
+    )
+    context = market_context_execution_context_for_client(
+        _FakeFmpEodClient(_linear_eod_rows_for_runner(260)),
+        collected_at=datetime(2025, 9, 18, tzinfo=UTC),
+    )
+
+    summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+        market_context=context,
+    )
+
+    technical = _role_summary(summary, "technical_analyst")
+    assert technical.live_report_markdown is None
+    assert "live_numeric_mismatch_dropped" in technical.warning_codes
+    assert summary.tool_run_artifact is not None
+    assert "numeric_consistency_blocked" in summary.tool_run_artifact.auditor.eval_flags
+    assert "999.0" not in repr(summary.model_dump(mode="json"))
+
+
+def test_p34a_t17_live_report_category_gate_drops_t13_manual_freshness_sentence() -> None:
+    sentence = "The market quote freshness was designated as manual despite available evidence."
+    match = ASSERTION_CATEGORY_RE.search(sentence)
+    assert match is not None
+    assert _normalize_category_capture(match.group(2)) == "manual"
+    bad_report = _technical_live_report_with_category_sentence(sentence)
+    provider = _FakeLiveProvider(content_by_role={"technical_analyst": bad_report})
+
+    summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    technical = _role_summary(summary, "technical_analyst")
+    assert technical.live_report_markdown is None
+    assert "live_category_mismatch_dropped" in technical.warning_codes
+    assert summary.tool_run_artifact is not None
+    assert "category_consistency_blocked" in summary.tool_run_artifact.auditor.eval_flags
+
+
+def test_p34a_t17_live_report_category_gate_allows_natural_freshness_assertion() -> None:
+    report = _technical_live_report_with_category_sentence(
+        "Market quote freshness is categorized as fresh in the saved evidence."
+    )
+    provider = _FakeLiveProvider(content_by_role={"technical_analyst": report})
+    evidence = _evidence_package().model_copy(
+        update={
+            "market_quote_freshness": _section(
+                "market_quote_freshness",
+                summary_label="fresh",
+            )
+        }
+    )
+
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    technical = _role_summary(summary, "technical_analyst")
+    assert technical.live_report_markdown == report
+    assert "category_consistency_blocked" not in technical.warning_codes
+
+
+def test_p34a_t17_live_report_category_gate_handles_limited_availability_assertion() -> None:
+    limited_result = ToolResult(
+        tool_name="public_company_profile",
+        role_name="fundamentals_analyst",
+        status="ok",
+        evidence_tier="public",
+        data_mode="public",
+        availability="limited",
+        evidence_refs=("public_company_profile",),
+        summary_payload={"summary": "Synthetic limited public profile."},
+    )
+    available_result = ToolResult(
+        tool_name="public_company_profile",
+        role_name="fundamentals_analyst",
+        status="ok",
+        evidence_tier="public",
+        data_mode="public",
+        availability="available",
+        evidence_refs=("public_company_profile",),
+        summary_payload={"summary": "Synthetic available public profile."},
+    )
+    markdown = "availability was limited for the snapshot"
+
+    assert validate_live_report_consistency(markdown=markdown, role_results=(limited_result,)) is None
+    assert (
+        validate_live_report_consistency(markdown=markdown, role_results=(available_result,))
+        == "category_consistency_blocked"
+    )
+
+
+def _fresh_market_quote_freshness_result() -> ToolResult:
+    return ToolResult(
+        tool_name="market_quote_freshness",
+        role_name="technical_analyst",
+        status="ok",
+        evidence_tier="public",
+        data_mode="public",
+        availability="available",
+        freshness="fresh",
+        evidence_refs=("market_quote_freshness",),
+        summary_payload={"summary": "Synthetic fresh market quote freshness."},
+    )
+
+
+def test_p34a_t17a_f2_category_gate_drops_colon_form_wrong_category() -> None:
+    # T18 field finding verbatim shape: a live summary-table cell relabeled
+    # the envelope data_mode as a freshness category via colon phrasing.
+    markdown = "| Saved market quote freshness | Market quote freshness: manual | None |"
+
+    assert (
+        validate_live_report_consistency(
+            markdown=markdown,
+            role_results=(_fresh_market_quote_freshness_result(),),
+        )
+        == "category_consistency_blocked"
+    )
+
+
+def test_p34a_t17a_f2_category_gate_allows_colon_form_matching_category() -> None:
+    assert (
+        validate_live_report_consistency(
+            markdown="Market quote freshness: fresh",
+            role_results=(_fresh_market_quote_freshness_result(),),
+        )
+        is None
+    )
+
+
+def test_p34a_t17a_f2_category_gate_allows_colon_form_honest_gap() -> None:
+    markdown = "FMP end-of-day availability: not available for this report run."
+
+    assert (
+        validate_live_report_consistency(
+            markdown=markdown,
+            role_results=(_fresh_market_quote_freshness_result(),),
+        )
+        is None
+    )
+
+
+def test_p34a_t17_live_report_category_gate_allows_honest_not_reviewed_gap() -> None:
+    report = (
+        "Saved market context remains not reviewed in the role envelopes. "
+        "Unavailable context remains not available."
+    )
+    assert "not reviewed" in report
+    provider = _FakeLiveProvider(content_by_role={"technical_analyst": report})
+
+    summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    technical = _role_summary(summary, "technical_analyst")
+    assert technical.live_report_markdown == report
+    assert "category_consistency_blocked" not in technical.warning_codes
+
+
+def test_p34a_t17_live_report_structure_gate_keeps_news_sec_metadata_deterministic() -> None:
+    result = ToolResult(
+        tool_name="sec_recent_filings_metadata",
+        role_name="news_analyst",
+        status="ok",
+        evidence_tier="public",
+        data_mode="public",
+        source_key="sec_edgar_recent_filings",
+        source_label="SEC EDGAR recent filing metadata - company events only",
+        availability="available",
+        evidence_refs=("public_events_calendar",),
+        summary_payload={
+            "reviewed_filing_metadata": (
+                {"fact_key": "form_type", "fact_label": "Form Type", "value_label": "10-K"},
+                {"fact_key": "filing_date", "fact_label": "Filing Date", "value_label": "2026-07-01"},
+            )
+        },
+    )
+    base_finding = RoleFinding(
+        finding_type="missing_context",
+        claim_text="Reviewed SEC filing metadata is background.",
+        evidence_refs=("public_events_calendar",),
+    )
+    good_report = "\n".join(
+        (
+            "### Reviewed context",
+            "SEC form 10-K filed 2026-07-01 was present as metadata only.",
+            "### Not reviewed",
+            "Filing contents were not reviewed.",
+            "### Summary table",
+            "| Context item | Frozen value or category | Status / caveat |",
+            "| SEC filing metadata | 10-K | metadata only |",
+        )
+    )
+    bad_report = good_report.replace("10-K", "13-F")
+
+    good_auditor, good = audit_findings(
+        (
+            RoleFindingSet(
+                role_name="news_analyst",
+                role_status="completed",
+                findings=(base_finding,),
+                warning_codes=(),
+                live_report_markdown=good_report,
+            ),
+        ),
+        {"news_analyst": (result,)},
+        {"news_analyst": frozenset({"public_events_calendar"})},
+    )
+
+    assert good[0].live_report_markdown is None
+    assert "structure_contract_blocked" in good_auditor.eval_flags
+    assert "numeric_consistency_blocked" not in good_auditor.eval_flags
+    assert "13-F" in bad_report
 
 
 def test_sec_recent_filings_news_finding_stays_deterministic_in_live_mode() -> None:
     provider = _FakeLiveProvider(
         content_by_role={
-            "fundamentals_analyst": "Live fundamentals context cites reviewed public identity evidence as background.",
-            "technical_analyst": "Live technical context cites saved market freshness as background.",
-            "risk_management_agent": "Live risk context cites deterministic caveats as background.",
+            "technical_analyst": _valid_live_report("technical_analyst"),
+            "risk_management_agent": _valid_live_report("risk_management_agent"),
             "news_analyst": "The filing signals a bullish catalyst.",
         }
     )
@@ -1037,7 +1601,6 @@ def test_sec_recent_filings_news_finding_stays_deterministic_in_live_mode() -> N
     assert "Form 8-K (Filed 2026-05-29)" in (news.summary_markdown or "")
     assert "bullish catalyst" not in (news.summary_markdown or "")
     assert {request.role_name for request in provider.calls} == {
-        "fundamentals_analyst",
         "technical_analyst",
         "risk_management_agent",
     }
@@ -1051,9 +1614,8 @@ def test_sec_recent_filings_news_finding_stays_deterministic_in_live_mode() -> N
 def test_fred_economic_awareness_news_finding_stays_deterministic_in_live_mode() -> None:
     provider = _FakeLiveProvider(
         content_by_role={
-            "fundamentals_analyst": "Live fundamentals context cites reviewed public identity evidence as background.",
-            "technical_analyst": "Live technical context cites saved market freshness as background.",
-            "risk_management_agent": "Live risk context cites deterministic caveats as background.",
+            "technical_analyst": _valid_live_report("technical_analyst"),
+            "risk_management_agent": _valid_live_report("risk_management_agent"),
             "news_analyst": "The CPI release suggests a bullish macro signal.",
         }
     )
@@ -1078,7 +1640,6 @@ def test_fred_economic_awareness_news_finding_stays_deterministic_in_live_mode()
     assert "Consumer Price Index release (2026-07-15)" in (news.summary_markdown or "")
     assert "bullish macro signal" not in (news.summary_markdown or "")
     assert {request.role_name for request in provider.calls} == {
-        "fundamentals_analyst",
         "technical_analyst",
         "risk_management_agent",
     }
@@ -1165,12 +1726,23 @@ def test_p34a_live_provider_unsafe_output_is_rejected_before_persistence(unsafe_
     assert all(
         role.role_status == "completed"
         for role in summary.role_summaries
-        if role.role_name in {"fundamentals_analyst", "technical_analyst", "risk_management_agent"}
+        if role.role_name in {"technical_analyst", "risk_management_agent"}
     )
     assert all(
-        "live_provider_safety_fallback" in role.warning_codes
+        any(
+            code
+            in {
+                "live_provider_safety_fallback",
+                "live_structure_contract_dropped",
+                "live_numeric_mismatch_dropped",
+                "live_category_mismatch_dropped",
+                "live_display_token_dropped",
+                "live_portfolio_claim_dropped",
+            }
+            for code in role.warning_codes
+        )
         for role in summary.role_summaries
-        if role.role_name in {"fundamentals_analyst", "technical_analyst", "risk_management_agent"}
+        if role.role_name in {"technical_analyst", "risk_management_agent"}
     )
     assert summary.tool_run_artifact.auditor.repass_triggered is False
     assert any(
@@ -1183,6 +1755,11 @@ def test_p34a_live_provider_unsafe_output_is_rejected_before_persistence(unsafe_
             "fred_interpretation_blocked",
             "source_leak_blocked",
             "live_provider_validation_failed",
+            "structure_contract_blocked",
+            "numeric_consistency_blocked",
+            "category_consistency_blocked",
+            "display_token_blocked",
+            "portfolio_claim_blocked",
         }
     )
     deterministic_state = run_tool_mediated_agent_team(_evidence_package(), registry=default_tool_registry())
@@ -1191,9 +1768,288 @@ def test_p34a_live_provider_unsafe_output_is_rejected_before_persistence(unsafe_
         item.role_name: tuple(finding.claim_text for finding in item.findings)
         for item in summary.tool_run_artifact.audited_findings
     }
-    for role_name in {"fundamentals_analyst", "technical_analyst", "risk_management_agent"}:
+    for role_name in {"technical_analyst", "risk_management_agent"}:
         for claim in deterministic_claims[role_name]:
             assert claim in live_claims[role_name]
+
+
+def test_p35_t5_live_portfolio_claim_gate_blocks_comparative_magnitude() -> None:
+    provider = _FakeLiveProvider(
+        content_by_role={"risk_management_agent": "This would roughly double your chip exposure."}
+    )
+
+    summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    risk = _role_summary(summary, "risk_management_agent")
+    assert risk.live_report_markdown is None
+    assert "live_portfolio_claim_dropped" in risk.warning_codes
+    assert summary.tool_run_artifact is not None
+    assert "portfolio_claim_blocked" in summary.tool_run_artifact.auditor.eval_flags
+    assert "double your chip exposure" not in repr(summary.model_dump(mode="json")).lower()
+
+
+def test_p35_t5_live_display_token_gate_blocks_internal_token() -> None:
+    provider = _FakeLiveProvider(
+        content_by_role={"technical_analyst": "Saved context includes eod_not_live_prices."}
+    )
+
+    summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    technical = _role_summary(summary, "technical_analyst")
+    assert technical.live_report_markdown is None
+    assert "live_display_token_dropped" in technical.warning_codes
+    assert summary.tool_run_artifact is not None
+    assert "display_token_blocked" in summary.tool_run_artifact.auditor.eval_flags
+    assert "eod_not_live_prices" not in repr(summary.model_dump(mode="json"))
+
+
+def test_p35_t5_document_uses_frozen_trade_impact_groups_without_parsing_flat_labels() -> None:
+    before_after = SavedEvidenceSectionRead(
+        section_key="before_after_portfolio_impact",
+        section_label="Before/after portfolio impact",
+        availability="available",
+        summary_label="Frozen before/after impact is available.",
+        detail_labels=(
+            "Asset class: Row | Before $ | Before % | Trade Delta $ | After $ | After %.",
+            "Equity | $93,000 | 93.0% | +$7,000 | $100,000 | 100.0%.",
+            "Trade-impact narrative:",
+            "Do not parse this flat label into the document.",
+        ),
+        trade_impact_narrative_groups={
+            "proceed_statements": (
+                "Proceeding would create a new $7,000 XYZ position from frozen evidence.",
+                "Sector exposure would move from 35.0% to 42.0% in the saved calculation.",
+            ),
+            "not_reviewed_statement": "Not reviewed: fund holdings, taxes, and outside accounts.",
+            "verify_statement": "Verify the frozen exposure math against current app screens.",
+        },
+    )
+    evidence = _evidence_package().model_copy(update={"before_after_portfolio_impact": before_after})
+
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+
+    synthesis = summary.final_synthesis_markdown or ""
+    assert "Proceeding would create a new $7,000 XYZ position" in synthesis
+    assert "Sector exposure would move from 35.0% to 42.0%" in synthesis
+    assert "Not reviewed: fund holdings, taxes, and outside accounts." in synthesis
+    assert "Verify the frozen exposure math against current app screens." in synthesis
+    assert "Do not parse this flat label into the document." not in synthesis
+    assert "## If you proceed" in synthesis
+    assert "## What was not reviewed" in synthesis
+    assert "- Market Mood snapshot" in synthesis
+    assert "- public fundamentals snapshot" in synthesis
+    assert "## Verify before acting" in synthesis
+
+
+def test_p35_t5_pre_t5_package_renders_honest_unavailable_path_without_parse_fallback() -> None:
+    before_after = SavedEvidenceSectionRead(
+        section_key="before_after_portfolio_impact",
+        section_label="Before/after portfolio impact",
+        availability="available",
+        summary_label="Frozen before/after impact is available.",
+        detail_labels=(
+            "Trade-impact narrative:",
+            "Legacy flat narrative should not be parsed into the v4 report.",
+        ),
+    )
+    evidence = _evidence_package().model_copy(update={"before_after_portfolio_impact": before_after})
+
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+
+    synthesis = summary.final_synthesis_markdown or ""
+    assert "Trade-impact narrative statements were not frozen with this saved package" in synthesis
+    assert "Legacy flat narrative should not be parsed into the v4 report." not in synthesis
+
+
+def test_p35_t5_document_uses_reviewed_account_nickname_with_generic_fallback() -> None:
+    generated_at = datetime(2026, 6, 1, tzinfo=UTC)
+    named_evidence = _evidence_package().model_copy(
+        update={
+            "scope_state": _evidence_package().scope_state.model_copy(
+                update={"review_account_display_label": "Growth Demo Account"}
+            )
+        }
+    )
+
+    named_summary = build_tool_mediated_agent_team_summary(named_evidence, report_generated_at=generated_at)
+    fallback_summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(), report_generated_at=generated_at
+    )
+
+    named_document = named_summary.final_synthesis_markdown or ""
+    fallback_document = fallback_summary.final_synthesis_markdown or ""
+    assert "- Growth Demo Account - June 1, 2026" in named_document
+    assert "for Growth Demo Account using frozen evidence only." in named_document
+    assert "- reviewed account - June 1, 2026" in fallback_document
+    assert "for reviewed account using frozen evidence only." in fallback_document
+
+
+def test_p35_t7a_document_uses_freshness_labels_without_duplicate_prefixes() -> None:
+    summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(), report_generated_at=datetime(2026, 6, 1, tzinfo=UTC)
+    )
+
+    document = summary.final_synthesis_markdown or ""
+    assert "Broker snapshot freshness: Broker snapshot freshness label saved" not in document
+    assert "Market quote freshness: Market quote freshness label saved" not in document
+    assert "Broker snapshot freshness label saved." in document
+    assert "Market quote freshness label saved." in document
+
+
+def test_p35_t9_market_context_display_rows_use_reviewed_labels_and_dedupe_metadata() -> None:
+    result = ToolResult(
+        tool_name="market_context_snapshot",
+        role_name="technical_analyst",
+        status="ok",
+        evidence_tier="public",
+        data_mode="public",
+        source_key="fmp_eod_history",
+        source_label="FMP end-of-day history",
+        availability="available",
+        freshness="Market quote freshness: manual",
+        as_of=datetime(2026, 7, 10, tzinfo=UTC),
+        evidence_refs=("public_market_context",),
+        summary_payload={
+            "as_of_date": "2026-07-10",
+            "freshness_category": "manual",
+            "indicators": {"atr14": 2.5, "unmapped_signal": 1.0},
+        },
+    )
+
+    fact_labels = runner_subject.prompt_fact_labels_for_tool_result(result)
+    rows = runner_subject._market_context_display_rows(result)
+    rendered = "\n".join(rows)
+
+    assert "Market quote freshness: manual" not in {fact["value_label"] for fact in fact_labels}
+    assert "manual" in {fact["value_label"] for fact in fact_labels}
+    assert validate_live_report_consistency(
+        markdown="Market quote freshness is categorized as manual in the saved evidence.",
+        role_results=(result,),
+    ) is None
+    assert rendered.count("| as-of date |") == 1
+    assert rendered.count("| freshness category |") == 1
+    assert "| ATR fourteen | 2.5 |" in rendered
+    assert "unmapped_signal" not in rendered
+    assert "atr14_usd" not in rendered
+    assert "| Omitted indicator |" in rendered
+
+
+def test_p35_t9_composer_uses_clean_flow_copy_and_live_note_attribution() -> None:
+    provider = _FakeLiveProvider()
+    base_evidence = _evidence_package()
+    evidence = base_evidence.model_copy(
+        update={
+            "trade_intent_summary": base_evidence.trade_intent_summary.model_copy(
+                update={"review_flow_label": "Stock buy review", "supported_flow": "stock_buy"}
+            )
+        }
+    )
+
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    document = summary.final_synthesis_markdown or ""
+    assert "reviews stock buy review" not in document
+    assert "covers the saved stock buy" in document
+    assert "**Technical Analyst**" in document
+    assert "**Risk Manager**" in document
+
+
+def test_p35_t9_composer_names_missing_live_note_when_live_mode_ran() -> None:
+    provider = _FakeLiveProvider(finish_reason_by_role={"technical_analyst": "length"})
+
+    summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    document = summary.final_synthesis_markdown or ""
+    assert "No Technical Analyst note is available in this saved report." in document
+    assert "**Risk Manager**" in document
+
+
+def test_p35_t9_risk_note_plain_topic_vocabulary_survives_but_disclosures_stay_blocked() -> None:
+    provider = _FakeLiveProvider(
+        content_by_role={
+            "risk_management_agent": (
+                "Cash, holdings, and positions remain saved-review topics. "
+                "Re-verify the exposure math in the reviewed app before comparing current broker screens."
+            )
+        }
+    )
+    summary = build_tool_mediated_agent_team_summary(
+        _evidence_package(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+
+    risk = _role_summary(summary, "risk_management_agent")
+    assert risk.live_report_markdown is not None
+    assert "Cash, holdings, and positions" in (summary.final_synthesis_markdown or "")
+
+    for unsafe_note in (
+        "cash_balance is present in this report. Re-verify the saved evidence.",
+        "cash: private value. Re-verify the saved evidence.",
+        "api_key: synthetic-secret-value. Re-verify the saved evidence.",
+    ):
+        auditor, audited = audit_findings(
+            (
+                RoleFindingSet(
+                    role_name="risk_management_agent",
+                    role_status="completed",
+                    findings=(
+                        RoleFinding(
+                            finding_type="ignored_risk",
+                            claim_text="Saved deterministic risk context remains available.",
+                            evidence_refs=("trade_intent_summary",),
+                        ),
+                    ),
+                    warning_codes=(),
+                    live_report_markdown=unsafe_note,
+                ),
+            ),
+            {"risk_management_agent": (_result(role_name="risk_management_agent", evidence_refs=("trade_intent_summary",)),)},
+            {"risk_management_agent": frozenset({"trade_intent_summary"})},
+        )
+        assert audited[0].live_report_markdown is None
+        assert "private_leak_blocked" in auditor.eval_flags
+
+    # The exception is prose-only: metadata still receives the regular strict scan.
+    assert (
+        _hard_block_flag(
+            RoleFinding(
+                finding_type="missing_context",
+                claim_text="Cash remains a saved-review topic.",
+                evidence_refs=("trade_intent_summary",),
+                caveat_codes=("cash",),
+            ),
+            allow_role_note_topic_vocabulary=True,
+        )
+        == "private_leak_blocked"
+    )
 
 
 def test_p34a_live_provider_freeze_is_reproducible_with_fixed_inputs() -> None:
@@ -1272,3 +2128,75 @@ def test_p34a_t10_chain_metadata_freezes_into_provider_runs_and_readback() -> No
     assert [tuple(run.attempted_models) for run in frozen_runs] == attempted
     rendered = repr(round_tripped.model_dump(mode="python")).lower()
     assert "api_key" not in rendered and "prompt:" not in rendered
+
+
+def test_p34a_t18_category_gate_allows_mandated_scope_caveat_restatement() -> None:
+    # The deterministic scope caveats contain "limited" and "unknown" as plain
+    # English; a compliant risk-role restatement must not trip the bare check.
+    markdown = (
+        "Scope is limited to the selected portfolio context; "
+        "review account scope membership unknown."
+    )
+
+    assert (
+        validate_live_report_consistency(
+            markdown=markdown,
+            role_results=(_fresh_market_quote_freshness_result(),),
+        )
+        is None
+    )
+
+
+def test_p34a_t18_category_gate_allows_freshness_item_availability_statement() -> None:
+    # "X freshness: available" describes the freshness item's availability
+    # (a truthful envelope fact), not a freshness category; membership is
+    # checked against the token's own vocabulary class.
+    markdown = "Saved market quote freshness: available."
+
+    assert (
+        validate_live_report_consistency(
+            markdown=markdown,
+            role_results=(_fresh_market_quote_freshness_result(),),
+        )
+        is None
+    )
+
+
+def test_p34a_t18_category_gate_admits_label_derived_freshness_category() -> None:
+    # Envelope freshness fields carry display labels ("Manual quote entry");
+    # the allowed set derives the category token the same way the
+    # deterministic floor does, so truthful "freshness: manual" passes.
+    result = ToolResult(
+        tool_name="market_quote_freshness",
+        role_name="technical_analyst",
+        status="ok",
+        evidence_tier="public",
+        data_mode="public",
+        availability="available",
+        freshness="Manual quote entry",
+        evidence_refs=("market_quote_freshness",),
+        summary_payload={"summary": "Synthetic manual quote freshness."},
+    )
+
+    assert (
+        validate_live_report_consistency(
+            markdown="Market quote freshness: manual",
+            role_results=(result,),
+        )
+        is None
+    )
+
+
+def test_p34a_t18_category_gate_skips_colon_form_item_label_text() -> None:
+    # Table cells like "... freshness | Market quote ..." produce colon-form
+    # captures that are item labels, not category assertions; they are skipped
+    # while vocabulary-word misuse in the same cell still flags.
+    markdown = "| Saved market quote freshness | Market quote freshness: stale | None |"
+
+    assert (
+        validate_live_report_consistency(
+            markdown=markdown,
+            role_results=(_fresh_market_quote_freshness_result(),),
+        )
+        == "category_consistency_blocked"
+    )

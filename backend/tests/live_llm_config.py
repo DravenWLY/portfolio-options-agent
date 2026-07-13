@@ -14,10 +14,6 @@ from typing import MutableMapping
 
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 _PROJECT_DOTENV_PATH = _BACKEND_ROOT.parent / ".env"
-_DEFAULT_CONFIG_PATHS: tuple[Path, ...] = (
-    _BACKEND_ROOT / "config.local.live-llm.env",
-    _BACKEND_ROOT / "secrets" / "live-llm.env",
-)
 _LIVE_FLAG_KEYS: frozenset[str] = frozenset({"RUN_LIVE_LLM_TESTS", "POA_LLM_LIVE_TESTS"})
 _PROJECT_DOTENV_KEY_ALLOWLIST: frozenset[str] = frozenset({"GOOGLE_API_KEY", "OPENAI_API_KEY"})
 _ALLOWED_KEYS: frozenset[str] = frozenset(
@@ -39,11 +35,6 @@ _ALLOWED_KEYS: frozenset[str] = frozenset(
 def load_live_llm_test_config(environ: MutableMapping[str, str] | None = None) -> Path | None:
     """Load an optional gitignored live-test config into missing env keys only.
 
-    Supported default files, relative to ``backend``:
-
-    - ``config.local.live-llm.env``
-    - ``secrets/live-llm.env``
-
     ``POA_LIVE_LLM_TEST_CONFIG`` may point to another narrowly-scoped local
     config file. Generic ``.env`` files are intentionally rejected for explicit
     config paths.
@@ -57,10 +48,10 @@ def load_live_llm_test_config(environ: MutableMapping[str, str] | None = None) -
 
     env = environ if environ is not None else os.environ
     explicit_path = (env.get("POA_LIVE_LLM_TEST_CONFIG") or "").strip()
-    paths = (Path(explicit_path).expanduser(),) if explicit_path else _DEFAULT_CONFIG_PATHS
-    for path in paths:
+    if explicit_path:
+        path = Path(explicit_path).expanduser()
         if not path.exists():
-            continue
+            return None
         _reject_generic_env_path(path)
         values = _parse_config(path)
         for key, value in values.items():

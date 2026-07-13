@@ -55,6 +55,15 @@ def test_mock_provider_simulates_safe_partial_failure_metadata(status: str) -> N
     assert find_forbidden_keys(asdict(response), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS) == set()
 
 
+def test_mock_provider_can_return_safe_length_finish_signal() -> None:
+    provider = MockLLMProvider(finish_reason_by_role={"technical_analyst": "length"})
+
+    response = provider.complete(_request("technical_analyst"))
+
+    assert response.status == "ok"
+    assert response.finish_reason == "length"
+
+
 def test_mock_provider_rejects_prohibited_request_content() -> None:
     provider = MockLLMProvider()
     with pytest.raises(ValueError, match="prohibited advice"):

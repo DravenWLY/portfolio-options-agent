@@ -9,14 +9,27 @@ from importlib import import_module
 from typing import Protocol
 
 from app.services.agent_team.llm_clients.contracts import (
+    LLMProviderFinishReason,
     LLMProviderRequest,
     LLMProviderResponse,
     LLMProviderStatus,
 )
 
 
+@dataclass(frozen=True)
+class GoogleGeminiGeneration:
+    """Normalized Google generation content and an optional safe finish signal."""
+
+    content: str
+    finish_reason: LLMProviderFinishReason | None = None
+
+    def __post_init__(self) -> None:
+        if self.finish_reason not in (None, "length", "stop", "unknown"):
+            raise ValueError(f"unsupported Google finish reason: {self.finish_reason}")
+
+
 class GoogleGeminiClient(Protocol):
-    def generate(self, request: LLMProviderRequest) -> str:
+    def generate(self, request: LLMProviderRequest) -> str | GoogleGeminiGeneration:
         """Return generated text for a provider request."""
 
 
@@ -51,7 +64,13 @@ class GoogleGeminiLLMProvider:
 
         try:
             client = self._client or self._build_default_client()
-            content = client.generate(request)
+            generated = client.generate(request)
+            if isinstance(generated, GoogleGeminiGeneration):
+                content = generated.content
+                finish_reason = generated.finish_reason
+            else:
+                content = generated
+                finish_reason = None
             if not isinstance(content, str) or not content.strip():
                 return self._failure_response(request, status="invalid_response")
             return LLMProviderResponse(
@@ -63,6 +82,7 @@ class GoogleGeminiLLMProvider:
                 prompt_version=request.prompt_version,
                 content_markdown=content,
                 is_mock=False,
+                finish_reason=finish_reason,
                 tokens_in=None,
                 tokens_out=None,
                 estimated_cost=None,
@@ -118,13 +138,29 @@ class _GoogleGenAIClient:
         self._client = genai.Client(api_key=api_key)
         self._model = model
 
-    def generate(self, request: LLMProviderRequest) -> str:
+    def generate(self, request: LLMProviderRequest) -> GoogleGeminiGeneration:
         prompt = "\n\n".join(message.content for message in request.messages)
         response = self._client.models.generate_content(model=self._model, contents=prompt)
         text = getattr(response, "text", None)
         if not isinstance(text, str):
             raise GoogleGeminiProviderError(status="invalid_response")
-        return text
+        return GoogleGeminiGeneration(content=text, finish_reason=_google_finish_reason(response))
+
+
+def _google_finish_reason(response: object) -> LLMProviderFinishReason | None:
+    """Reduce provider-specific completion metadata to a safe truncation signal."""
+
+    candidates = getattr(response, "candidates", None)
+    if not isinstance(candidates, (list, tuple)) or not candidates:
+        return None
+    raw_finish_reason = str(getattr(candidates[0], "finish_reason", "") or "").strip().lower()
+    if not raw_finish_reason:
+        return None
+    if any(marker in raw_finish_reason for marker in ("length", "max_token", "max token", "token_limit")):
+        return "length"
+    if "stop" in raw_finish_reason:
+        return "stop"
+    return "unknown"
 
 
 def _safe_status(status: str) -> LLMProviderStatus:

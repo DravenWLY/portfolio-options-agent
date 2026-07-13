@@ -7,7 +7,7 @@ from tests.live_llm_config import load_live_llm_test_config
 
 
 def test_live_llm_config_loads_allowlisted_values_without_overriding_existing(tmp_path: Path) -> None:
-    config_path = tmp_path / "config.local.live-llm.env"
+    config_path = tmp_path / "live-llm-test.vars"
     config_path.write_text(
         "\n".join(
             [

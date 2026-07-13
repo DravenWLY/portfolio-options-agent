@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from app.services.agent_team.llm_clients.contracts import (
     AGENT_TEAM_ROLES,
+    LLMProviderFinishReason,
     LLMProviderRequest,
     LLMProviderResponse,
     LLMProviderStatus,
@@ -44,9 +45,11 @@ class MockLLMProvider:
         *,
         model: str = "mock-agent-team-v1",
         failure_status_by_role: dict[str, LLMProviderStatus] | None = None,
+        finish_reason_by_role: dict[str, LLMProviderFinishReason | None] | None = None,
     ) -> None:
         self.model = model
         self.failure_status_by_role = dict(failure_status_by_role or {})
+        self.finish_reason_by_role = dict(finish_reason_by_role or {})
 
     def complete(self, request: LLMProviderRequest) -> LLMProviderResponse:
         """Return a deterministic synthetic response or safe simulated failure."""
@@ -66,6 +69,7 @@ class MockLLMProvider:
             prompt_version=request.prompt_version,
             content_markdown=content,
             is_mock=True,
+            finish_reason=self.finish_reason_by_role.get(request.role_name),
             generated_at=datetime.now(UTC),
             tokens_in=0,
             tokens_out=0,

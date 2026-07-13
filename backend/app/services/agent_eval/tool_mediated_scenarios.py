@@ -307,7 +307,7 @@ class _ScenarioLiveProvider:
     def __init__(
         self,
         *,
-        content: str = "Live role context cites supplied evidence as background for manual review.",
+        content: str | None = None,
         status_by_role: dict[str, LLMProviderStatus] | None = None,
     ) -> None:
         self.content = content
@@ -338,7 +338,7 @@ class _ScenarioLiveProvider:
             provider=self.provider_name,
             model=self.model,
             prompt_version=request.prompt_version,
-            content_markdown=self.content,
+            content_markdown=self.content or _valid_live_report(request.role_name),
             is_mock=False,
             metadata={"safe_partial_output": "false"},
         )
@@ -364,6 +364,15 @@ class _ScenarioTimeoutLiveProvider(_ScenarioLiveProvider):
     def complete(self, request: LLMProviderRequest) -> LLMProviderResponse:
         self.calls.append(request)
         raise TimeoutError("synthetic scenario timeout")
+
+
+def _valid_live_report(role_name: str, *, injected_sentence: str | None = None) -> str:
+    sentence = injected_sentence or "Reviewed saved evidence is available as background context."
+    if role_name == "technical_analyst":
+        return f"{sentence} Freshness and availability categories remain saved context only."
+    if role_name == "risk_management_agent":
+        return f"{sentence} Re-verify the reviewed app context before comparing with current screens."
+    return f"{sentence} Public context absent from the saved evidence was not reviewed."
 
 
 TOOL_MEDIATED_SCENARIOS: tuple[ToolMediatedScenario, ...] = (
@@ -413,21 +422,27 @@ TOOL_MEDIATED_SCENARIOS: tuple[ToolMediatedScenario, ...] = (
     ToolMediatedScenario(
         name="live_provider_advice_fallback",
         build_evidence=_base_evidence,
-        live_provider_factory=lambda: _ScenarioUnsafeLiveProvider(content="You should buy this instrument."),
+        live_provider_factory=lambda: _ScenarioUnsafeLiveProvider(
+            content=_valid_live_report("risk_management_agent", injected_sentence="You should buy this instrument.")
+        ),
         expects_hard_block_flag="advice_wording_blocked",
         expects_provider_runs=True,
     ),
     ToolMediatedScenario(
         name="live_provider_metric_fallback",
         build_evidence=_base_evidence,
-        live_provider_factory=lambda: _ScenarioUnsafeLiveProvider(content="This invents a $1,200 target."),
+        live_provider_factory=lambda: _ScenarioUnsafeLiveProvider(
+            content=_valid_live_report("risk_management_agent", injected_sentence="This invents a $1,200 target.")
+        ),
         expects_hard_block_flag="invented_metric_blocked",
         expects_provider_runs=True,
     ),
     ToolMediatedScenario(
         name="live_provider_private_fallback",
         build_evidence=_base_evidence,
-        live_provider_factory=lambda: _ScenarioUnsafeLiveProvider(content="This references buying_power."),
+        live_provider_factory=lambda: _ScenarioUnsafeLiveProvider(
+            content=_valid_live_report("risk_management_agent", injected_sentence="This references buying_power.")
+        ),
         expects_hard_block_flag="private_leak_blocked",
         expects_provider_runs=True,
     ),

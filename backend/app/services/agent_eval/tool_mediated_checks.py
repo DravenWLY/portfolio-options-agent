@@ -29,6 +29,7 @@ from app.services.agent_eval.results import (
     EvalFinding,
 )
 from app.services.agent_team.llm_clients.contracts import (
+    LLM_PROVIDER_FORBIDDEN_VALUE_TOKENS,
     find_forbidden_string_values,
     find_prohibited_llm_phrases,
     find_secret_like_values,
@@ -49,6 +50,7 @@ SAFE_FLOW_VALUE_PATH_SUFFIXES = frozenset(
         ".summary_payload.supported_flow",
     }
 )
+FINAL_SYNTHESIS_DISPLAY_VALUE_TOKENS = frozenset({"cash", "holdings", "positions", "threshold"})
 
 
 def _finding(check: str, *, ok: bool, detail: str) -> EvalFinding:
@@ -154,11 +156,17 @@ def _matches_any_pattern(payload: object, patterns: tuple) -> bool:
 
 
 def _prompt_privacy_values_finding(payload: object) -> EvalFinding:
-    forbidden_paths = {
-        path
-        for path in find_forbidden_string_values(payload)
-        if not any(path.endswith(suffix) for suffix in SAFE_FLOW_VALUE_PATH_SUFFIXES)
-    }
+    forbidden_paths: set[str] = set()
+    for path in find_forbidden_string_values(payload):
+        if any(path.endswith(suffix) for suffix in SAFE_FLOW_VALUE_PATH_SUFFIXES):
+            continue
+        if path == "final_synthesis_markdown" and isinstance(payload, dict):
+            final_text = str(payload.get("final_synthesis_markdown") or "").lower()
+            private_tokens = LLM_PROVIDER_FORBIDDEN_VALUE_TOKENS - FINAL_SYNTHESIS_DISPLAY_VALUE_TOKENS
+            if any(token in final_text for token in private_tokens):
+                forbidden_paths.add(path)
+            continue
+        forbidden_paths.add(path)
     if forbidden_paths or find_secret_like_values(payload):
         return EvalFinding(
             check="prompt_privacy_values",

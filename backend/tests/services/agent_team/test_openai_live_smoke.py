@@ -6,9 +6,8 @@ This test is EXCLUDED from the default suite (``external``/``slow`` markers, see
 pytest.ini ``addopts``) AND skipped unless explicitly opted in via BOTH
 ``RUN_LIVE_LLM_TESTS=true`` (or legacy ``POA_LLM_LIVE_TESTS=1``) and the dedicated paid-usage acknowledgement
 ``POA_LLM_OPENAI_LIVE=1``, with ``OPENAI_API_KEY`` present. The opt-in values may
-come from the shell or from ``backend/config.local.live-llm.env`` /
-``backend/secrets/live-llm.env``. When ``RUN_LIVE_LLM_TESTS=true`` is already
-set, the test helper may also retrieve only the named ``OPENAI_API_KEY`` variable
+come from the shell. When ``RUN_LIVE_LLM_TESTS=true`` is already set, the test
+helper may also retrieve only the named ``OPENAI_API_KEY`` variable
 from the project ``.env``; it never loads broad app config from that file. The extra
 ``POA_LLM_OPENAI_LIVE`` gate ensures enabling the (free-tier) Gemini smoke never
 accidentally triggers a paid OpenAI call.

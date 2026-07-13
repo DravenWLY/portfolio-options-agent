@@ -16,10 +16,9 @@ Optional: POA_LLM_MODEL_CANDIDATES=<id1,id2,...> (max 4) activates the ordered
 same-provider model chain in the backend provider resolution; the frozen
 provider_runs then include model_chain_position and attempted_models.
 
-The opt-in values may also live in ``backend/config.local.live-llm.env`` or
-``backend/secrets/live-llm.env``. When ``RUN_LIVE_LLM_TESTS=true`` is already set,
-the test helper may retrieve only the named ``GOOGLE_API_KEY`` variable from the
-project ``.env``; it does not load broad app config from that file.
+When ``RUN_LIVE_LLM_TESTS=true`` is already set, the test helper may retrieve
+only the named ``GOOGLE_API_KEY`` variable from the project ``.env``; it does not
+load broad app config from that file.
 
 Run from ``backend`` against a disposable ``*_test`` database. Do not pass the
 key inline and do not run against real brokerage data.
@@ -47,6 +46,7 @@ from app.services.agent_team.llm_clients.contracts import (
 from app.services.agent_team.llm_clients.config import live_llm_tests_enabled
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.reports import agent_team_report as agent_team_report_service
+from tests.agent_team_report_artifacts import write_tool_mediated_saved_report_artifacts
 from tests.live_llm_config import load_live_llm_test_config
 
 
@@ -116,7 +116,7 @@ def test_route_backed_tool_mediated_live_report_freezes_and_reads_back_without_r
         headers={"X-User-Id": user_id},
         json={
             "supported_flow": "stock_buy",
-            "symbol": "XYZ",
+            "symbol": os.environ.get("POA_ROUTE_SMOKE_SYMBOL", "XYZ").strip().upper() or "XYZ",
             "quantity": "3",
             "price_assumption": "50",
             "portfolio_context_selection": {"mode": "latest_available"},
@@ -203,6 +203,10 @@ def test_route_backed_tool_mediated_live_report_freezes_and_reads_back_without_r
     assert list_response.status_code == 200
     assert detail_response.json()["agent_summary"] == summary
     assert list_response.json()[0]["agent_summary"] == summary
+    write_tool_mediated_saved_report_artifacts(
+        detail_response.json(),
+        label="route-backed-tool-mediated-live-smoke",
+    )
 
 
 def _create_synthetic_review_account(client: TestClient, db_session: Session) -> tuple[str, str]:

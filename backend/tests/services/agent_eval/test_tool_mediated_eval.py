@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -30,15 +31,20 @@ from app.services.agent_eval.tool_mediated_checks import (
 from app.services.agent_eval.tool_mediated_scenarios import (
     TOOL_MEDIATED_SCENARIOS,
     ToolMediatedScenario,
+    _valid_live_report,
     run_scenario,
 )
+from app.services.agent_team.auditing.live_report_gates import validate_live_report_consistency
+from app.services.agent_team.llm_clients.contracts import LLMProviderRequest, LLMProviderResponse
+from app.services.agent_team.tools import ToolResult
 from app.services.agent_team.tool_mediated_report import (
     RoleFinding,
     RoleFindingSet,
     build_tool_mediated_agent_team_summary,
     usable_content_by_role,
 )
-from app.schemas.reports import SavedAgentTeamSummaryRead
+from app.schemas.reports import SavedAgentTeamSummaryRead, SavedEvidenceSectionRead
+from tests.services.agent_team.test_tools import _evidence_package
 
 
 pytestmark = [pytest.mark.unit]
@@ -73,11 +79,81 @@ def _replace_role_refs(
     )
 
 
+class _EvalLiveProvider:
+    provider_name = "eval_live_provider"
+    model = "eval-live-model"
+
+    def __init__(self, content_by_role: dict[str, str]) -> None:
+        self.content_by_role = dict(content_by_role)
+        self.calls: list[LLMProviderRequest] = []
+
+    def complete(self, request: LLMProviderRequest) -> LLMProviderResponse:
+        self.calls.append(request)
+        return LLMProviderResponse(
+            request_id=request.request_id,
+            role_name=request.role_name,
+            status="ok",
+            provider=self.provider_name,
+            model=self.model,
+            prompt_version=request.prompt_version,
+            content_markdown=self.content_by_role.get(request.role_name, _valid_live_report(request.role_name)),
+            is_mock=False,
+        )
+
+
 def _unsafe_artifact_payload(summary: SavedAgentTeamSummaryRead, payload: dict[str, object]) -> SavedAgentTeamSummaryRead:
     unsafe = summary.model_copy(deep=True)
     assert unsafe.tool_run_artifact is not None
     unsafe.tool_run_artifact.tool_results[0].summary_payload = payload
     return unsafe
+
+
+def _technical_live_report_with_sentence(sentence: str) -> str:
+    return f"{sentence} Unavailable context remains not available."
+
+
+def test_p35_t7a_assumed_external_frozen_document_reconciles_after_purchase_total() -> None:
+    before_after = SavedEvidenceSectionRead(
+        section_key="before_after_portfolio_impact",
+        section_label="Before/after portfolio impact",
+        availability="available",
+        summary_label=(
+            "Trade impact uses a before-purchase portfolio total of $18,800 and an after-purchase "
+            "portfolio total of $29,000 using the synthetic reviewed snapshot."
+        ),
+        detail_labels=(
+            "Single-name/asset view: Row | Before $ | Before % | Trade Delta $ | After $ | After %.",
+            "Cash | $10,000 | 53.2% | $0 | $10,000 | 34.5%.",
+            "AAPL | $8,800 | 46.8% | $0 | $8,800 | 30.3%.",
+            "NVDA | $0 | 0.0% | +$10,200 | $10,200 | 35.2%.",
+            "Other | $0 | 0.0% | $0 | $0 | 0.0%.",
+            "Trade-impact narrative:",
+        ),
+        caveat_codes=("funding_shortfall_detected", "outside_funds_assumed"),
+        trade_impact_narrative_groups={
+            "proceed_statements": (
+                "This purchase equals 35.2% of the after-purchase portfolio total of $29,000.",
+                "The reviewed cash snapshot is short by $200 for this purchase; external funding was assumed for percentage math.",
+            ),
+            "not_reviewed_statement": "Not reviewed: fund holdings, taxes, and outside accounts.",
+            "verify_statement": "Verify current broker capacity.",
+        },
+    )
+    evidence = _evidence_package().model_copy(update={"before_after_portfolio_impact": before_after})
+
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+
+    document = summary.final_synthesis_markdown or ""
+    after_percents = (Decimal("34.5"), Decimal("30.3"), Decimal("35.2"), Decimal("0.0"))
+    assert sum(after_percents) == Decimal("100.0")
+    assert "$18,800" in document
+    assert "$29,000" in document
+    assert "$19,000" not in document
+    assert "short by $200" in document
+    assert "funding_shortfall_detected" not in document
 
 
 def test_ev_u1_usable_content_and_full_scenario_pass() -> None:
@@ -236,6 +312,100 @@ def test_ev4_repass_repair_remains_bounded_and_clean() -> None:
     assert summary.tool_run_artifact is not None
     assert summary.tool_run_artifact.auditor.repass_triggered is True
     assert "unsupported_claim" in summary.tool_run_artifact.auditor.dropped_claims
+
+
+@pytest.mark.parametrize(
+    ("content_by_role", "expected_flag", "blocked_text"),
+        (
+            (
+                {"technical_analyst": "### Missing required headings\nSaved context remains available."},
+                "structure_contract_blocked",
+                "missing required headings",
+            ),
+        (
+            {
+                "technical_analyst": _technical_live_report_with_sentence(
+                    "Saved market context had volume 12000, which was not supplied."
+                )
+            },
+            "numeric_consistency_blocked",
+            "12000",
+        ),
+        (
+            {
+                "technical_analyst": _technical_live_report_with_sentence(
+                    "The market quote freshness is designated as manual despite available evidence."
+                )
+            },
+            "category_consistency_blocked",
+            "designated as manual",
+        ),
+    ),
+)
+def test_p34a_t17_eval_matrix_live_gate_drops_are_clean(
+    content_by_role: dict[str, str],
+    expected_flag: str,
+    blocked_text: str,
+) -> None:
+    provider = _EvalLiveProvider(content_by_role)
+    summary = build_tool_mediated_agent_team_summary(
+        _scenario("full_available").build_evidence(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+    report = evaluate_tool_mediated_report(summary)
+
+    assert report.passed is True
+    assert summary.tool_run_artifact is not None
+    assert expected_flag in summary.tool_run_artifact.auditor.eval_flags
+    assert blocked_text not in repr(summary.model_dump(mode="json")).lower()
+
+
+def test_p34a_t17_eval_matrix_honest_gap_live_report_survives() -> None:
+    report_markdown = _technical_live_report_with_sentence("Saved market context remains not reviewed.")
+    provider = _EvalLiveProvider({"technical_analyst": report_markdown})
+
+    summary = build_tool_mediated_agent_team_summary(
+        _scenario("full_available").build_evidence(),
+        report_generated_at=datetime(2026, 6, 1, tzinfo=UTC),
+        llm_provider=provider,
+        live_provider_enabled=True,
+    )
+    report = evaluate_tool_mediated_report(summary)
+    technical = _role_summary(summary, "technical_analyst")
+
+    assert report.passed is True
+    assert technical.live_report_markdown == report_markdown
+    assert "category_consistency_blocked" not in technical.warning_codes
+
+
+def test_p35_t7c_d3_wrong_direction_echo_is_a_known_gate_residual() -> None:
+    opposite_direction_envelope = ToolResult(
+        tool_name="market_context_snapshot",
+        role_name="technical_analyst",
+        status="ok",
+        evidence_tier="public",
+        data_mode="public",
+        availability="available",
+        freshness="fresh",
+        evidence_refs=("public_market_context",),
+        summary_payload={
+            "relationships": {"close_vs_sma200": "below the 200-day average"},
+        },
+    )
+    mock_note = (
+        "Saved market context was above the 200-day average in the reviewed envelopes. "
+        "Freshness remains fresh."
+    )
+
+    # T7c intentionally adds no relationship-direction gate. This records the
+    # residual: 200 is structurally allowed and the category matches, so the
+    # wrong-direction echo currently survives for future gate work to catch.
+    assert validate_live_report_consistency(
+        markdown=mock_note,
+        role_results=(opposite_direction_envelope,),
+    ) is None
 
 
 @pytest.mark.parametrize(

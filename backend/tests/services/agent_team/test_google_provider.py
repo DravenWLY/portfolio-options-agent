@@ -2,7 +2,11 @@ import sys
 
 import pytest
 
-from app.services.agent_team.llm_clients.google import GoogleGeminiLLMProvider, GoogleGeminiProviderError
+from app.services.agent_team.llm_clients.google import (
+    GoogleGeminiGeneration,
+    GoogleGeminiLLMProvider,
+    GoogleGeminiProviderError,
+)
 from app.services.agent_team.llm_clients.contracts import LLMProviderMessage, LLMProviderRequest
 
 
@@ -10,11 +14,11 @@ pytestmark = [pytest.mark.unit]
 
 
 class FakeGoogleClient:
-    def __init__(self, result: str | Exception) -> None:
+    def __init__(self, result: str | GoogleGeminiGeneration | Exception) -> None:
         self.result = result
         self.calls = 0
 
-    def generate(self, request: LLMProviderRequest) -> str:
+    def generate(self, request: LLMProviderRequest) -> str | GoogleGeminiGeneration:
         self.calls += 1
         if isinstance(self.result, Exception):
             raise self.result
@@ -33,6 +37,24 @@ def test_google_provider_mocked_success_maps_to_ok_response() -> None:
     assert response.content_markdown == "Mocked Google analysis-only output."
     assert response.is_mock is False
     assert client.calls == 1
+
+
+def test_google_provider_preserves_only_safe_length_finish_signal() -> None:
+    provider = GoogleGeminiLLMProvider(
+        model="gemini-synthetic",
+        client=FakeGoogleClient(
+            GoogleGeminiGeneration(
+                content="Mocked Google analysis-only output.",
+                finish_reason="length",
+            )
+        ),
+    )
+
+    response = provider.complete(_request())
+
+    assert response.status == "ok"
+    assert response.finish_reason == "length"
+    assert "finish_reason" not in response.metadata
 
 
 @pytest.mark.parametrize(

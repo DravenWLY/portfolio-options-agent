@@ -3,8 +3,7 @@
 This test is EXCLUDED from the default suite (``external``/``slow`` markers, see
 pytest.ini ``addopts``) AND skipped unless explicitly opted in via
 ``RUN_LIVE_LLM_TESTS=true`` (or legacy ``POA_LLM_LIVE_TESTS=1``) with
-``GOOGLE_API_KEY`` present. The opt-in values may come from the shell or from
-``backend/config.local.live-llm.env`` / ``backend/secrets/live-llm.env``. When
+``GOOGLE_API_KEY`` present. The opt-in values may come from the shell. When
 ``RUN_LIVE_LLM_TESTS=true`` is already set, the test helper may also retrieve
 only the named ``GOOGLE_API_KEY`` variable from the project ``.env``; it never
 loads broad app config from that file. It makes a real Gemini call ONLY when

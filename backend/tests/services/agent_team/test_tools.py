@@ -1,4 +1,5 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -31,6 +32,7 @@ from app.services.agent_team.tools import (
     tool_result_for_disallowed_role,
     unavailable_tool_result,
 )
+from app.services.market_data.eod_history import market_context_execution_context_for_client
 
 
 pytestmark = [pytest.mark.unit]
@@ -608,7 +610,7 @@ def test_private_tier_rejected_for_result_audit_and_degraded(role_name: str) -> 
 # -- P33A registry/request/result execution ---------------------------------
 
 
-def test_default_tool_registry_contains_initial_p33a_allowlist() -> None:
+def test_default_tool_registry_contains_reviewed_p33a_and_p36_allowlist() -> None:
     registry = default_tool_registry()
 
     assert set(registry) == {
@@ -617,13 +619,31 @@ def test_default_tool_registry_contains_initial_p33a_allowlist() -> None:
         "deterministic_review_findings",
         "broker_snapshot_freshness",
         "market_quote_freshness",
+        "market_context_snapshot",
         "public_company_profile",
         "economic_awareness_context",
         "sec_recent_filings_metadata",
         "evidence_gap_inspector",
+        "calc_exposure_delta",
+        "calc_concentration_metrics",
+        "calc_cash_impact",
+        "calc_option_structure",
+        "calc_scenario_exposure",
+        "calc_price_range_position",
+        "calc_return_windows",
+        "calc_drawdown_stats",
+        "calc_volatility_stats",
+        "calc_ma_relationships",
+        "calc_financial_ratios",
+        "calc_period_change",
+        "calc_macro_series_change",
+        "calc_event_window",
+        "calc_freshness_inventory",
     }
     assert registry["trade_intent_summary"].evidence_tier == "public"
     assert registry["market_quote_freshness"].allows_role("technical_analyst")
+    assert registry["market_context_snapshot"].allows_role("risk_management_agent")
+    assert not registry["market_context_snapshot"].allows_role("news_analyst")
     assert registry["economic_awareness_context"].evidence_tier == "public"
     assert registry["economic_awareness_context"].allows_role("news_analyst")
     assert registry["sec_recent_filings_metadata"].evidence_tier == "public"
@@ -632,6 +652,12 @@ def test_default_tool_registry_contains_initial_p33a_allowlist() -> None:
     assert not registry["sec_recent_filings_metadata"].allows_role("fundamentals_analyst")
     assert registry["portfolio_scope_context"].evidence_tier == "agent_safe"
     assert not registry["portfolio_scope_context"].allows_role("fundamentals_analyst")
+    assert registry["calc_return_windows"].evidence_tier == "public"
+    assert registry["calc_return_windows"].allows_role("technical_analyst")
+    assert not registry["calc_return_windows"].allows_role("risk_management_agent")
+    assert registry["calc_financial_ratios"].allows_role("fundamentals_analyst")
+    assert registry["calc_macro_series_change"].allows_role("news_analyst")
+    assert registry["calc_freshness_inventory"].allows_role("news_analyst")
     assert all(entry.mode == "sync" for entry in registry.values())
     assert all(entry.is_mock is False for entry in registry.values())
 
@@ -1223,6 +1249,89 @@ def test_tool_result_rejects_raw_url_keys_and_values(summary_payload: dict[str, 
         )
 
 
+def test_fmp_eod_market_context_tool_returns_safe_indicator_values() -> None:
+    client = _FakeFmpEodClient(_linear_eod_rows(260))
+    context = market_context_execution_context_for_client(
+        client,
+        collected_at=datetime(2025, 9, 18, tzinfo=UTC),
+    )
+
+    result = execute_tool_request(
+        ToolRequest(tool_name="market_context_snapshot", requesting_role="technical_analyst"),
+        evidence=_evidence_package(),
+        market_context=context,
+    )
+
+    assert result.status == "ok"
+    assert result.evidence_tier == "public"
+    assert result.data_mode == "public"
+    assert result.source_key == "fmp_eod_history"
+    assert result.source_label == "FMP end-of-day data (internal evaluation use)"
+    assert result.evidence_refs == ("public_market_context",)
+    assert "eod_not_live_prices" in result.caveat_codes
+    assert result.summary_payload["symbol"] == "XYZ"
+    assert result.summary_payload["freshness_category"] == "fresh"
+    assert result.summary_payload["data_window"] == {
+        "row_count": 260,
+        "first_date": "2025-01-01",
+        "last_date": "2025-09-17",
+    }
+    assert result.summary_payload["values"]["latest_close"] == 260.0
+    assert result.summary_payload["values"]["high_52_week"] == 261.0
+    assert result.summary_payload["indicators"]["sma50"] == 235.5
+    assert result.summary_payload["relationships"]["close_vs_sma200"] == "above"
+    rendered = repr(result).lower()
+    for forbidden in ("api_key", "raw_payload", "source_url", "http://", "https://", "buying_power"):
+        assert forbidden not in rendered
+
+
+def test_fmp_eod_market_context_tool_marks_short_history_limited() -> None:
+    context = market_context_execution_context_for_client(
+        _FakeFmpEodClient(_linear_eod_rows(20)),
+        collected_at=datetime(2025, 1, 21, tzinfo=UTC),
+    )
+
+    result = execute_tool_request(
+        ToolRequest(tool_name="market_context_snapshot", requesting_role="risk_management_agent"),
+        evidence=_evidence_package(),
+        market_context=context,
+    )
+
+    assert result.status == "ok"
+    assert result.availability == "limited"
+    assert result.evidence_refs == ("public_market_context",)
+    assert "insufficient_history" in result.caveat_codes
+    assert "sma50" in result.summary_payload["omitted_indicators"]
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected_summary"),
+    (
+        ("disabled", "disabled"),
+        ("provider_failure", "unavailable"),
+        ("malformed_rows", "unavailable"),
+    ),
+)
+def test_fmp_eod_market_context_tool_degrades_without_citable_refs(scenario: str, expected_summary: str) -> None:
+    if scenario == "disabled":
+        context = market_context_execution_context_for_client(None, live_enabled=False)
+    elif scenario == "provider_failure":
+        context = market_context_execution_context_for_client(_FailingFmpEodClient())
+    else:
+        context = market_context_execution_context_for_client(_FakeFmpEodClient(({"date": "2026-01-01"},)))
+    result = execute_tool_request(
+        ToolRequest(tool_name="market_context_snapshot", requesting_role="technical_analyst"),
+        evidence=_evidence_package(),
+        market_context=context,
+    )
+
+    assert result.status == "unavailable"
+    assert result.availability == "not_available"
+    assert result.evidence_refs == ()
+    assert "fmp_eod_history_not_available" in result.caveat_codes
+    assert expected_summary in str(result.summary_payload["summary"]).lower()
+
+
 def test_tool_request_rejects_raw_url_values() -> None:
     with pytest.raises(ValueError):
         ToolRequest(
@@ -1244,3 +1353,53 @@ def test_registry_stays_offline_and_in_process(monkeypatch: pytest.MonkeyPatch) 
 
     assert result.status == "ok"
     assert result.provenance == "saved_evidence_package"
+
+
+class _FakeFmpEodClient:
+    def __init__(self, rows) -> None:
+        self.rows = tuple(rows)
+        self.calls: list[str] = []
+
+    def fetch_eod_history(self, *, symbol: str, limit: int = 260):
+        self.calls.append(symbol)
+        return self.rows
+
+
+class _FailingFmpEodClient:
+    def fetch_eod_history(self, *, symbol: str, limit: int = 260):
+        raise RuntimeError("raw provider exception should not surface")
+
+
+def _linear_eod_rows(count: int):
+    start = date(2025, 1, 1)
+    rows = []
+    for index in range(count):
+        close = Decimal(index + 1)
+        rows.append(
+            {
+                "date": (start + timedelta(days=index)).isoformat(),
+                "open": str(close),
+                "high": str(close + Decimal("1")),
+                "low": str(close - Decimal("1")),
+                "close": str(close),
+                "volume": 1001 + index,
+            }
+        )
+    return tuple(reversed(rows))
+
+
+def test_sec_raw_path_pattern_blocks_files_but_not_decimal_values() -> None:
+    # P34A-T18 field fix: decimal market values in v3 live reports are not
+    # raw SEC paths; real file/path shapes must remain blocked.
+    from app.services.agent_team.tools.envelopes import SEC_RAW_PATH_OR_FILE_RE
+
+    for allowed in ("close was 187.42 today", "distance 10.403397", "rsi14 45.72"):
+        assert SEC_RAW_PATH_OR_FILE_RE.search(allowed) is None
+    for blocked in (
+        "see 10k-2026.htm now",
+        "edgar/data/12345",
+        "/archives/edgar",
+        "report.txt attached",
+        "form4.xml here",
+    ):
+        assert SEC_RAW_PATH_OR_FILE_RE.search(blocked) is not None

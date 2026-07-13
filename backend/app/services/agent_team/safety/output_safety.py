@@ -43,7 +43,12 @@ GENERATED_METRIC_PATTERNS = (
 )
 
 
-def validate_llm_provider_output(payload: object, *, label: str) -> None:
+def validate_llm_provider_output(
+    payload: object,
+    *,
+    label: str,
+    allow_value_bearing_markdown: bool = False,
+) -> None:
     """Reject private data, advice/execution wording, and generated metric claims."""
 
     forbidden = find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
@@ -58,10 +63,29 @@ def validate_llm_provider_output(payload: object, *, label: str) -> None:
     if prohibited:
         blocked = ", ".join(sorted(prohibited))
         raise ValueError(f"{label} contains prohibited advice/execution phrase(s): {blocked}")
-    generated_metrics = _find_pattern_matches(payload, patterns=GENERATED_METRIC_PATTERNS)
+    metric_payload = _without_value_bearing_markdown(payload) if allow_value_bearing_markdown else payload
+    generated_metrics = _find_pattern_matches(metric_payload, patterns=GENERATED_METRIC_PATTERNS)
     if generated_metrics:
         blocked = ", ".join(sorted(generated_metrics))
         raise ValueError(f"{label} contains generated financial metric pattern(s): {blocked}")
+
+
+def _without_value_bearing_markdown(value: object) -> object:
+    """Exclude only P36-gated prose from the legacy generated-metric scan.
+
+    P36 role text is immediately subject to F-5 provenance and the remaining
+    v3 gate stack. Private identifiers, secrets, and advice are still scanned
+    above over the complete payload. Legacy outputs do not call this helper.
+    """
+
+    if isinstance(value, dict):
+        return {
+            str(key): "" if str(key) in {"content_markdown", "live_report_markdown"} else _without_value_bearing_markdown(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (tuple, list)):
+        return tuple(_without_value_bearing_markdown(item) for item in value)
+    return value
 
 
 def _find_phrase_matches(value: object, *, phrases: frozenset[str], prefix: str = "") -> set[str]:

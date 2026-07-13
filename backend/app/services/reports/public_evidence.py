@@ -23,10 +23,26 @@ from app.schemas.reports import (
     SavedPublicRoleInstrumentContextRead,
 )
 from app.services.agent_team.safety.report_output_safety import ROLE_ALLOWED_EVIDENCE_KEYS
+from app.services.reports.source_snapshots import (
+    FmpEodHistorySnapshotProvider,
+    FmpFundamentalsExecutionContext,
+    FmpFundamentalsSnapshotProvider,
+    FmpFundamentalsSourcePolicy,
+    FredMacroSeriesExecutionContext,
+    FredMacroSeriesSnapshotProvider,
+    FredMacroSeriesSourcePolicy,
+    UtcDayRequestBudget,
+)
+from app.services.market_data.eod_history import MarketContextExecutionContext, MarketContextPolicy
 
 _EDGAR_PROCESS_RATE_LIMIT_SECONDS = 1.0
 _EDGAR_PROCESS_RATE_LOCK = threading.Lock()
 _EDGAR_LAST_REQUEST_MONOTONIC = 0.0
+P36_EDGAR_DAILY_REQUEST_BUDGET = 60
+P36_EDGAR_MAX_REQUESTS_PER_SECOND = 1
+_EDGAR_PROCESS_DAILY_BUDGETS: dict[int, UtcDayRequestBudget] = {
+    P36_EDGAR_DAILY_REQUEST_BUDGET: UtcDayRequestBudget(P36_EDGAR_DAILY_REQUEST_BUDGET)
+}
 _SEC_RECENT_FILINGS_SOURCE_KEY = "sec_edgar_recent_filings"
 _SEC_RECENT_FILINGS_SOURCE_LABEL = "SEC EDGAR recent filing metadata - company events only"
 _SEC_RECENT_FILINGS_ATTRIBUTION = (
@@ -65,6 +81,8 @@ class EdgarCompanyProfileSourcePolicy:
     request_timeout_seconds: float = 5.0
     response_size_cap_bytes: int = 1_000_000
     request_budget_per_run: int = 2
+    daily_request_budget: int = P36_EDGAR_DAILY_REQUEST_BUDGET
+    max_requests_per_second: int = P36_EDGAR_MAX_REQUESTS_PER_SECOND
     source_key: str = "sec_edgar_submissions"
     source_label: str = "SEC EDGAR metadata - company profile only"
     rights_status: SavedPublicEvidenceRightsStatus = "reviewed"
@@ -89,6 +107,8 @@ class EdgarCompanyProfileSourcePolicy:
             and 0 < self.request_timeout_seconds <= 10
             and 1_000 <= self.response_size_cap_bytes <= 5_000_000
             and 2 <= self.request_budget_per_run <= 10
+            and 1 <= self.daily_request_budget <= P36_EDGAR_DAILY_REQUEST_BUDGET
+            and self.max_requests_per_second == P36_EDGAR_MAX_REQUESTS_PER_SECOND
         )
 
 
@@ -104,6 +124,8 @@ class EdgarRecentFilingsSourcePolicy:
     request_timeout_seconds: float = 5.0
     response_size_cap_bytes: int = 1_000_000
     request_budget_per_run: int = 2
+    daily_request_budget: int = P36_EDGAR_DAILY_REQUEST_BUDGET
+    max_requests_per_second: int = P36_EDGAR_MAX_REQUESTS_PER_SECOND
     max_recent_filings: int = 5
     source_key: str = _SEC_RECENT_FILINGS_SOURCE_KEY
     source_label: str = _SEC_RECENT_FILINGS_SOURCE_LABEL
@@ -124,6 +146,8 @@ class EdgarRecentFilingsSourcePolicy:
             and 0 < self.request_timeout_seconds <= 10
             and 1_000 <= self.response_size_cap_bytes <= 5_000_000
             and 2 <= self.request_budget_per_run <= 10
+            and 1 <= self.daily_request_budget <= P36_EDGAR_DAILY_REQUEST_BUDGET
+            and self.max_requests_per_second == P36_EDGAR_MAX_REQUESTS_PER_SECOND
             and 1 <= self.max_recent_filings <= 10
         )
 
@@ -186,7 +210,6 @@ class UrllibEdgarHttpTransport:
             },
         )
         try:
-            _respect_edgar_process_rate_limit()
             with urlrequest.urlopen(request, timeout=timeout_seconds) as response:
                 body = response.read(response_size_cap_bytes + 1)
         except (OSError, urlerror.URLError) as exc:
@@ -213,11 +236,14 @@ class EdgarCompanyProfileHttpClient:
         *,
         policy: EdgarCompanyProfileSourcePolicy,
         transport: EdgarHttpTransport | None = None,
+        daily_budget: UtcDayRequestBudget | None = None,
     ) -> None:
         if not policy.live_client_ready():
             raise EdgarSourceUnavailableError("SEC EDGAR live-client policy is not ready")
         self._policy = policy
         self._transport = transport or UrllibEdgarHttpTransport()
+        self._daily_budget = daily_budget or _edgar_process_daily_budget(policy.daily_request_budget)
+        self._enforce_process_rate_limit = isinstance(self._transport, UrllibEdgarHttpTransport)
         self._request_count = 0
 
     @property
@@ -236,8 +262,14 @@ class EdgarCompanyProfileHttpClient:
     def _fetch_json(self, endpoint_url: str) -> Mapping[str, Any]:
         if self._request_count >= self._policy.request_budget_per_run:
             raise EdgarSourceUnavailableError("SEC EDGAR request budget was exhausted")
+        try:
+            self._daily_budget.consume()
+        except Exception:
+            raise EdgarSourceUnavailableError("SEC EDGAR daily request budget was exhausted") from None
         self._request_count += 1
         assert self._policy.declared_user_agent is not None
+        if self._enforce_process_rate_limit:
+            _respect_edgar_process_rate_limit(max_requests_per_second=self._policy.max_requests_per_second)
         return self._transport.fetch_json(
             endpoint_url,
             user_agent=self._policy.declared_user_agent,
@@ -257,11 +289,14 @@ class EdgarRecentFilingsHttpClient:
         *,
         policy: EdgarRecentFilingsSourcePolicy,
         transport: EdgarHttpTransport | None = None,
+        daily_budget: UtcDayRequestBudget | None = None,
     ) -> None:
         if not policy.live_client_ready():
             raise EdgarSourceUnavailableError("SEC EDGAR recent-filings live-client policy is not ready")
         self._policy = policy
         self._transport = transport or UrllibEdgarHttpTransport()
+        self._daily_budget = daily_budget or _edgar_process_daily_budget(policy.daily_request_budget)
+        self._enforce_process_rate_limit = isinstance(self._transport, UrllibEdgarHttpTransport)
         self._request_count = 0
 
     @property
@@ -280,8 +315,14 @@ class EdgarRecentFilingsHttpClient:
     def _fetch_json(self, endpoint_url: str) -> Mapping[str, Any]:
         if self._request_count >= self._policy.request_budget_per_run:
             raise EdgarSourceUnavailableError("SEC EDGAR request budget was exhausted")
+        try:
+            self._daily_budget.consume()
+        except Exception:
+            raise EdgarSourceUnavailableError("SEC EDGAR daily request budget was exhausted") from None
         self._request_count += 1
         assert self._policy.declared_user_agent is not None
+        if self._enforce_process_rate_limit:
+            _respect_edgar_process_rate_limit(max_requests_per_second=self._policy.max_requests_per_second)
         return self._transport.fetch_json(
             endpoint_url,
             user_agent=self._policy.declared_user_agent,
@@ -533,6 +574,12 @@ def build_public_evidence_projection(
     edgar_client: EdgarCompanyProfileClient | None = None,
     edgar_recent_filings_policy: EdgarRecentFilingsSourcePolicy | None = None,
     edgar_recent_filings_client: EdgarRecentFilingsClient | None = None,
+    fmp_fundamentals_policy: FmpFundamentalsSourcePolicy | None = None,
+    fmp_fundamentals_context: FmpFundamentalsExecutionContext | None = None,
+    fmp_eod_history_policy: MarketContextPolicy | None = None,
+    fmp_eod_history_context: MarketContextExecutionContext | None = None,
+    fred_macro_series_policy: FredMacroSeriesSourcePolicy | None = None,
+    fred_macro_series_context: FredMacroSeriesExecutionContext | None = None,
 ) -> SavedPublicEvidencePackageRead:
     """Build the default generation-time public evidence projection."""
 
@@ -542,26 +589,51 @@ def build_public_evidence_projection(
     else:
         public_evidence = NoReviewedPublicEvidenceProvider().snapshot(request)
 
-    if edgar_recent_filings_policy is None:
-        return public_evidence
+    if edgar_recent_filings_policy is not None:
+        events = EdgarRecentFilingsProvider(
+            client=edgar_recent_filings_client,
+            policy=edgar_recent_filings_policy,
+        ).recent_filings_section(symbol_or_underlying)
+        public_evidence = _attach_public_snapshot_section(
+            public_evidence,
+            field_name="public_events_calendar",
+            section=events,
+        )
 
-    events = EdgarRecentFilingsProvider(
-        client=edgar_recent_filings_client,
-        policy=edgar_recent_filings_policy,
-    ).recent_filings_section(symbol_or_underlying)
-    mode = (
-        "provider_reference"
-        if public_evidence.public_evidence_mode == "provider_reference"
-        or events.availability in {"available", "limited"}
-        else "not_reviewed"
-    )
-    return public_evidence.model_copy(
-        update={
-            "public_evidence_mode": mode,
-            "public_events_calendar": events,
-            "limitations": _public_combined_limitations(public_evidence, events),
-        }
-    )
+    if fmp_fundamentals_policy is not None:
+        fundamentals = FmpFundamentalsSnapshotProvider(
+            policy=fmp_fundamentals_policy,
+            context=fmp_fundamentals_context,
+        ).section(symbol_or_underlying)
+        public_evidence = _attach_public_snapshot_section(
+            public_evidence,
+            field_name="public_fundamentals_snapshot",
+            section=fundamentals,
+        )
+
+    if fmp_eod_history_policy is not None:
+        eod_history = FmpEodHistorySnapshotProvider(
+            policy=fmp_eod_history_policy,
+            context=fmp_eod_history_context,
+        ).section(symbol_or_underlying)
+        public_evidence = _attach_public_snapshot_section(
+            public_evidence,
+            field_name="public_market_context",
+            section=eod_history,
+        )
+
+    if fred_macro_series_policy is not None:
+        fred_series = FredMacroSeriesSnapshotProvider(
+            policy=fred_macro_series_policy,
+            context=fred_macro_series_context,
+        ).section()
+        public_evidence = _attach_public_snapshot_section(
+            public_evidence,
+            field_name="fred_macro_series_snapshot",
+            section=fred_series,
+        )
+
+    return public_evidence
 
 
 _PUBLIC_ROLE_SECTION_KEYS: dict[AgentTeamPublicRoleName, tuple[str, ...]] = {
@@ -596,6 +668,7 @@ def build_public_role_evidence_projection(
         section_key
         for section_key in _PUBLIC_ROLE_SECTION_KEYS[role_name]
         if section_key in ROLE_ALLOWED_EVIDENCE_KEYS[role_name]
+        and _section_is_enabled_for_current_role_projection(getattr(public_evidence, section_key))
     )
     sections = tuple(getattr(public_evidence, section_key) for section_key in allowed_section_keys)
     citable_section_keys = tuple(
@@ -612,6 +685,12 @@ def build_public_role_evidence_projection(
         citable_section_keys=citable_section_keys,
         degrade_reason=_public_projection_degrade_reason(sections, citable_section_keys),
     )
+
+
+def _section_is_enabled_for_current_role_projection(section: SavedPublicEvidenceSectionRead) -> bool:
+    """Keep T4B frozen snapshots out of role/report behavior until T4C enables them."""
+
+    return section.source_key != "fmp_reported_statement_facts"
 
 
 def _public_projection_degrade_reason(sections: tuple[object, ...], citable_section_keys: tuple[str, ...]) -> str | None:
@@ -656,8 +735,21 @@ def _payload_size_exceeds_cap(payload: Mapping[str, Any], cap_bytes: int) -> boo
     return len(repr(payload).encode("utf-8")) > cap_bytes
 
 
-def _respect_edgar_process_rate_limit() -> None:
+def _edgar_process_daily_budget(daily_limit: int) -> UtcDayRequestBudget:
+    """Return the process-wide operational counter for one configured EDGAR limit."""
+
+    with _EDGAR_PROCESS_RATE_LOCK:
+        budget = _EDGAR_PROCESS_DAILY_BUDGETS.get(daily_limit)
+        if budget is None:
+            budget = UtcDayRequestBudget(daily_limit)
+            _EDGAR_PROCESS_DAILY_BUDGETS[daily_limit] = budget
+        return budget
+
+
+def _respect_edgar_process_rate_limit(*, max_requests_per_second: int = P36_EDGAR_MAX_REQUESTS_PER_SECOND) -> None:
     global _EDGAR_LAST_REQUEST_MONOTONIC
+    if max_requests_per_second != P36_EDGAR_MAX_REQUESTS_PER_SECOND:
+        raise EdgarSourceUnavailableError("SEC EDGAR rate limit policy was invalid")
     with _EDGAR_PROCESS_RATE_LOCK:
         now = time.monotonic()
         elapsed = now - _EDGAR_LAST_REQUEST_MONOTONIC
@@ -981,3 +1073,26 @@ def _public_combined_limitations(
     elif events.availability == "not_available":
         items.append("SEC EDGAR recent filing metadata was unavailable for this saved evidence package.")
     return tuple(dict.fromkeys(items))
+
+
+def _attach_public_snapshot_section(
+    public_evidence: SavedPublicEvidencePackageRead,
+    *,
+    field_name: str,
+    section: SavedPublicEvidenceSectionRead,
+) -> SavedPublicEvidencePackageRead:
+    """Attach one normalized section without retaining or reusing raw source data."""
+
+    mode = (
+        "provider_reference"
+        if public_evidence.public_evidence_mode == "provider_reference"
+        or section.availability in {"available", "limited"}
+        else "not_reviewed"
+    )
+    return public_evidence.model_copy(
+        update={
+            "public_evidence_mode": mode,
+            field_name: section,
+            "limitations": tuple(dict.fromkeys((*public_evidence.limitations, *section.limitations))),
+        }
+    )

@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+import json
 import re
+from time import monotonic
 from typing import Callable, Literal
 
 from app.schemas.reports import (
@@ -30,6 +32,7 @@ from app.services.agent_team.llm_clients.contracts import (
     find_forbidden_string_values,
     find_prohibited_llm_phrases,
     find_secret_like_values,
+    register_static_system_prompts,
 )
 from app.services.agent_team.safety.output_safety import validate_llm_provider_output
 from app.services.agent_team.llm_clients.factory import LLMProviderResolution
@@ -50,21 +53,148 @@ from app.services.agent_team.tools import (
     ToolRegistryEntry,
     ToolRequest,
     ToolResult,
+    blocked_tool_result,
     default_tool_registry,
     execute_tool_request,
     validate_tool_payload,
 )
+from app.services.market_data.eod_history import (
+    MarketContextExecutionContext,
+    default_market_context_execution_context,
+)
 from app.services.privacy import find_forbidden_keys
 from app.services.reports.agent_team_report import _deterministic_draft_summary, _validate_or_fallback
+from app.services.reports.display_labels import (
+    FACT_DISPLAY_LABELS,
+    display_label_for_code,
+    display_label_for_section,
+    display_labels_for_codes,
+    find_internal_display_tokens,
+    replace_internal_display_tokens,
+    render_display_list,
+)
 from app.services.reports.public_evidence import build_public_role_evidence_projection
 
 
 
 from app.services.agent_team.orchestration.models import *  # noqa: F401,F403
-from app.services.agent_team.auditing.evidence_auditor import (
-    audit_findings,
-    _hard_block_flag,
+from app.services.agent_team.auditing.evidence_auditor import audit_findings
+from app.services.agent_team.auditing.live_report_gates import (
+    freshness_category_from_label,
+    prompt_fact_labels_for_tool_result,
 )
+from app.services.agent_team.auditing.v3_value_gates import (
+    P36_ARTIFACT_SCHEMA_VERSION,
+    P36_ROLE_PROMPT_VERSION,
+)
+from app.services.agent_team.orchestration.p36_risk_prompt import P36_RISK_SYSTEM_PROMPT
+
+LIVE_ROLE_SYSTEM_PROMPT_TEMPLATE = (
+    "You are {role_display_name} on a read-only portfolio review team. A\n"
+    "deterministic system has already written every number, table, and threshold\n"
+    "in this report. You add exactly one short note of sentence-level context on\n"
+    "top of it. Your note answers one question only: what would a manual reviewer\n"
+    "acting right now overlook in the saved evidence?\n"
+    "\n"
+    "{role_block}\n"
+    "\n"
+    "Output shape: exactly one note of two to four plain-language sentences.\n"
+    "Plain prose only — no headings, no tables, no lists, no bullets, no field\n"
+    "names, no code words, no words joined with underscores. When something is\n"
+    "absent, say \"not reviewed\" or \"not available\" in plain words; caveat codes\n"
+    "are not categories.\n"
+    "\n"
+    "Numbers: either copy a number character-for-character from a supplied\n"
+    "envelope value, or write no number at all. Never compute, convert,\n"
+    "aggregate, estimate, round, or combine values into a new number. Do not\n"
+    "write dollar signs or percent signs. Use freshness and availability words\n"
+    "only exactly as the envelopes categorize each item.\n"
+    "\n"
+    "Never name the reviewed instrument, the account, or any user-specific\n"
+    "label. Never describe the size of the portfolio, a position, exposure,\n"
+    "allocation, or cash — not in digits, not in words, not by comparison.\n"
+    "Describe saved evidence only: no advice, no action instructions other than\n"
+    "plain verification steps, no urgency, no ranking, no predictions, no target\n"
+    "prices, no support or resistance levels, no filing interpretation, no macro\n"
+    "interpretation, no likelihood or probability claims, no return, payout, or\n"
+    "break-even figures, no verdicts, no links."
+)
+
+LIVE_ROLE_PROMPT_BLOCKS: dict[str, str] = {
+    "technical_analyst": (
+        "Your note appears under the report's \"Market context\" heading, directly\n"
+        "below a deterministic table of saved end-of-day values for the reviewed\n"
+        "symbol. Your expertise is reading saved price context: where the latest\n"
+        "close sits in the saved 52-week range and relative to its saved moving\n"
+        "averages, using only the relationship labels and values already in your\n"
+        "envelopes, such as \"above the 200-day average\". Connect two or three of\n"
+        "those saved relationships into one plain observation that a reviewer\n"
+        "glancing only at today's price would miss, and state the freshness category\n"
+        "of the saved values exactly as your envelopes give it. Do not describe\n"
+        "trends continuing, momentum building, or what prices may do next."
+    ),
+    "risk_management_agent": (
+        "Your note appears under the report's \"Risk and scope notes\" heading, below\n"
+        "a deterministic list of saved caveats and scope limits. Your expertise is\n"
+        "judging which saved caveats most affect trust in this review's inputs. Pick\n"
+        "the one or two caveats from your envelopes that a reviewer would most\n"
+        "regret overlooking — for example that holdings figures come from a saved\n"
+        "sync rather than a live connection, or that quote freshness is manual — and\n"
+        "say in plain words what each one means for reading this report. Your\n"
+        "envelopes carry no numeric values, so your note contains no numbers. End\n"
+        "with one plain verification step in the imperative, such as \"re-verify the\n"
+        "exposure math at your broker before relying on it\"."
+    ),
+    "fundamentals_analyst": (
+        "Your note appears under the report's \"Company context\" heading, below a\n"
+        "deterministic summary of which public company facts were reviewed. Your\n"
+        "expertise is naming what reviewed public company context is present and\n"
+        "what is absent, using only the profile facts, snapshot categories, and\n"
+        "freshness categories in your envelopes. Connect that presence or absence\n"
+        "into one plain observation about what a reviewer relying on price alone\n"
+        "would miss. Describe what was reviewed or not reviewed only; do not\n"
+        "evaluate the company or interpret what any fact means for it."
+    ),
+    "news_analyst": (
+        "Your note appears under the report's \"Events and filings context\" heading,\n"
+        "below a deterministic list of reviewed filing and release metadata. Your\n"
+        "expertise is reading that metadata trail: which filing form types, filing\n"
+        "dates, release names, and release dates exist in the saved evidence, and\n"
+        "which context is absent, using only the metadata in your envelopes. Connect\n"
+        "that presence or absence into one plain observation about what a reviewer\n"
+        "would miss by not checking the public record. Metadata only: do not\n"
+        "describe, guess at, or interpret the contents of any filing or release."
+    ),
+}
+
+
+def _live_role_prompt_block(role_name: str) -> str:
+    """Return the approved role prompt block or fail closed for every unmapped role."""
+
+    try:
+        return LIVE_ROLE_PROMPT_BLOCKS[role_name]
+    except KeyError as exc:
+        raise ValueError(f"unmapped live role prompt block: {role_name}") from exc
+
+
+def _render_live_role_system_prompt(role_name: str) -> str:
+    role_block = _live_role_prompt_block(role_name)
+    role = role_definition(role_name)  # type: ignore[arg-type]
+    return LIVE_ROLE_SYSTEM_PROMPT_TEMPLATE.format(
+        role_display_name=role.display_name,
+        role_block=role_block,
+    )
+
+
+LIVE_ROLE_SYSTEM_PROMPTS = frozenset(
+    _render_live_role_system_prompt(role_name) for role_name in LIVE_ROLE_PROMPT_BLOCKS
+)
+register_static_system_prompts(LIVE_ROLE_SYSTEM_PROMPTS)
+
+# P35 keeps the public-role blocks registered for reviewed future activation,
+# but only Technical and Risk are live-enabled on the legacy connective path.
+# P36 Risk uses its own branch below and does not consult this allowlist.
+LEGACY_LIVE_ROLE_ALLOWLIST = frozenset({"technical_analyst", "risk_management_agent"})
 
 
 
@@ -161,9 +291,12 @@ def run_tool_mediated_agent_team(
     role_finding_override: Callable[[str, RoleFindingSet], RoleFindingSet] | None = None,
     llm_provider: LLMProvider | None = None,
     live_provider_enabled: bool = False,
+    p36_risk_live_enabled: bool = False,
+    market_context: MarketContextExecutionContext | None = None,
 ) -> ToolMediatedRunState:
     catalog = build_evidence_catalog(evidence, registry)
     plan = build_planner_plan(catalog)
+    active_market_context = market_context or default_market_context_execution_context()
     tool_results: list[ToolResult] = []
     by_role: dict[str, tuple[ToolResult, ...]] = {}
     for role_plan in plan.role_plan:
@@ -173,27 +306,73 @@ def run_tool_mediated_agent_team(
                 ToolRequest(tool_name=planned.tool_name, requesting_role=role_plan.role_name, args=planned.args),
                 evidence=evidence,
                 registry=registry,
+                market_context=active_market_context,
             )
             if role_plan.role_name in PUBLIC_ANALYST_ROLES and result.evidence_tier == "agent_safe":
                 result = execute_tool_request(
                     ToolRequest(tool_name="not_allowed", requesting_role=role_plan.role_name),
                     evidence=evidence,
                     registry=registry,
+                    market_context=active_market_context,
                 )
             role_results.append(result)
             tool_results.append(result)
         by_role[role_plan.role_name] = tuple(role_results)
+
+    if p36_risk_live_enabled:
+        # The legacy P33A planner has a smaller global cap and can starve the
+        # last role. P36 Risk receives this fixed, reviewed envelope floor
+        # before it enters its own bounded calculation loop.
+        risk_results = list(by_role.get("risk_management_agent", ()))
+        present_tools = {result.tool_name for result in risk_results}
+        for tool_name in P36_RISK_BASELINE_TOOLS:
+            if tool_name in present_tools:
+                continue
+            result = execute_tool_request(
+                ToolRequest(tool_name=tool_name, requesting_role="risk_management_agent"),
+                evidence=evidence,
+                registry=registry,
+                market_context=active_market_context,
+            )
+            risk_results.append(result)
+            tool_results.append(result)
+        by_role["risk_management_agent"] = tuple(risk_results)
 
     raw_findings = tuple(
         build_role_findings(role, by_role.get(role, ()), evidence) for role in AGENT_TEAM_ROLES if role != "portfolio_manager_agent"
     )
     provider_mode = PROVIDER_MODE
     provider_runs: list[ProviderRunMeta] = []
-    if live_provider_enabled and llm_provider is not None:
+    if p36_risk_live_enabled and llm_provider is not None:
+        provider_mode = LIVE_PROVIDER_MODE
+        p36_findings: list[RoleFindingSet] = []
+        for finding in raw_findings:
+            if finding.role_name != "risk_management_agent":
+                p36_findings.append(finding)
+                continue
+            live_finding, loop_results, loop_runs = _run_p36_risk_loop(
+                finding,
+                by_role.get("risk_management_agent", ()),
+                evidence=evidence,
+                registry=registry,
+                provider=llm_provider,
+                market_context=active_market_context,
+            )
+            p36_findings.append(live_finding)
+            if loop_results:
+                by_role["risk_management_agent"] = (*by_role.get("risk_management_agent", ()), *loop_results)
+                tool_results.extend(loop_results)
+            provider_runs.extend(loop_runs)
+        raw_findings = tuple(p36_findings)
+    elif live_provider_enabled and llm_provider is not None:
         provider_mode = LIVE_PROVIDER_MODE
         live_findings: list[RoleFindingSet] = []
         for finding in raw_findings:
-            if _sec_event_finding_stays_deterministic(finding) or _fred_economic_finding_stays_deterministic(finding):
+            if (
+                finding.role_name not in LEGACY_LIVE_ROLE_ALLOWLIST
+                or _sec_event_finding_stays_deterministic(finding)
+                or _fred_economic_finding_stays_deterministic(finding)
+            ):
                 live_findings.append(finding)
                 continue
             live_result = _live_provider_role_findings(
@@ -208,14 +387,20 @@ def run_tool_mediated_agent_team(
     if role_finding_override is not None:
         raw_findings = tuple(role_finding_override(finding.role_name, finding) for finding in raw_findings)
     received = _received_refs_by_role(by_role)
-    audit = audit_findings(raw_findings, by_role, received)
+    audit = audit_findings(raw_findings, by_role, received, p36_risk_mode=p36_risk_live_enabled)
     audited_findings = audit[1]
     auditor = audit[0]
     open_questions = _open_questions_from_contradictions(auditor.contradictions)
 
     if auditor.repass_triggered and role_finding_override is not None:
         repass_findings = tuple(role_finding_override(finding.role_name, finding) for finding in audited_findings)
-        repass_auditor, audited_findings = audit_findings(repass_findings, by_role, received, repass=True)
+        repass_auditor, audited_findings = audit_findings(
+            repass_findings,
+            by_role,
+            received,
+            repass=True,
+            p36_risk_mode=p36_risk_live_enabled,
+        )
         auditor = AuditorRecord(
             audit_version=AUDIT_VERSION,
             role_verdicts=repass_auditor.role_verdicts,
@@ -257,6 +442,246 @@ def build_role_findings(
     )
 
 
+P36_RISK_CALC_TOOLS = frozenset(
+    {
+        "calc_exposure_delta",
+        "calc_concentration_metrics",
+        "calc_cash_impact",
+        "calc_option_structure",
+        "calc_scenario_exposure",
+        "calc_freshness_inventory",
+    }
+)
+P36_RISK_CALC_TOOL_IDS = {
+    "C1": "calc_exposure_delta",
+    "C2": "calc_concentration_metrics",
+    "C3": "calc_cash_impact",
+    "C4": "calc_option_structure",
+    "C5": "calc_scenario_exposure",
+    "C15": "calc_freshness_inventory",
+}
+P36_RISK_BASELINE_TOOLS = (
+    "trade_intent_summary",
+    "portfolio_scope_context",
+    "deterministic_review_findings",
+    "broker_snapshot_freshness",
+    "market_quote_freshness",
+    "evidence_gap_inspector",
+)
+# These aliases make the Risk-only loop readable while keeping the Tier 1
+# configuration in orchestration.models for the later multi-role run.
+P36_RISK_MAX_ITERATIONS = P36_RISK_MAX_PROVIDER_CALLS
+
+
+def _run_p36_risk_loop(
+    deterministic: RoleFindingSet,
+    initial_results: tuple[ToolResult, ...],
+    *,
+    evidence: SavedEvidencePackageRead,
+    registry: dict[str, ToolRegistryEntry],
+    provider: LLMProvider,
+    market_context: MarketContextExecutionContext,
+) -> tuple[RoleFindingSet, tuple[ToolResult, ...], tuple[ProviderRunMeta, ...]]:
+    """Run the bounded, backend-mediated P36 Risk loop without tool bindings."""
+
+    if deterministic.role_status == "skipped" or not deterministic.findings:
+        return deterministic, (), ()
+    evidence_refs = _ordered_refs(_union_refs(deterministic.findings))
+    if not evidence_refs:
+        return deterministic, (), ()
+
+    loop_results: list[ToolResult] = []
+    provider_runs: list[ProviderRunMeta] = []
+    consecutive_refusals = 0
+    reserved_tokens = 0
+    started_at = monotonic()
+    provider_call_cap = min(P36_RISK_MAX_ITERATIONS, P36_LLM_CALLS_HARD_CAP)
+    tool_request_cap = min(P36_RISK_MAX_TOOL_REQUESTS, P36_TOOL_REQUESTS_HARD_CAP)
+    for iteration in range(1, provider_call_cap + 1):
+        if monotonic() - started_at > P36_RISK_WALL_CLOCK_SECONDS:
+            return _live_provider_fallback(deterministic, "unavailable"), tuple(loop_results), tuple(provider_runs)
+        role_results = (*initial_results, *loop_results)
+        request: LLMProviderRequest | None = None
+        try:
+            request = _p36_risk_provider_request(
+                role_results,
+                evidence_refs=evidence_refs,
+                provider=provider,
+                iteration=iteration,
+            )
+            reserved_tokens += request.max_tokens
+            if reserved_tokens > P36_RISK_TOKEN_CEILING:
+                return _live_provider_fallback(deterministic, "safety_fallback"), tuple(loop_results), tuple(provider_runs)
+            response = provider.complete(request)
+            response_payload = _provider_response_payload(response)
+            provider_runs.append(_provider_run_meta(response_payload, fallback_request=request))
+            status = str(response_payload.get("status") or "failed")
+            if status != "ok" or response_payload.get("finish_reason") == "length":
+                return _live_provider_fallback(deterministic, "unavailable"), tuple(loop_results), tuple(provider_runs)
+            content = str(response_payload.get("content_markdown") or "").strip()
+            parsed = _parse_p36_risk_response(content)
+            if parsed is None:
+                loop_results.append(
+                    blocked_tool_result(
+                        tool_name="calc_request_refused",
+                        role_name="risk_management_agent",
+                        evidence_tier="agent_safe",
+                    )
+                )
+                consecutive_refusals += 1
+                if consecutive_refusals >= 2:
+                    return _live_provider_fallback(
+                        deterministic,
+                        "safety_fallback",
+                        eval_flag="live_provider_validation_failed",
+                    ), tuple(loop_results), tuple(provider_runs)
+                continue
+            tool_requests, section_markdown = parsed
+            if section_markdown is not None:
+                return (
+                    RoleFindingSet(
+                        role_name="risk_management_agent",
+                        role_status="completed",
+                        findings=deterministic.findings,
+                        warning_codes=tuple(dict.fromkeys((*deterministic.warning_codes, "live_provider_reasoning_used"))),
+                        live_report_markdown=section_markdown,
+                    ),
+                    tuple(loop_results),
+                    tuple(provider_runs),
+                )
+            if iteration == provider_call_cap:
+                return _live_provider_fallback(deterministic, "safety_fallback"), tuple(loop_results), tuple(provider_runs)
+            executed = 0
+            for raw_request in tool_requests:
+                if len(loop_results) >= tool_request_cap:
+                    return _live_provider_fallback(deterministic, "safety_fallback"), tuple(loop_results), tuple(provider_runs)
+                validated = _validate_p36_risk_calc_request(raw_request, registry=registry)
+                if validated is None:
+                    tool_name = str(raw_request.get("tool_id") if isinstance(raw_request, dict) else "calc_request_refused")
+                    loop_results.append(
+                        blocked_tool_result(
+                            tool_name=tool_name,
+                            role_name="risk_management_agent",
+                            evidence_tier="agent_safe",
+                        )
+                    )
+                    continue
+                loop_results.append(
+                    execute_tool_request(
+                        validated,
+                        evidence=evidence,
+                        registry=registry,
+                        market_context=market_context,
+                    )
+                )
+                executed += 1
+            consecutive_refusals = consecutive_refusals + 1 if executed == 0 else 0
+            if consecutive_refusals >= 2:
+                return _live_provider_fallback(deterministic, "safety_fallback"), tuple(loop_results), tuple(provider_runs)
+        except TimeoutError:
+            return _live_provider_fallback(deterministic, "provider_timeout"), tuple(loop_results), tuple(provider_runs)
+        except (TypeError, ValueError, AttributeError, json.JSONDecodeError):
+            return _live_provider_fallback(
+                deterministic,
+                "safety_fallback",
+                eval_flag="live_provider_validation_failed",
+            ), tuple(loop_results), tuple(provider_runs)
+    return _live_provider_fallback(deterministic, "safety_fallback"), tuple(loop_results), tuple(provider_runs)
+
+
+def _p36_risk_provider_request(
+    role_results: tuple[ToolResult, ...],
+    *,
+    evidence_refs: tuple[str, ...],
+    provider: LLMProvider,
+    iteration: int,
+) -> LLMProviderRequest:
+    envelopes = tuple(_prompt_tool_result_envelope(result) for result in role_results)
+    messages = (
+        LLMProviderMessage(role="system", content=P36_RISK_SYSTEM_PROMPT),
+        LLMProviderMessage(
+            role="user",
+            content=repr(
+                {
+                    "iteration": iteration,
+                    "allowed_evidence_refs": evidence_refs,
+                    "tool_result_envelopes": envelopes,
+                    "available_calculation_ids": tuple(P36_RISK_CALC_TOOL_IDS),
+                    "response_contract": (
+                        "Return either JSON object {'tool_requests': [{'tool_id': <approved calculation ID>, "
+                        "'args': {}}]} or the final markdown analysis section. Tool arguments may use only "
+                        "the enum scope_category single_name, industry, or sector for C1."
+                    ),
+                }
+            ),
+        ),
+    )
+    return LLMProviderRequest(
+        request_id=f"p36_risk_management_agent_iteration_{iteration}",
+        role_name="risk_management_agent",
+        messages=messages,
+        provider=provider.provider_name,
+        model=provider.model,
+        prompt_version=P36_ROLE_PROMPT_VERSION,
+        max_tokens=P36_ANALYST_MAX_TOKENS_PER_ITERATION,
+        timeout_seconds=30,
+        temperature=0.0,
+        metadata={"runner_mode": LIVE_PROVIDER_MODE},
+    )
+
+
+def _parse_p36_risk_response(content: str) -> tuple[tuple[dict[str, object], ...], str | None] | None:
+    if not content:
+        return None
+    if content.startswith("#### Risk and exposure analysis"):
+        return (), content
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict) or set(parsed) != {"tool_requests"}:
+        return None
+    requests = parsed.get("tool_requests")
+    if not isinstance(requests, list) or not requests or not all(isinstance(item, dict) for item in requests):
+        return None
+    return tuple(requests), None
+
+
+def _validate_p36_risk_calc_request(
+    raw_request: dict[str, object],
+    *,
+    registry: dict[str, ToolRegistryEntry],
+) -> ToolRequest | None:
+    if set(raw_request) != {"tool_id", "args"}:
+        return None
+    tool_id = raw_request.get("tool_id")
+    args = raw_request.get("args")
+    if not isinstance(tool_id, str):
+        return None
+    tool_name = P36_RISK_CALC_TOOL_IDS.get(tool_id)
+    if tool_name is None:
+        return None
+    entry = registry.get(tool_name)
+    if entry is None or not entry.allows_role("risk_management_agent"):
+        return None
+    if not isinstance(args, dict) or not all(isinstance(key, str) and isinstance(value, str) for key, value in args.items()):
+        return None
+    if any(any(character.isdigit() for character in value) for value in args.values()):
+        return None
+    if tool_name == "calc_exposure_delta":
+        if set(args) - {"scope_category"}:
+            return None
+        category = args.get("scope_category", "industry")
+        if category not in {"single_name", "industry", "sector"}:
+            return None
+    elif args:
+        return None
+    try:
+        return ToolRequest(tool_name=tool_name, requesting_role="risk_management_agent", args=dict(args))
+    except ValueError:
+        return None
+
+
 def _live_provider_role_findings(
     deterministic: RoleFindingSet,
     role_results: tuple[ToolResult, ...],
@@ -285,31 +710,24 @@ def _live_provider_role_findings(
                 _live_provider_fallback(deterministic, status),
                 provider_run,
             )
+        if response_payload.get("finish_reason") == "length":
+            return LiveRoleResult(
+                _live_provider_fallback(deterministic, "unavailable", eval_flag="live_note_truncated_dropped"),
+                provider_run,
+            )
         content = str(response_payload.get("content_markdown") or "").strip()
         if not content:
             return LiveRoleResult(
                 _live_provider_fallback(deterministic, "unavailable"),
                 provider_run,
             )
-        proposed_finding = RoleFinding(
-            finding_type="missing_context",
-            claim_text=content,
-            evidence_refs=evidence_refs,
-            caveat_codes=("live_connective_context",),
-        )
-        hard_block = _hard_block_flag(proposed_finding)
-        if hard_block is not None:
-            return LiveRoleResult(
-                _live_provider_fallback(deterministic, "safety_fallback", eval_flag=hard_block),
-                provider_run,
-            )
-        validate_llm_provider_output(response_payload, label="tool-mediated live provider response")
         return LiveRoleResult(
             RoleFindingSet(
                 role_name=deterministic.role_name,
                 role_status="completed",
-                findings=(*deterministic.findings, proposed_finding),
+                findings=deterministic.findings,
                 warning_codes=tuple(dict.fromkeys((*deterministic.warning_codes, "live_provider_reasoning_used"))),
+                live_report_markdown=content,
             ),
             provider_run,
         )
@@ -332,18 +750,11 @@ def _live_provider_request(
     evidence_refs: tuple[str, ...],
     provider: LLMProvider,
 ) -> LLMProviderRequest:
-    role = role_definition(role_name)  # type: ignore[arg-type]
     sanitized_results = tuple(_prompt_tool_result_envelope(result) for result in role_results)
     messages = (
         LLMProviderMessage(
             role="system",
-            content=(
-                f"You are {role.display_name}. {_live_role_lens(role_name)} "
-                "Answer the locked question: what would be ignored during manual review. "
-                "Write exactly one qualitative connective sentence using only supplied envelope fields such as "
-                "availability, freshness, and caveat codes. Do not provide action instructions, rankings, "
-                "generated metrics, filing interpretation, macro interpretation, urgency, or conclusions about whether to act."
-            ),
+            content=_render_live_role_system_prompt(role_name),
         ),
         LLMProviderMessage(
             role="user",
@@ -351,41 +762,28 @@ def _live_provider_request(
                 {
                     "allowed_evidence_refs": evidence_refs,
                     "tool_result_envelopes": sanitized_results,
-                    "output_rule": (
-                        "exactly one qualitative connective sentence; no numbers, lists, rankings, "
-                        "action wording, urgency, filing interpretation, macro interpretation, or generic filler"
-                    ),
+                    "output_rule": "one connective note only; two to four sentences; no heading, table, list, symbol, or portfolio magnitude",
                 }
             ),
         ),
     )
     return LLMProviderRequest(
-        request_id=f"p34a_{role_name}_tool_mediated",
+        request_id=f"p35_{role_name}_tool_mediated",
         role_name=role_name,  # type: ignore[arg-type]
         messages=messages,
         provider=provider.provider_name,
         model=provider.model,
         prompt_version=LIVE_PROMPT_VERSION,
-        max_tokens=320,
+        max_tokens=LIVE_ROLE_MAX_TOKENS.get(role_name, 600),
         timeout_seconds=30,
         temperature=0.0,
         metadata={"runner_mode": LIVE_PROVIDER_MODE},
-    )
-
-
-def _live_role_lens(role_name: str) -> str:
-    if role_name == "fundamentals_analyst":
-        return "Connect reviewed company-context availability to the manual-review question."
-    if role_name == "news_analyst":
-        return "Connect reviewed public event or macro availability to the manual-review question without interpretation."
-    if role_name == "technical_analyst":
-        return "Connect saved quote-freshness availability to the manual-review question."
-    if role_name == "risk_management_agent":
-        return "Connect saved risk, freshness, scope, and caveat signals to the manual-review question."
-    return "Connect the supplied evidence envelopes to the manual-review question."
+)
 
 
 def _prompt_tool_result_envelope(result: ToolResult) -> dict[str, object]:
+    if result.contract_version == "p36_calc_envelope_v1":
+        return _p36_calculation_prompt_envelope(result)
     envelope = {
         "tool_name": result.tool_name,
         "status": result.status,
@@ -397,9 +795,59 @@ def _prompt_tool_result_envelope(result: ToolResult) -> dict[str, object]:
         "freshness": result.freshness,
         "caveat_codes": result.caveat_codes,
         "evidence_refs": result.evidence_refs,
+        "fact_labels": prompt_fact_labels_for_tool_result(result),
         "is_mock": result.is_mock,
     }
-    validate_tool_payload(envelope, label="live provider prompt tool result envelope")
+    validate_tool_payload(
+        envelope,
+        label="live provider prompt tool result envelope",
+        allow_p36_calculation_values=result.contract_version == "p36_calc_envelope_v1",
+    )
+    return envelope
+
+
+def _p36_calculation_prompt_envelope(result: ToolResult) -> dict[str, object]:
+    """Project value-bearing calculations without legacy private-topic tokens.
+
+    The Risk static prompt is the reviewed semantic catalogue. Its dynamic
+    envelope receives only opaque calculation/value references and the frozen
+    values themselves, so the legacy input scanner stays strict for every
+    runtime message. F-5 later admits report numerals from the original frozen
+    result, not from these aliases.
+    """
+
+    calculation_id = next(
+        (identifier for identifier, tool_name in P36_RISK_CALC_TOOL_IDS.items() if tool_name == result.tool_name),
+        "C0",
+    )
+    values: list[dict[str, str]] = []
+    payload_rows = result.summary_payload.get("value_labels")
+    if isinstance(payload_rows, (tuple, list)):
+        for index, row in enumerate(payload_rows, start=1):
+            if not isinstance(row, dict):
+                continue
+            value = row.get("value_label")
+            if not isinstance(value, str) or not value.strip():
+                continue
+            # A result value such as a bucket name may itself be a forbidden
+            # private topic word. The calculation remains frozen and usable by
+            # F-5, but that single value never enters the dynamic prompt.
+            if find_forbidden_string_values(value):
+                continue
+            values.append({"value_ref": f"{calculation_id}V{index}", "value": value})
+    envelope = {
+        "calculation_id": calculation_id,
+        "status": result.status,
+        "availability": result.availability,
+        "freshness": result.freshness,
+        "as_of": result.as_of.date().isoformat() if result.as_of is not None else None,
+        "values": tuple(values),
+    }
+    validate_tool_payload(
+        envelope,
+        label="p36 live provider calculation envelope",
+        allow_p36_calculation_values=True,
+    )
     return envelope
 
 
@@ -415,6 +863,7 @@ def _provider_response_payload(response: LLMProviderResponse | object) -> dict[s
         "prompt_version": getattr(response, "prompt_version"),
         "content_markdown": getattr(response, "content_markdown"),
         "is_mock": getattr(response, "is_mock"),
+        "finish_reason": getattr(response, "finish_reason", None),
         "generated_at": getattr(response, "generated_at", None),
         "error_code": getattr(response, "error_code", None),
         "error_message": getattr(response, "error_message", None),
@@ -555,6 +1004,8 @@ def build_tool_mediated_agent_team_summary(
     role_finding_override: Callable[[str, RoleFindingSet], RoleFindingSet] | None = None,
     llm_provider: LLMProvider | None = None,
     live_provider_enabled: bool = False,
+    p36_risk_live_enabled: bool = False,
+    market_context: MarketContextExecutionContext | None = None,
 ) -> SavedAgentTeamSummaryRead:
     generated_at = report_generated_at or _now_utc()
     if evidence.actionability.review_actionability_status.startswith("blocked_"):
@@ -567,6 +1018,8 @@ def build_tool_mediated_agent_team_summary(
             role_finding_override=role_finding_override,
             llm_provider=llm_provider,
             live_provider_enabled=live_provider_enabled,
+            p36_risk_live_enabled=p36_risk_live_enabled,
+            market_context=market_context,
         )
         payload = _summary_payload_from_run_state(run_state, evidence, report_generated_at=generated_at)
         return _validate_or_fallback(payload, evidence, report_generated_at=generated_at)
@@ -584,6 +1037,8 @@ def build_tool_mediated_agent_team_summary_from_provider_resolution(
     provider_resolution: LLMProviderResolution,
     report_generated_at: datetime | None = None,
     registry: dict[str, ToolRegistryEntry] | None = None,
+    p36_risk_live_enabled: bool = False,
+    market_context: MarketContextExecutionContext | None = None,
 ) -> SavedAgentTeamSummaryRead:
     """Build a tool-mediated summary using the reviewed provider-factory seam.
 
@@ -601,6 +1056,8 @@ def build_tool_mediated_agent_team_summary_from_provider_resolution(
         registry=registry,
         llm_provider=provider,
         live_provider_enabled=live_enabled,
+        p36_risk_live_enabled=p36_risk_live_enabled and live_enabled,
+        market_context=market_context,
     )
 
 
@@ -611,18 +1068,27 @@ def _public_role_findings(
 ) -> RoleFindingSet:
     projection = build_public_role_evidence_projection(evidence, role_name=role_name)  # type: ignore[arg-type]
     received = _received_refs(role_results)
-    if role_name == "technical_analyst" and "market_quote_freshness" in received:
+    if role_name == "technical_analyst" and (
+        "market_quote_freshness" in received or "public_market_context" in received
+    ):
+        refs = tuple(ref for ref in ("market_quote_freshness", "public_market_context") if ref in received)
+        warning_codes = (
+            ("eod_not_live_prices",)
+            if any(result.tool_name == "market_context_snapshot" and result.availability in {"available", "limited"} for result in role_results)
+            else ()
+        )
         return RoleFindingSet(
             role_name=role_name,
             role_status="completed",
             findings=(
                 RoleFinding(
                     finding_type="missing_context",
-                    claim_text=_market_quote_freshness_claim(role_results),
-                    evidence_refs=("trade_intent_summary", "market_quote_freshness"),
+                    claim_text=_technical_market_context_claim(role_results),
+                    evidence_refs=("trade_intent_summary", *refs),
+                    caveat_codes=warning_codes,
                 ),
             ),
-            warning_codes=(),
+            warning_codes=warning_codes,
         )
     if role_name == "news_analyst" and (
         "economic_awareness_snapshot" in received
@@ -841,6 +1307,18 @@ def _risk_role_findings(role_results: tuple[ToolResult, ...], evidence: SavedEvi
                 evidence_refs=freshness_refs,
             )
         )
+    if any(result.tool_name == "market_context_snapshot" and result.availability in {"available", "limited"} for result in role_results):
+        findings.append(
+            RoleFinding(
+                finding_type="missing_context",
+                claim_text=(
+                    "FMP end-of-day market context was frozen as public background; "
+                    "indicator values are end-of-day context and not live prices."
+                ),
+                evidence_refs=("public_market_context",),
+                caveat_codes=("eod_not_live_prices",),
+            )
+        )
     if "scope_state" in available:
         findings.append(
             RoleFinding(
@@ -906,36 +1384,40 @@ def _market_quote_freshness_claim(role_results: tuple[ToolResult, ...]) -> str:
     return "Market quote freshness is public context that could be overlooked during manual review."
 
 
+def _technical_market_context_claim(role_results: tuple[ToolResult, ...]) -> str:
+    clauses = [_market_quote_freshness_claim(role_results)]
+    if any(result.tool_name == "market_context_snapshot" and result.availability in {"available", "limited"} for result in role_results):
+        clauses.append(
+            "FMP end-of-day market context is available as internal-evaluation background; "
+            "the saved values are end-of-day, not live prices."
+        )
+    return " ".join(clauses)
+
+
 def _scope_specificity_claim(scope_caveat_codes: tuple[str, ...]) -> str:
     clauses = _readable_scope_caveats(scope_caveat_codes)
     if not clauses:
         return "Saved scope and account-feasibility caveats remain important manual-review context."
-    return f"Saved scope caveats: {'; '.join(clauses)}."
+    return f"Saved scope caveats: {render_display_list(clauses)}."
 
 
 def _readable_scope_caveats(scope_caveat_codes: tuple[str, ...]) -> tuple[str, ...]:
-    return tuple(
-        dict.fromkeys(
-            SCOPE_CAVEAT_LABELS.get(code, code.replace("_", " "))
-            for code in scope_caveat_codes
-            if code.strip()
-        )
-    )
+    return display_labels_for_codes(code for code in scope_caveat_codes if code.strip()).labels
 
 
 def _gap_specificity_claim(gap_refs: tuple[str, ...]) -> str:
     labels = _readable_section_labels(gap_refs)
     if not labels:
         return "Evidence sections outside the saved package remain open context gaps for manual review."
-    return f"Evidence sections not available in the saved package: {'; '.join(labels)}."
+    return f"Evidence sections not available in the saved package: {render_display_list(labels)}."
 
 
 def _readable_section_labels(section_refs: tuple[str, ...]) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(SECTION_READABLE_LABELS.get(ref, ref.replace("_", " ")) for ref in section_refs))
+    return tuple(dict.fromkeys(display_label_for_section(ref) for ref in section_refs))
 
 
 def _category_text(category: str | None) -> str:
-    return (category or "unknown").replace("_", " ")
+    return display_label_for_code(category or "unknown")
 
 
 def _summary_payload_from_run_state(
@@ -946,7 +1428,15 @@ def _summary_payload_from_run_state(
 ) -> dict:
     role_summaries = tuple(_role_summary_from_findings(item) for item in run_state.audited_findings)
     synthesis_refs = _synthesis_evidence_references(run_state.audited_findings)
-    synthesis = _synthesis_markdown(evidence, run_state.audited_findings, synthesis_refs, run_state.open_questions)
+    synthesis = _synthesis_markdown(
+        evidence,
+        run_state.audited_findings,
+        synthesis_refs,
+        run_state.open_questions,
+        tool_results=run_state.tool_results,
+        report_generated_at=report_generated_at,
+        live_provider_mode=run_state.provider_mode == LIVE_PROVIDER_MODE,
+    )
     terminal = {"completed", "skipped"}
     run_status = "completed" if all(summary.role_status in terminal for summary in role_summaries) else "partially_completed"
     warning_codes = _top_level_warning_codes(role_summaries, run_state.auditor)
@@ -979,6 +1469,12 @@ def _tool_run_artifact_payload(
     frozen_at: datetime,
 ) -> SavedToolMediatedRunArtifactRead:
     return SavedToolMediatedRunArtifactRead(
+        artifact_schema_version=(
+            P36_ARTIFACT_SCHEMA_VERSION
+            if any(result.contract_version == "p36_calc_envelope_v1" for result in run_state.tool_results)
+            or any(provider_run.prompt_version == P36_ROLE_PROMPT_VERSION for provider_run in run_state.provider_runs)
+            else "p33a_tool_run_freeze_v1"
+        ),
         provider_mode=run_state.provider_mode,  # type: ignore[arg-type]
         plan_version=run_state.plan.plan_version,
         audit_version=run_state.auditor.audit_version,
@@ -986,7 +1482,7 @@ def _tool_run_artifact_payload(
         dimensions=run_state.plan.dimensions,
         role_plan=tuple(asdict(role_plan) for role_plan in run_state.plan.role_plan),
         tool_results=tuple(_frozen_tool_result(result) for result in run_state.tool_results),
-        audited_findings=tuple(asdict(finding_set) for finding_set in run_state.audited_findings),
+        audited_findings=tuple(_frozen_finding_set(finding_set) for finding_set in run_state.audited_findings),
         auditor=asdict(run_state.auditor),
         provider_runs=tuple(asdict(provider_run) for provider_run in run_state.provider_runs),
         open_questions=run_state.open_questions,
@@ -1021,6 +1517,25 @@ def _frozen_tool_result(result: ToolResult) -> dict:
     }
 
 
+def _frozen_finding_set(finding_set: RoleFindingSet) -> dict:
+    return {
+        "role_name": finding_set.role_name,
+        "role_status": finding_set.role_status,
+        "findings": tuple(
+            {
+                "finding_type": finding.finding_type,
+                "claim_text": replace_internal_display_tokens(finding.claim_text) or "",
+                "evidence_refs": finding.evidence_refs,
+                "caveat_codes": finding.caveat_codes,
+            }
+            for finding in finding_set.findings
+        ),
+        "warning_codes": finding_set.warning_codes,
+        "unavailable_reason": finding_set.unavailable_reason,
+        "live_report_markdown": replace_internal_display_tokens(finding_set.live_report_markdown),
+    }
+
+
 def _role_summary_from_findings(finding_set: RoleFindingSet) -> SavedAgentTeamRoleSummaryRead:
     role = role_definition(finding_set.role_name)  # type: ignore[arg-type]
     refs = _ordered_refs(_union_refs(finding_set.findings))
@@ -1028,7 +1543,7 @@ def _role_summary_from_findings(finding_set: RoleFindingSet) -> SavedAgentTeamRo
         refs = ("trade_intent_summary",)
     summary = None
     if finding_set.findings:
-        summary = " ".join(finding.claim_text for finding in finding_set.findings)
+        summary = replace_internal_display_tokens(" ".join(finding.claim_text for finding in finding_set.findings))
     provider_status = "ok" if finding_set.role_status == "completed" else "skipped"
     return SavedAgentTeamRoleSummaryRead(
         role_name=finding_set.role_name,
@@ -1036,6 +1551,7 @@ def _role_summary_from_findings(finding_set: RoleFindingSet) -> SavedAgentTeamRo
         role_status=finding_set.role_status,  # type: ignore[arg-type]
         provider_status=provider_status,
         summary_markdown=summary,
+        live_report_markdown=replace_internal_display_tokens(finding_set.live_report_markdown),
         evidence_references=refs,
         warning_codes=finding_set.warning_codes,
         unavailable_reason=finding_set.unavailable_reason,
@@ -1058,6 +1574,7 @@ def _portfolio_manager_finding_set(
             if "economic_awareness_snapshot" in refs
             else "FRED macro calendar metadata remains unavailable or uncited context."
         ),
+        *((("FMP end-of-day market context was included as background only.",) if "public_market_context" in refs else ())),
     ]
     return RoleFindingSet(
         role_name="portfolio_manager_agent",
@@ -1084,34 +1601,316 @@ def _synthesis_markdown(
     audited_findings: tuple[RoleFindingSet, ...],
     evidence_refs: tuple[str, ...],
     open_questions: tuple[str, ...],
+    *,
+    tool_results: tuple[ToolResult, ...],
+    report_generated_at: datetime,
+    live_provider_mode: bool = False,
 ) -> str:
-    digest_lines = _role_digest_lines(audited_findings)
-    unavailable_inventory = _unavailable_inventory(evidence)
-    open_question_lines = open_questions or ("No unresolved evidence contradictions were found in the audited findings.",)
+    before_after = evidence.before_after_portfolio_impact
+    concentration = evidence.concentration_risk_drift
+    groups = before_after.trade_impact_narrative_groups
+    proceed_statements = groups.proceed_statements if groups is not None else ()
+    not_reviewed_statement = groups.not_reviewed_statement if groups is not None else None
+    verify_statement = groups.verify_statement if groups is not None else None
+    title = _trade_review_title(evidence, report_generated_at=report_generated_at)
+    headline = _summary_headline(proceed_statements, before_after)
+    technical_note_lines = _live_note_lines(
+        audited_findings,
+        "technical_analyst",
+        live_provider_mode=live_provider_mode,
+    )
+    risk_note_lines = _live_note_lines(
+        audited_findings,
+        "risk_management_agent",
+        live_provider_mode=live_provider_mode,
+    )
+    sections = (
+        title,
+        "",
+        "_Read-only analysis for your manual review. Not advice, not a recommendation, and not an instruction to trade._",
+        "",
+        "## Summary",
+        "What would I be ignoring if I acted manually now? What you would be ignoring is organized below from frozen saved evidence only.",
+        _summary_paragraph(evidence, headline=headline),
+        "",
+        "## If you proceed",
+        *_markdown_paragraphs(
+            proceed_statements
+            or (
+                "Trade-impact narrative statements were not frozen with this saved package, so this section cannot be reconstructed without recomputation.",
+            )
+        ),
+        "",
+        "## Exposure before and after",
+        *_exposure_table_blocks(before_after),
+        "",
+        "## Reference points",
+        *_reference_point_lines(concentration),
+        "",
+        "## Market context",
+        *_market_context_lines(tool_results),
+        *technical_note_lines,
+        "",
+        "## Risk and scope notes",
+        *_risk_scope_lines(evidence, cited_refs=evidence_refs),
+        *risk_note_lines,
+        "",
+        *(("## Open questions", *open_questions, "") if open_questions else ()),
+        "## What was not reviewed",
+        *_markdown_paragraphs(
+            (
+                not_reviewed_statement
+                or "Fund holdings, public events, taxes, and accounts outside the reviewed scope were not reviewed in the saved package.",
+            )
+        ),
+        *_markdown_list_items(_unavailable_inventory(evidence, cited_refs=evidence_refs)),
+        "",
+        "## Verify before acting",
+        *_markdown_paragraphs(
+            (
+                verify_statement
+                or "Verify the saved scope, confirm the latest broker snapshot, check current prices, and review any missing public context.",
+            )
+        ),
+        "",
+        "---",
+        _document_footer(evidence),
+    )
+    document = "\n".join(line for line in sections if line is not None)
+    document = replace_internal_display_tokens(document) or ""
+    if find_internal_display_tokens(document):
+        raise ValueError("tool-mediated document contains an internal display token")
+    return document
+
+
+def _trade_review_title(evidence: SavedEvidencePackageRead, *, report_generated_at: datetime) -> str:
+    action = _trade_action_label(evidence)
+    account_label = evidence.scope_state.review_account_display_label or "reviewed account"
+    return f"# Trade review: {action} - {account_label} - {_long_date(report_generated_at)}"
+
+
+def _trade_action_label(evidence: SavedEvidencePackageRead) -> str:
+    symbol = (evidence.trade_intent_summary.symbol_or_underlying or "instrument").upper()
+    flow = evidence.trade_intent_summary.supported_flow
+    if flow in {"stock_buy", "etf_buy"}:
+        return f"Buy {symbol}"
+    if flow == "stock_sell_trim":
+        return f"Review stock trim for {symbol}"
+    if flow == "etf_sell_trim":
+        return f"Review ETF trim for {symbol}"
+    return f"{evidence.trade_intent_summary.review_flow_label} for {symbol}"
+
+
+def _long_date(value: datetime) -> str:
+    return value.strftime("%B %d, %Y").replace(" 0", " ")
+
+
+def _summary_headline(
+    proceed_statements: tuple[str, ...],
+    before_after: object,
+) -> str:
+    for statement in proceed_statements:
+        if "semiconductor-classified holdings" in statement.lower() or "position" in statement.lower():
+            return statement
+    summary = getattr(before_after, "summary_label", None)
+    if summary:
+        return str(summary)
+    return "The saved exposure impact was unavailable, so this report names the gap instead of reconstructing it."
+
+
+def _summary_paragraph(evidence: SavedEvidencePackageRead, *, headline: str) -> str:
+    account_label = evidence.scope_state.review_account_display_label or "reviewed account"
+    flow_label = evidence.trade_intent_summary.review_flow_label.removesuffix(" review").lower()
+    return (
+        f"This saved report covers the saved {flow_label} "
+        f"for {account_label} using frozen evidence only. **{headline}**"
+    )
+
+
+def _markdown_paragraphs(lines: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(line.strip() for line in lines if line and line.strip())
+
+
+def _markdown_list_items(lines: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(f"- {line.strip()}" for line in lines if line and line.strip())
+
+
+def _exposure_table_blocks(section) -> tuple[str, ...]:
+    if section.availability not in {"available", "limited"}:
+        return (
+            section.summary_label
+            or "Your account positions were not available for this run, so exposure could not be computed.",
+        )
+    labels = tuple(section.detail_labels)
+    tables: list[tuple[str, list[str]]] = []
+    current_title: str | None = None
+    current_rows: list[str] = []
+    for label in labels:
+        if label == "Trade-impact narrative:":
+            break
+        if ": Row | Before $ | Before % | Trade Delta $ | After $ | After %." in label:
+            if current_title is not None:
+                tables.append((current_title, current_rows))
+            current_title = label.split(": Row |", 1)[0]
+            current_rows = []
+            continue
+        if current_title is not None and " | " in label:
+            current_rows.append(label)
+    if current_title is not None:
+        tables.append((current_title, current_rows))
+    blocks: list[str] = []
+    if section.summary_label:
+        blocks.append(section.summary_label)
+    for title, rows in tables:
+        blocks.extend(_markdown_exposure_table(title, rows))
+    if not tables:
+        blocks.append("Frozen before/after table rows were not available in this saved package.")
+    return tuple(blocks)
+
+
+def _markdown_exposure_table(title: str, row_labels: list[str]) -> tuple[str, ...]:
+    rows: list[str] = []
+    for label in row_labels:
+        cells = tuple(cell.strip().rstrip(".") for cell in label.split(" | "))
+        if len(cells) != 6:
+            continue
+        rows.append(f"| {cells[0]} | {cells[1]} | {cells[2]} | {cells[3]} | {cells[4]} | {cells[5]} |")
+    if not rows:
+        return (f"{title}: no frozen rows were available.",)
+    return (
+        f"{title}.",
+        "| Row | Before $ | Before % | Trade Delta $ | After $ | After % |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
+        *rows,
+    )
+
+
+def _reference_point_lines(section) -> tuple[str, ...]:
+    if section.availability not in {"available", "limited"}:
+        return (section.summary_label or "Reference-point findings were not available in this saved package.",)
+    lines = [section.summary_label] if section.summary_label else []
+    lines.extend(label for label in section.detail_labels if label)
+    if not lines:
+        lines.append("Reference-point findings were not available in this saved package.")
+    return tuple(lines)
+
+
+def _market_context_lines(tool_results: tuple[ToolResult, ...]) -> tuple[str, ...]:
+    result = next(
+        (
+            item
+            for item in tool_results
+            if item.tool_name == "market_context_snapshot" and item.availability in {"available", "limited"}
+        ),
+        None,
+    )
+    if result is None:
+        return ("Saved end-of-day market context was not available for this report run.",)
+    rows = _market_context_display_rows(result)
+    if not rows:
+        return ("Saved end-of-day market context was available, but no reviewed indicator rows were frozen.",)
+    return (
+        "FMP end-of-day market context is frozen background only; it is not live pricing.",
+        "| Indicator | Frozen value or category |",
+        "| --- | ---: |",
+        *rows,
+    )
+
+
+def _market_context_display_rows(result: ToolResult) -> list[str]:
+    """Render only reviewed display-mapped market facts, without duplicate metadata."""
+
+    rows: list[str] = []
+    seen_semantics: set[str] = set()
+    omitted_unmapped = False
+    aliases = {
+        "market_context_as_of_date": "as_of_date",
+        "market_context_freshness_category": "freshness_category",
+    }
+    for fact in prompt_fact_labels_for_tool_result(result):
+        fact_key = str(fact["fact_key"])
+        semantic_key = aliases.get(fact_key, fact_key)
+        if semantic_key in seen_semantics:
+            continue
+        display_label = FACT_DISPLAY_LABELS.get(fact_key)
+        if display_label is None:
+            omitted_unmapped = True
+            continue
+        seen_semantics.add(semantic_key)
+        value = replace_internal_display_tokens(fact["value_label"]) or "Unlabeled review detail."
+        rows.append(f"| {display_label} | {value} |")
+    if omitted_unmapped:
+        rows.append("| Omitted indicator | A reviewed indicator was omitted because its display label was unavailable. |")
+    return rows
+
+
+def _risk_scope_lines(
+    evidence: SavedEvidencePackageRead,
+    *,
+    cited_refs: tuple[str, ...],
+) -> tuple[str, ...]:
+    scope_labels = display_labels_for_codes(evidence.scope_state.scope_caveat_codes).labels
     account_line = (
-        "Account-level feasibility was not evaluated in the saved scope."
-        if not evidence.scope_state.account_level_feasibility_evaluated
-        else "Account-level feasibility was evaluated in the saved scope."
+        "Account-level feasibility was evaluated in the saved scope."
+        if evidence.scope_state.account_level_feasibility_evaluated
+        else "Account-level feasibility was not evaluated in the saved scope."
     )
-    event_line = (
-        "Company-event metadata was included as background only."
-        if "public_events_calendar" in evidence_refs
-        else "Company-event metadata was unavailable or uncited in the saved evidence."
-    )
-    fred_line = (
-        "FRED macro calendar metadata was included as economic context only."
-        if "economic_awareness_snapshot" in evidence_refs
-        else "FRED macro calendar metadata was unavailable or uncited in the saved evidence."
-    )
-    sections = [
-        "What you would be ignoring if you acted manually now: the saved report points to deterministic risk flags, freshness and availability gaps, scope and feasibility caveats, and context that was not reviewed.",
-        "Role digests: " + " ".join(f"- {line}" for line in digest_lines),
-        "Not-reviewed or unavailable inventory: " + "; ".join(unavailable_inventory),
-        "Open questions: " + " ".join(open_question_lines),
-        "Manual verification checklist: review saved scope; freshness categories; feasibility caveats; option-leg mechanics; missing public context; and the read-only source snapshot.",
-        f"{account_line} {event_line} {fred_line} This is read-only context for manual review, not an instruction or judgment about whether to act.",
+    lines = [
+        account_line,
+        f"Scope caveats: {render_display_list(scope_labels) if scope_labels else 'none'}.",
     ]
-    return " ".join(sections)
+    if evidence.freshness.broker_snapshot_freshness_label:
+        lines.append(_sentence(evidence.freshness.broker_snapshot_freshness_label))
+    if evidence.freshness.market_quote_freshness_label:
+        lines.append(_sentence(evidence.freshness.market_quote_freshness_label))
+    if "public_events_calendar" in cited_refs:
+        lines.append("Company-event metadata was included as background only.")
+    if "economic_awareness_snapshot" in cited_refs:
+        lines.append("FRED macro calendar metadata was included as economic context only.")
+    if "public_market_context" in cited_refs:
+        lines.append("FMP end-of-day market context was included as background only.")
+    gaps = _unavailable_inventory(evidence, cited_refs=cited_refs)
+    if gaps:
+        lines.append(f"Unavailable or not-reviewed context: {render_display_list(gaps)}.")
+    return tuple(lines)
+
+
+def _live_note_for_role(audited_findings: tuple[RoleFindingSet, ...], role_name: str) -> str | None:
+    for finding_set in audited_findings:
+        if finding_set.role_name != role_name or not finding_set.live_report_markdown:
+            continue
+        return replace_internal_display_tokens(finding_set.live_report_markdown)
+    return None
+
+
+def _live_note_lines(
+    audited_findings: tuple[RoleFindingSet, ...],
+    role_name: str,
+    *,
+    live_provider_mode: bool,
+) -> tuple[str, ...]:
+    note = _live_note_for_role(audited_findings, role_name)
+    display_name = role_definition(role_name).display_name  # type: ignore[arg-type]
+    if note:
+        return (f"**{display_name}**", note)
+    if live_provider_mode:
+        return (f"No {display_name} note is available in this saved report.",)
+    return ()
+
+
+def _document_footer(evidence: SavedEvidencePackageRead) -> str:
+    broker_freshness = evidence.freshness.broker_snapshot_freshness_label or "saved account sync"
+    market_freshness = evidence.freshness.market_quote_freshness_label or "saved end-of-day prices"
+    return (
+        "_Reference points are common rule-of-thumb levels used to organize this report. "
+        "They are not personalized limits, targets, or recommendations. "
+        f"{_sentence(broker_freshness)} {_sentence(market_freshness)} End-of-day prices are not live._"
+    )
+
+
+def _sentence(value: str) -> str:
+    text = value.strip()
+    return text if text.endswith((".", "!", "?")) else f"{text}."
 
 
 def _role_digest_lines(audited_findings: tuple[RoleFindingSet, ...]) -> tuple[str, ...]:
@@ -1121,9 +1920,12 @@ def _role_digest_lines(audited_findings: tuple[RoleFindingSet, ...]) -> tuple[st
             continue
         role = role_definition(finding_set.role_name)  # type: ignore[arg-type]
         if finding_set.findings:
-            digest = _first_sentence(" ".join(finding.claim_text for finding in finding_set.findings))
+            digest = _first_sentence(
+                replace_internal_display_tokens(" ".join(finding.claim_text for finding in finding_set.findings))
+                or ""
+            )
         elif finding_set.unavailable_reason:
-            digest = finding_set.unavailable_reason.replace("_", " ")
+            digest = display_label_for_code(finding_set.unavailable_reason)
         else:
             digest = "no citable saved evidence was available"
         lines.append(f"{role.display_name}: {digest}")
@@ -1140,7 +1942,11 @@ def _first_sentence(text: str) -> str:
     return cleaned
 
 
-def _unavailable_inventory(evidence: SavedEvidencePackageRead) -> tuple[str, ...]:
+def _unavailable_inventory(
+    evidence: SavedEvidencePackageRead,
+    *,
+    cited_refs: tuple[str, ...] = (),
+) -> tuple[str, ...]:
     unavailable: list[str] = []
     for section in (
         evidence.before_after_portfolio_impact,
@@ -1149,7 +1955,7 @@ def _unavailable_inventory(evidence: SavedEvidencePackageRead) -> tuple[str, ...
         evidence.market_mood_snapshot,
     ):
         if section.availability not in {"available", "limited"}:
-            unavailable.append(SECTION_READABLE_LABELS.get(section.section_key, section.section_label))
+            unavailable.append(display_label_for_section(section.section_key))
     if evidence.public_evidence is not None:
         for section in (
             evidence.public_evidence.public_fundamentals_snapshot,
@@ -1158,8 +1964,10 @@ def _unavailable_inventory(evidence: SavedEvidencePackageRead) -> tuple[str, ...
             evidence.public_evidence.public_technical_context,
             evidence.public_evidence.public_market_context,
         ):
+            if section.section_key in cited_refs:
+                continue
             if section.availability not in {"available", "limited"}:
-                unavailable.append(SECTION_READABLE_LABELS.get(section.section_key, section.section_label))
+                unavailable.append(display_label_for_section(section.section_key))
     if not unavailable:
         return ("No unavailable saved-evidence sections were flagged by the deterministic inventory.",)
     return tuple(dict.fromkeys(unavailable))
@@ -1263,16 +2071,9 @@ def _catalog_section_for_public_section(section) -> EvidenceCatalogSection:
 
 
 def _freshness_category(label: str | None) -> str | None:
-    lowered = (label or "").lower()
-    if "stale" in lowered:
-        return "stale"
-    if "unavailable" in lowered or "not available" in lowered:
-        return "not_available"
-    if "unknown" in lowered:
-        return "unknown"
-    if label:
-        return "fresh"
-    return None
+    # T18-F2: delegates to the shared gate-module helper so the deterministic
+    # floor wording and the category-gate vocabulary can never drift apart.
+    return freshness_category_from_label(label)
 
 
 def _registry_from_catalog(catalog: EvidenceCatalog) -> dict[str, ToolRegistryEntry]:
@@ -1282,7 +2083,7 @@ def _registry_from_catalog(catalog: EvidenceCatalog) -> dict[str, ToolRegistryEn
 
 def _open_questions_from_contradictions(contradictions: tuple[Contradiction, ...]) -> tuple[str, ...]:
     return tuple(
-        f"{item.evidence_ref} has conflicting freshness or availability framing across reviewed roles."
+        f"{display_label_for_section(item.evidence_ref)} has conflicting freshness or availability framing across reviewed roles."
         for item in contradictions
     )
 

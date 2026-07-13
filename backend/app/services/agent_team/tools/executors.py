@@ -14,7 +14,17 @@ from app.schemas.reports import (
     SavedPublicEvidenceSectionRead,
 )
 from app.services.agent_team.tools.envelopes import *  # noqa: F401,F403
+from app.services.agent_team.tools.calculations import execute_calculation_tool
 from app.services.agent_team.tools.registry import default_tool_registry
+from app.services.market_data.eod_history import (
+    FMP_EOD_CAVEAT_CODE,
+    FMP_EOD_SOURCE_KEY,
+    FMP_EOD_SOURCE_LABEL,
+    FMP_EOD_UNAVAILABLE_CAVEAT_CODE,
+    FmpEodHistoryError,
+    MarketContextExecutionContext,
+    get_market_context_snapshot,
+)
 
 __all__ = [
     "execute_tool_request",
@@ -31,6 +41,7 @@ def execute_tool_request(
     *,
     evidence: SavedEvidencePackageRead,
     registry: dict[str, ToolRegistryEntry] | None = None,
+    market_context: MarketContextExecutionContext | None = None,
 ) -> ToolResult:
     """Execute one reviewed offline tool over the provided frozen saved evidence package."""
 
@@ -54,6 +65,8 @@ def execute_tool_request(
             role_name=request.requesting_role,
             reason="Public roles cannot receive portfolio-aware evidence.",
         )
+    if entry.tool_name in P36_CALC_TOOL_NAMES:
+        return execute_calculation_tool(request=request, evidence=evidence, entry=entry)
 
     builders = {
         "trade_intent_summary": _tool_trade_intent_summary,
@@ -61,11 +74,19 @@ def execute_tool_request(
         "deterministic_review_findings": _tool_deterministic_review_findings,
         "broker_snapshot_freshness": _tool_broker_snapshot_freshness,
         "market_quote_freshness": _tool_market_quote_freshness,
+        "market_context_snapshot": _tool_market_context_snapshot,
         "public_company_profile": _tool_public_company_profile,
         "economic_awareness_context": _tool_economic_awareness_context,
         "sec_recent_filings_metadata": _tool_sec_recent_filings_metadata,
         "evidence_gap_inspector": _tool_evidence_gap_inspector,
     }
+    if entry.tool_name == "market_context_snapshot":
+        return _tool_market_context_snapshot(
+            request=request,
+            evidence=evidence,
+            entry=entry,
+            market_context=market_context,
+        )
     return builders[entry.tool_name](request=request, evidence=evidence, entry=entry)
 
 
@@ -186,6 +207,7 @@ def _tool_deterministic_review_findings(
     citable_refs = ["actionability"]
     for section in (
         evidence.portfolio_impact_summary,
+        evidence.before_after_portfolio_impact,
         evidence.concentration_risk_drift,
         evidence.cash_collateral_caveats,
         evidence.options_exposure_summary,
@@ -258,6 +280,42 @@ def _tool_market_quote_freshness(
             "summary_label": section.summary_label,
             "section_label": section.section_label,
         },
+    )
+
+
+def _tool_market_context_snapshot(
+    *,
+    request: ToolRequest,
+    evidence: SavedEvidencePackageRead,
+    entry: ToolRegistryEntry,
+    market_context: MarketContextExecutionContext | None = None,
+) -> ToolResult:
+    symbol = _reviewed_symbol_or_underlying(evidence)
+    if not symbol:
+        return _fmp_eod_unavailable_result(
+            request=request,
+            entry=entry,
+            summary="Reviewed symbol was unavailable in the frozen saved evidence package.",
+        )
+    try:
+        snapshot = get_market_context_snapshot(symbol=symbol, context=market_context)
+    except FmpEodHistoryError:
+        return _fmp_eod_unavailable_result(
+            request=request,
+            entry=entry,
+            summary="FMP end-of-day market context was unavailable or disabled for this report run.",
+        )
+    return _ok_result(
+        request=request,
+        entry=entry,
+        source_key=FMP_EOD_SOURCE_KEY,
+        source_label=FMP_EOD_SOURCE_LABEL,
+        availability="limited" if "insufficient_history" in snapshot.caveat_codes else "available",
+        freshness=snapshot.freshness_category,
+        as_of=snapshot.as_of_datetime,
+        evidence_refs=("public_market_context",),
+        caveat_codes=snapshot.caveat_codes,
+        summary_payload=snapshot.summary_payload(),
     )
 
 
@@ -511,6 +569,33 @@ def _public_events_unavailable_result(
     )
 
 
+def _fmp_eod_unavailable_result(
+    *,
+    request: ToolRequest,
+    entry: ToolRegistryEntry,
+    summary: str,
+) -> ToolResult:
+    return ToolResult(
+        tool_name=entry.tool_name,
+        role_name=request.requesting_role,
+        status="unavailable",
+        evidence_tier=entry.evidence_tier,
+        data_mode="public",
+        source_key=FMP_EOD_SOURCE_KEY,
+        source_label=FMP_EOD_SOURCE_LABEL,
+        availability="not_available",
+        caveat_codes=(FMP_EOD_UNAVAILABLE_CAVEAT_CODE,),
+        evidence_refs=(),
+        summary_payload={
+            "summary": summary,
+            "source_key": FMP_EOD_SOURCE_KEY,
+            "source_label": FMP_EOD_SOURCE_LABEL,
+        },
+        provenance="provider_unavailable",
+        is_mock=entry.is_mock,
+    )
+
+
 def _safe_sec_filing_metadata(section: SavedPublicEvidenceSectionRead) -> tuple[dict[str, str], ...]:
     rows: list[dict[str, str]] = []
     for fact in section.facts:
@@ -528,6 +613,11 @@ def _safe_sec_filing_metadata(section: SavedPublicEvidenceSectionRead) -> tuple[
             }
         )
     return tuple(rows)
+
+
+def _reviewed_symbol_or_underlying(evidence: SavedEvidencePackageRead) -> str | None:
+    symbol = (evidence.trade_intent_summary.symbol_or_underlying or "").strip().upper()
+    return symbol or None
 
 
 def _is_safe_normalized_filing_reference(value: str) -> bool:

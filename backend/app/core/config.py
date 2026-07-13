@@ -75,6 +75,13 @@ class Settings:
     jblanked_api_key: str = field(default="", repr=False)
     jblanked_calendar_base_url: str = DEFAULT_JBLANKED_CALENDAR_BASE_URL
     jblanked_calendar_source: str = DEFAULT_JBLANKED_CALENDAR_SOURCE
+    market_context_mode: str = "off"
+    fmp_fundamentals_mode: str = "off"
+    fred_macro_series_mode: str = "off"
+    p36_fmp_fundamentals_daily_request_budget: int = 10
+    p36_fred_series_daily_request_budget: int = 18
+    p36_edgar_daily_request_budget: int = 60
+    p36_edgar_max_requests_per_second: int = 1
 
     google_api_key: str = field(default="", repr=False)
     openai_api_key: str = field(default="", repr=False)
@@ -103,6 +110,13 @@ class Settings:
             "fmp_api_key_configured": bool(self.fmp_api_key),
             "fred_api_key_configured": bool(self.fred_api_key),
             "jblanked_api_key_configured": bool(self.jblanked_api_key),
+            "market_context_mode": self.market_context_mode,
+            "fmp_fundamentals_mode": self.fmp_fundamentals_mode,
+            "fred_macro_series_mode": self.fred_macro_series_mode,
+            "p36_fmp_fundamentals_daily_request_budget": self.p36_fmp_fundamentals_daily_request_budget,
+            "p36_fred_series_daily_request_budget": self.p36_fred_series_daily_request_budget,
+            "p36_edgar_daily_request_budget": self.p36_edgar_daily_request_budget,
+            "p36_edgar_max_requests_per_second": self.p36_edgar_max_requests_per_second,
             "google_api_key_configured": bool(self.google_api_key),
             "openai_api_key_configured": bool(self.openai_api_key),
         }
@@ -179,6 +193,17 @@ def build_settings(
             values.get("JBLANKED_CALENDAR_SOURCE"),
             default=DEFAULT_JBLANKED_CALENDAR_SOURCE,
         ),
+        market_context_mode=_text(values.get("POA_MARKET_CONTEXT_MODE"), default="off"),
+        fmp_fundamentals_mode=_text(values.get("POA_FMP_FUNDAMENTALS_MODE"), default="off"),
+        fred_macro_series_mode=_text(values.get("POA_FRED_MACRO_SERIES_MODE"), default="off"),
+        p36_fmp_fundamentals_daily_request_budget=_int(
+            values.get("P36_FMP_FUNDAMENTALS_DAILY_REQUEST_BUDGET"), default=10
+        ),
+        p36_fred_series_daily_request_budget=_int(
+            values.get("P36_FRED_SERIES_DAILY_REQUEST_BUDGET"), default=18
+        ),
+        p36_edgar_daily_request_budget=_int(values.get("P36_EDGAR_DAILY_REQUEST_BUDGET"), default=60),
+        p36_edgar_max_requests_per_second=_int(values.get("P36_EDGAR_MAX_REQUESTS_PER_SECOND"), default=1),
         google_api_key=_secret(values.get("GOOGLE_API_KEY")),
         openai_api_key=_secret(values.get("OPENAI_API_KEY")),
     )
@@ -236,6 +261,14 @@ def _validate_settings(settings: Settings) -> None:
             missing.append("SNAPTRADE_CONSUMER_KEY")
         if missing:
             raise ConfigurationError(f"Missing required production-like settings: {', '.join(missing)}")
+    if not 1 <= settings.p36_fmp_fundamentals_daily_request_budget <= 10:
+        raise ConfigurationError("P36_FMP_FUNDAMENTALS_DAILY_REQUEST_BUDGET must be between 1 and 10")
+    if not 1 <= settings.p36_fred_series_daily_request_budget <= 18:
+        raise ConfigurationError("P36_FRED_SERIES_DAILY_REQUEST_BUDGET must be between 1 and 18")
+    if not 1 <= settings.p36_edgar_daily_request_budget <= 60:
+        raise ConfigurationError("P36_EDGAR_DAILY_REQUEST_BUDGET must be between 1 and 60")
+    if settings.p36_edgar_max_requests_per_second != 1:
+        raise ConfigurationError("P36_EDGAR_MAX_REQUESTS_PER_SECOND must be 1")
 
 
 def _text(value: str | None, *, default: str) -> str:

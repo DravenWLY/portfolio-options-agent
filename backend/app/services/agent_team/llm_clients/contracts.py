@@ -7,7 +7,7 @@ SDKs, TradingAgents, broker adapters, or market-data providers.
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 import re
-from typing import Literal, Protocol
+from typing import Iterable, Literal, Protocol
 
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 
@@ -31,6 +31,7 @@ LLMProviderStatus = Literal[
     "invalid_response",
     "safety_validation_failed",
 ]
+LLMProviderFinishReason = Literal["length", "stop", "unknown"]
 LLMMessageRole = Literal["system", "user", "assistant"]
 
 AGENT_TEAM_ROLES: tuple[AgentTeamRole, ...] = (
@@ -53,6 +54,29 @@ LLM_PROVIDER_STATUSES: tuple[LLMProviderStatus, ...] = (
     "safety_validation_failed",
 )
 LLM_PROVIDER_CONTRACT_VERSION = "llm-provider-contract-v1"
+_P36_VALUE_BEARING_PROMPT_VERSIONS = frozenset({
+    "p36-role-analysis-v1",
+    "p36-pm-synthesis-v1",
+})
+
+# Registered by the tool-mediated orchestration module after it renders the
+# approved static system prompts. Exact full-string membership is used only by
+# segment-aware input validation; dynamic prompt content remains strict.
+_STATIC_SYSTEM_PROMPT_REGISTRY: frozenset[str] = frozenset()
+_REVIEWED_STATIC_SYSTEM_PROMPT_VERSIONS: dict[str, frozenset[str]] = {}
+_STATIC_SYSTEM_PROMPT_PLAIN_TOPIC_TOKENS = frozenset({"cash", "holdings", "positions", "threshold"})
+
+
+@dataclass(frozen=True)
+class ReviewedStaticSystemPrompt:
+    """One reviewed, static system prompt with an approved prompt version.
+
+    The class intentionally carries no runtime configuration. Creating one is
+    a code-and-review act that pins the exact rendered prompt text and version.
+    """
+
+    content: str
+    prompt_version: str
 
 LLM_PROVIDER_FORBIDDEN_KEYS = FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS | {
     "raw_holdings",
@@ -168,6 +192,7 @@ class LLMProviderResponse:
     prompt_version: str
     content_markdown: str | None
     is_mock: bool
+    finish_reason: LLMProviderFinishReason | None = None
     generated_at: datetime | None = None
     error_code: str | None = None
     error_message: str | None = None
@@ -184,11 +209,17 @@ class LLMProviderResponse:
             raise ValueError(f"unsupported agent-team role: {self.role_name}")
         if self.status not in LLM_PROVIDER_STATUSES:
             raise ValueError(f"unsupported provider status: {self.status}")
+        if self.finish_reason not in (None, "length", "stop", "unknown"):
+            raise ValueError(f"unsupported provider finish reason: {self.finish_reason}")
         if self.status == "ok" and not (self.content_markdown or "").strip():
             raise ValueError("ok provider responses must include content_markdown")
         from app.services.agent_team.safety.output_safety import validate_llm_provider_output
 
-        validate_llm_provider_output(asdict(self), label="LLM provider response")
+        validate_llm_provider_output(
+            asdict(self),
+            label="LLM provider response",
+            allow_value_bearing_markdown=self.prompt_version in _P36_VALUE_BEARING_PROMPT_VERSIONS,
+        )
 
 
 class LLMProvider(Protocol):
@@ -208,7 +239,7 @@ def validate_llm_provider_payload(payload: object, *, label: str) -> None:
     if forbidden:
         blocked = ", ".join(sorted(forbidden))
         raise ValueError(f"{label} contains forbidden private fields: {blocked}")
-    private_values = find_forbidden_string_values(payload)
+    private_values = _find_forbidden_string_values_segmentwise(payload)
     if private_values:
         blocked = ", ".join(sorted(private_values))
         raise ValueError(f"{label} contains forbidden private value token(s): {blocked}")
@@ -216,18 +247,147 @@ def validate_llm_provider_payload(payload: object, *, label: str) -> None:
     if secret_values:
         blocked = ", ".join(sorted(secret_values))
         raise ValueError(f"{label} contains secret-like value pattern(s): {blocked}")
-    prohibited_phrases = find_prohibited_llm_phrases(payload)
+    prohibited_phrases = _find_prohibited_llm_phrases_segmentwise(payload)
     if prohibited_phrases:
         blocked = ", ".join(sorted(prohibited_phrases))
         raise ValueError(f"{label} contains prohibited advice/execution phrase(s): {blocked}")
 
 
-def find_forbidden_string_values(value: object, *, prefix: str = "") -> set[str]:
-    """Return recursive string paths that include private-data token values."""
+def _find_prohibited_llm_phrases_segmentwise(value: object, *, prefix: str = "") -> set[str]:
+    """Apply phrase scanning per message, narrowly exempting reviewed static text.
+
+    Only a system-role message whose content exactly matches a reviewed static
+    registry entry skips this one scan. All other message segments, nested
+    dynamic values, and every non-phrase validator remain strict.
+    """
+
+    if isinstance(value, dict):
+        messages = value.get("messages")
+        if isinstance(messages, (list, tuple)):
+            found = find_prohibited_llm_phrases(
+                {key: item for key, item in value.items() if key != "messages"},
+                prefix=prefix,
+            )
+            prompt_version = value.get("prompt_version")
+            for index, message in enumerate(messages):
+                message_prefix = f"{prefix}.messages[{index}]" if prefix else f"messages[{index}]"
+                found.update(
+                    _find_prohibited_llm_phrases_message(
+                        message,
+                        prefix=message_prefix,
+                        prompt_version=prompt_version if isinstance(prompt_version, str) else None,
+                    )
+                )
+            return found
+        if "role" in value and "content" in value:
+            return _find_prohibited_llm_phrases_message(value, prefix=prefix, prompt_version=None)
+    return find_prohibited_llm_phrases(value, prefix=prefix)
+
+
+def _find_forbidden_string_values_segmentwise(value: object, *, prefix: str = "") -> set[str]:
+    """Retain private-token scans on static prompts except plain topic words.
+
+    Reviewed system prompts teach ordinary Risk vocabulary such as ``cash``.
+    That is not a private identifier. Compound/private tokens, keys, secrets,
+    and every non-system or dynamically assembled segment remain strict.
+    """
+
+    if isinstance(value, dict):
+        messages = value.get("messages")
+        if isinstance(messages, (list, tuple)):
+            found = find_forbidden_string_values(
+                {key: item for key, item in value.items() if key != "messages"},
+                prefix=prefix,
+            )
+            prompt_version = value.get("prompt_version")
+            for index, message in enumerate(messages):
+                message_prefix = f"{prefix}.messages[{index}]" if prefix else f"messages[{index}]"
+                found.update(
+                    _find_forbidden_string_values_message(
+                        message,
+                        prefix=message_prefix,
+                        prompt_version=prompt_version if isinstance(prompt_version, str) else None,
+                    )
+                )
+            return found
+        if "role" in value and "content" in value:
+            return _find_forbidden_string_values_message(value, prefix=prefix, prompt_version=None)
+    return find_forbidden_string_values(value, prefix=prefix)
+
+
+def _find_forbidden_string_values_message(
+    message: object,
+    *,
+    prefix: str,
+    prompt_version: str | None,
+) -> set[str]:
+    if not isinstance(message, dict):
+        return find_forbidden_string_values(message, prefix=prefix)
+    role = message.get("role")
+    content = message.get("content")
+    if _is_registered_static_system_segment(role=role, content=content):
+        found = find_forbidden_string_values(
+            {key: item for key, item in message.items() if key != "content"},
+            prefix=prefix,
+        )
+        found.update(
+            find_forbidden_string_values(
+                content,
+                prefix=f"{prefix}.content" if prefix else "content",
+                ignored_plain_tokens=_STATIC_SYSTEM_PROMPT_PLAIN_TOPIC_TOKENS,
+            )
+        )
+        return found
+    return find_forbidden_string_values(message, prefix=prefix)
+
+
+def _find_prohibited_llm_phrases_message(
+    message: object,
+    *,
+    prefix: str,
+    prompt_version: str | None,
+) -> set[str]:
+    if not isinstance(message, dict):
+        return find_prohibited_llm_phrases(message, prefix=prefix)
+    role = message.get("role")
+    content = message.get("content")
+    if _is_reviewed_static_system_segment(role=role, content=content, prompt_version=prompt_version):
+        return find_prohibited_llm_phrases({key: item for key, item in message.items() if key != "content"}, prefix=prefix)
+    return find_prohibited_llm_phrases(message, prefix=prefix)
+
+
+def _is_reviewed_static_system_segment(*, role: object, content: object, prompt_version: str | None) -> bool:
+    if role != "system" or not isinstance(content, str):
+        return False
+    approved_versions = _REVIEWED_STATIC_SYSTEM_PROMPT_VERSIONS.get(content)
+    if not approved_versions:
+        return False
+    return prompt_version is None or prompt_version in approved_versions
+
+
+def _is_registered_static_system_segment(*, role: object, content: object) -> bool:
+    return role == "system" and isinstance(content, str) and content in _STATIC_SYSTEM_PROMPT_REGISTRY
+
+
+def find_forbidden_string_values(
+    value: object,
+    *,
+    prefix: str = "",
+    ignored_plain_tokens: frozenset[str] = frozenset(),
+) -> set[str]:
+    """Return recursive string paths that include private-data token values.
+
+    ``ignored_plain_tokens`` is intentionally opt-in for a narrow output-side
+    prose audit. Input and envelope validation retain the full token list.
+    """
 
     if isinstance(value, str):
         value_lower = value.strip().lower()
-        if any(token in value_lower for token in LLM_PROVIDER_FORBIDDEN_VALUE_TOKENS):
+        if any(
+            token in value_lower
+            for token in LLM_PROVIDER_FORBIDDEN_VALUE_TOKENS
+            if token not in ignored_plain_tokens
+        ):
             return {prefix or "<value>"}
         return set()
     if isinstance(value, dict):
@@ -235,14 +395,32 @@ def find_forbidden_string_values(value: object, *, prefix: str = "") -> set[str]
         for key, item in value.items():
             key_text = str(key)
             key_path = f"{prefix}.{key_text}" if prefix else key_text
-            found.update(find_forbidden_string_values(key_text, prefix=key_path))
-            found.update(find_forbidden_string_values(item, prefix=key_path))
+            found.update(
+                find_forbidden_string_values(
+                    key_text,
+                    prefix=key_path,
+                    ignored_plain_tokens=ignored_plain_tokens,
+                )
+            )
+            found.update(
+                find_forbidden_string_values(
+                    item,
+                    prefix=key_path,
+                    ignored_plain_tokens=ignored_plain_tokens,
+                )
+            )
         return found
     if isinstance(value, (list, tuple)):
         found = set()
         for index, item in enumerate(value):
             item_path = f"{prefix}[{index}]" if prefix else f"[{index}]"
-            found.update(find_forbidden_string_values(item, prefix=item_path))
+            found.update(
+                find_forbidden_string_values(
+                    item,
+                    prefix=item_path,
+                    ignored_plain_tokens=ignored_plain_tokens,
+                )
+            )
         return found
     return set()
 
@@ -292,3 +470,60 @@ def find_secret_like_values(value: object, *, prefix: str = "") -> set[str]:
             found.update(find_secret_like_values(item, prefix=item_path))
         return found
     return set()
+
+
+def register_static_system_prompts(
+    prompts: Iterable[str | ReviewedStaticSystemPrompt],
+) -> frozenset[str]:
+    """Register approved, exact static system prompts for input token scanning.
+
+    The registry is intentionally append-only and matches full strings only.
+    Plain string registrations remain subject to every scan. A
+    ``ReviewedStaticSystemPrompt`` pins an exact approved prompt/version pair
+    and is exempt only from the prohibited-phrase scan when later used as a
+    system-message segment. All other validators remain in force.
+    """
+
+    entries = tuple(prompts)
+    rendered = frozenset(
+        entry.content if isinstance(entry, ReviewedStaticSystemPrompt) else entry
+        for entry in entries
+    )
+    if not rendered or any(not prompt.strip() for prompt in rendered):
+        raise ValueError("static system prompt registry requires non-empty prompts")
+    for entry in entries:
+        prompt = entry.content if isinstance(entry, ReviewedStaticSystemPrompt) else entry
+        if not isinstance(prompt, str):
+            raise ValueError("static system prompt registry requires string content")
+        secret_values = find_secret_like_values(prompt)
+        if secret_values:
+            raise ValueError("static system prompt contains secret-like value")
+        private_values = find_forbidden_string_values(
+            prompt,
+            ignored_plain_tokens=_STATIC_SYSTEM_PROMPT_PLAIN_TOPIC_TOKENS,
+        )
+        if private_values:
+            raise ValueError("static system prompt contains forbidden private value token")
+        if not isinstance(entry, ReviewedStaticSystemPrompt):
+            prohibited_phrases = find_prohibited_llm_phrases(prompt)
+            if prohibited_phrases:
+                raise ValueError("static system prompt contains prohibited advice/execution phrase")
+        elif not entry.prompt_version.strip():
+            raise ValueError("reviewed static system prompt requires prompt_version")
+
+    global _STATIC_SYSTEM_PROMPT_REGISTRY, _REVIEWED_STATIC_SYSTEM_PROMPT_VERSIONS
+    _STATIC_SYSTEM_PROMPT_REGISTRY = frozenset((*_STATIC_SYSTEM_PROMPT_REGISTRY, *rendered))
+    reviewed_versions = dict(_REVIEWED_STATIC_SYSTEM_PROMPT_VERSIONS)
+    for entry in entries:
+        if isinstance(entry, ReviewedStaticSystemPrompt):
+            reviewed_versions[entry.content] = frozenset(
+                (*reviewed_versions.get(entry.content, ()), entry.prompt_version)
+            )
+    _REVIEWED_STATIC_SYSTEM_PROMPT_VERSIONS = reviewed_versions
+    return _STATIC_SYSTEM_PROMPT_REGISTRY
+
+
+def registered_static_system_prompts() -> frozenset[str]:
+    """Return the exact prompt strings approved for the static input exception."""
+
+    return _STATIC_SYSTEM_PROMPT_REGISTRY

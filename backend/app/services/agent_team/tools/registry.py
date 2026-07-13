@@ -73,6 +73,14 @@ def default_tool_registry() -> dict[str, ToolRegistryEntry]:
                 is_mock=False,
             ),
             ToolRegistryEntry(
+                tool_name="market_context_snapshot",
+                display_name="FMP end-of-day market context",
+                evidence_tier="public",
+                role_allowlist=("technical_analyst", "risk_management_agent", "portfolio_manager_agent"),
+                mode="sync",
+                is_mock=False,
+            ),
+            ToolRegistryEntry(
                 tool_name="public_company_profile",
                 display_name="Public company profile",
                 evidence_tier="public",
@@ -104,6 +112,67 @@ def default_tool_registry() -> dict[str, ToolRegistryEntry]:
                 mode="sync",
                 is_mock=False,
             ),
+            ToolRegistryEntry(
+                tool_name="calc_exposure_delta",
+                display_name="Frozen exposure delta calculation",
+                evidence_tier="agent_safe",
+                role_allowlist=portfolio_roles,
+                mode="sync",
+                is_mock=False,
+            ),
+            ToolRegistryEntry(
+                tool_name="calc_concentration_metrics",
+                display_name="Frozen concentration calculation",
+                evidence_tier="agent_safe",
+                role_allowlist=portfolio_roles,
+                mode="sync",
+                is_mock=False,
+            ),
+            ToolRegistryEntry(
+                tool_name="calc_cash_impact",
+                display_name="Frozen cash-impact calculation",
+                evidence_tier="agent_safe",
+                role_allowlist=portfolio_roles,
+                mode="sync",
+                is_mock=False,
+            ),
+            ToolRegistryEntry(
+                tool_name="calc_option_structure",
+                display_name="Frozen option-structure calculation",
+                evidence_tier="agent_safe",
+                role_allowlist=portfolio_roles,
+                mode="sync",
+                is_mock=False,
+            ),
+            ToolRegistryEntry(
+                tool_name="calc_scenario_exposure",
+                display_name="Frozen option-scenario calculation",
+                evidence_tier="agent_safe",
+                role_allowlist=portfolio_roles,
+                mode="sync",
+                is_mock=False,
+            ),
+            *tuple(
+                ToolRegistryEntry(
+                    tool_name=name,
+                    display_name=label,
+                    evidence_tier="public",
+                    role_allowlist=roles,
+                    mode="sync",
+                    is_mock=False,
+                )
+                for name, label, roles in (
+                    ("calc_price_range_position", "Frozen price-range calculation", ("technical_analyst",)),
+                    ("calc_return_windows", "Frozen return-window calculation", ("technical_analyst",)),
+                    ("calc_drawdown_stats", "Frozen drawdown calculation", ("technical_analyst",)),
+                    ("calc_volatility_stats", "Frozen volatility calculation", ("technical_analyst",)),
+                    ("calc_ma_relationships", "Frozen moving-average calculation", ("technical_analyst",)),
+                    ("calc_financial_ratios", "Frozen financial-ratio calculation", ("fundamentals_analyst", "portfolio_manager_agent")),
+                    ("calc_period_change", "Frozen statement-period calculation", ("fundamentals_analyst", "portfolio_manager_agent")),
+                    ("calc_macro_series_change", "Frozen macro-series calculation", ("news_analyst", "portfolio_manager_agent")),
+                    ("calc_event_window", "Frozen event-window calculation", ("news_analyst", "portfolio_manager_agent")),
+                    ("calc_freshness_inventory", "Frozen freshness inventory", all_roles),
+                )
+            ),
         )
     )
-

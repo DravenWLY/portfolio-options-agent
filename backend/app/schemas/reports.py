@@ -6,6 +6,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.trade_review_workspace import ReportScopeMetadataRead
+from app.services.agent_team.llm_clients.contracts import find_secret_like_values
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 
 ReportThreadStatus = Literal["draft", "running", "completed", "failed", "cancelled"]
@@ -31,12 +32,47 @@ SavedPublicEvidenceMode = Literal["not_reviewed", "synthetic_demo", "provider_re
 SavedPublicEvidenceSectionKey = Literal[
     "public_company_profile",
     "public_fundamentals_snapshot",
+    "fred_macro_series_snapshot",
     "public_news_snapshot",
     "public_events_calendar",
     "public_technical_context",
     "public_market_context",
 ]
-SavedPublicEvidenceSourceKey = Literal["sec_edgar_submissions", "sec_edgar_recent_filings"]
+SavedPublicEvidenceSourceKey = Literal[
+    "sec_edgar_submissions",
+    "sec_edgar_recent_filings",
+    "fmp_eod_history",
+    "fmp_reported_statement_facts",
+    "fred_macro_series",
+]
+_FMP_EOD_HISTORY_FACT_KEYS = frozenset({"eod_ohlcv_bar"})
+_FMP_FUNDAMENTALS_FACT_KEYS = frozenset(
+    {
+        "income_statement_revenue",
+        "income_statement_gross_profit",
+        "income_statement_operating_income",
+        "income_statement_net_income",
+        "income_statement_earnings_per_share",
+        "balance_sheet_total_assets",
+        "balance_sheet_total_liabilities",
+        "balance_sheet_total_debt",
+        "balance_sheet_current_assets",
+        "balance_sheet_current_liabilities",
+        "cash_flow_operating_cash_flow",
+        "cash_flow_capital_expenditure",
+        "cash_flow_free_cash_flow",
+    }
+)
+_FRED_MACRO_SERIES_FACT_KEYS = frozenset(
+    {
+        "fred_consumer_price_index",
+        "fred_core_personal_consumption_expenditures",
+        "fred_unemployment_rate",
+        "fred_federal_funds_rate",
+        "fred_ten_year_treasury_yield",
+        "fred_yield_curve_spread",
+    }
+)
 AgentTeamPublicRoleName = Literal["fundamentals_analyst", "news_analyst", "technical_analyst"]
 AgentTeamReportStatus = Literal[
     "source_snapshot",
@@ -52,6 +88,10 @@ AgentTeamReportSynthesisAuthor = Literal["portfolio_manager_agent", "determinist
 _OPAQUE_SAVED_REVIEW_REFERENCE_RE = re.compile(r"^svrev_[a-z0-9][a-z0-9_-]{5,79}$")
 _OPAQUE_SAVED_REVIEW_SOURCE_REFERENCE_RE = re.compile(
     r"^(trrev|workspace|agentrun)_[a-z0-9][a-z0-9_-]{5,79}$"
+)
+_INTERNAL_DISPLAY_TOKEN_RE = re.compile(r"\b[a-z]+(?:_[a-z0-9]+)+\b")
+_DERIVED_EXPOSURE_SECTION_KEYS = frozenset(
+    {"before_after_portfolio_impact", "concentration_risk_drift"}
 )
 _SAVED_REVIEW_FORBIDDEN_KEYS = FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS | {
     "broker_id",
@@ -223,6 +263,8 @@ _SAVED_TOOL_FREEZE_GENERATED_METRIC_PATTERNS = (
     re.compile(r"\b(?:roi|yield|breakeven|break-even)\b", re.IGNORECASE),
     re.compile(r"\b[0-9]+(?:\.[0-9]+)?\s*(?:shares?|contracts?)\b", re.IGNORECASE),
 )
+_P36_CALC_TOOL_CONTRACT_VERSION = "p36_calc_envelope_v1"
+_P36_TOOL_RUN_ARTIFACT_SCHEMA_VERSION = "p36_tool_run_freeze_v1"
 
 
 def validate_saved_review_artifact_payload(value: object) -> None:
@@ -240,7 +282,12 @@ def validate_saved_review_artifact_payload(value: object) -> None:
             raise ValueError(f"saved review artifact contains prohibited wording: {phrase}")
 
 
-def validate_saved_tool_freeze_payload(value: object) -> None:
+def validate_saved_tool_freeze_payload(
+    value: object,
+    *,
+    allow_p36_calculation_values: bool = False,
+    allow_p36_live_markdown: bool = False,
+) -> None:
     """Validate frozen tool-mediated run artifacts before saved-report persistence."""
 
     validate_saved_review_artifact_payload(value)
@@ -251,27 +298,60 @@ def validate_saved_tool_freeze_payload(value: object) -> None:
     for token in _SAVED_TOOL_FREEZE_FORBIDDEN_VALUE_TOKENS:
         if token in rendered:
             raise ValueError(f"saved tool-mediated run artifact contains forbidden value: {token}")
-    metric_paths = _find_saved_tool_freeze_metric_strings(value)
+    metric_paths = _find_saved_tool_freeze_metric_strings(
+        value,
+        allow_quantity_units=allow_p36_calculation_values,
+        allow_value_bearing_live_markdown=allow_p36_live_markdown,
+    )
     if metric_paths:
         raise ValueError(f"saved tool-mediated run artifact contains generated metric text: {sorted(metric_paths)}")
 
 
-def _find_saved_tool_freeze_metric_strings(value: object, *, prefix: str = "") -> set[str]:
+def _find_saved_tool_freeze_metric_strings(
+    value: object,
+    *,
+    prefix: str = "",
+    allow_quantity_units: bool = False,
+    allow_value_bearing_live_markdown: bool = False,
+) -> set[str]:
     if isinstance(value, str):
-        if any(pattern.search(value) for pattern in _SAVED_TOOL_FREEZE_GENERATED_METRIC_PATTERNS):
+        patterns = _SAVED_TOOL_FREEZE_GENERATED_METRIC_PATTERNS
+        if allow_quantity_units:
+            patterns = tuple(
+                pattern
+                for pattern in _SAVED_TOOL_FREEZE_GENERATED_METRIC_PATTERNS
+                if "shares?" not in pattern.pattern and "contracts?" not in pattern.pattern
+            )
+        if any(pattern.search(value) for pattern in patterns):
             return {prefix or "<value>"}
         return set()
     if isinstance(value, dict):
         found: set[str] = set()
         for key, item in value.items():
             key_path = f"{prefix}.{key}" if prefix else str(key)
-            found.update(_find_saved_tool_freeze_metric_strings(item, prefix=key_path))
+            if allow_value_bearing_live_markdown and str(key) == "live_report_markdown":
+                continue
+            found.update(
+                _find_saved_tool_freeze_metric_strings(
+                    item,
+                    prefix=key_path,
+                    allow_quantity_units=allow_quantity_units,
+                    allow_value_bearing_live_markdown=allow_value_bearing_live_markdown,
+                )
+            )
         return found
     if isinstance(value, (list, tuple)):
         found = set()
         for index, item in enumerate(value):
             item_path = f"{prefix}[{index}]" if prefix else f"[{index}]"
-            found.update(_find_saved_tool_freeze_metric_strings(item, prefix=item_path))
+            found.update(
+                _find_saved_tool_freeze_metric_strings(
+                    item,
+                    prefix=item_path,
+                    allow_quantity_units=allow_quantity_units,
+                    allow_value_bearing_live_markdown=allow_value_bearing_live_markdown,
+                )
+            )
         return found
     return set()
 
@@ -386,9 +466,11 @@ class SavedDeterministicReviewSummaryRead(BaseModel):
     broker_snapshot_freshness_label: str | None = None
     market_quote_freshness_label: str | None = None
     caveat_codes: tuple[str, ...]
+    derived_exposure_sections: tuple["SavedEvidenceSectionRead", ...] = ()
 
     @model_validator(mode="after")
     def deterministic_summary_must_be_safe(self) -> "SavedDeterministicReviewSummaryRead":
+        _validate_derived_exposure_sections(self.derived_exposure_sections)
         validate_saved_review_artifact_payload(self.model_dump(mode="python"))
         return self
 
@@ -401,6 +483,7 @@ class SavedAgentTeamRoleSummaryRead(BaseModel):
     role_status: AgentTeamReportRoleStatus = "completed"
     provider_status: str
     summary_markdown: str | None = None
+    live_report_markdown: str | None = None
     evidence_references: tuple[str, ...] = ()
     warning_codes: tuple[str, ...]
     unavailable_reason: str | None = None
@@ -416,11 +499,13 @@ class SavedAgentTeamRoleSummaryRead(BaseModel):
                     {
                         "role_name": self.role_name,
                         "section_markdown": self.summary_markdown,
+                        "live_report_markdown": self.live_report_markdown,
                         "evidence_references": self.evidence_references,
                     },
                 )
             },
             label="agent-team role summary",
+            allow_p36_live_markdown=True,
         )
         return self
 
@@ -475,7 +560,18 @@ class SavedToolMediatedToolResultRead(BaseModel):
 
     @model_validator(mode="after")
     def tool_result_must_be_safe(self) -> "SavedToolMediatedToolResultRead":
-        validate_saved_tool_freeze_payload(self.model_dump(mode="python"))
+        validate_saved_tool_freeze_payload(
+            self.model_dump(mode="python"),
+            allow_p36_calculation_values=self.contract_version == _P36_CALC_TOOL_CONTRACT_VERSION,
+        )
+        if self.contract_version == _P36_CALC_TOOL_CONTRACT_VERSION:
+            # P36 results are value-bearing. Reconstruct the app-owned envelope
+            # on readback so a persisted artifact cannot bypass the same exact
+            # shape, tier, privacy, and legacy-scanner reconciliation used when
+            # the calculation was first frozen.
+            from app.services.agent_team.tools.envelopes import ToolResult
+
+            ToolResult(**self.model_dump(mode="python"))
         return self
 
 
@@ -501,10 +597,14 @@ class SavedToolMediatedRoleFindingSetRead(BaseModel):
     findings: tuple[SavedToolMediatedRoleFindingRead, ...]
     warning_codes: tuple[str, ...]
     unavailable_reason: str | None = None
+    live_report_markdown: str | None = None
 
     @model_validator(mode="after")
     def role_finding_set_must_be_safe(self) -> "SavedToolMediatedRoleFindingSetRead":
-        validate_saved_tool_freeze_payload(self.model_dump(mode="python"))
+        validate_saved_tool_freeze_payload(
+            self.model_dump(mode="python"),
+            allow_p36_live_markdown=True,
+        )
         return self
 
 
@@ -562,7 +662,7 @@ class SavedToolMediatedProviderRunRead(BaseModel):
 class SavedToolMediatedRunArtifactRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
-    artifact_schema_version: Literal["p33a_tool_run_freeze_v1"] = "p33a_tool_run_freeze_v1"
+    artifact_schema_version: Literal["p33a_tool_run_freeze_v1", "p36_tool_run_freeze_v1"] = "p33a_tool_run_freeze_v1"
     provider_mode: Literal["tool_mediated_mock", "tool_mediated_live"]
     plan_version: str
     audit_version: str
@@ -583,7 +683,14 @@ class SavedToolMediatedRunArtifactRead(BaseModel):
     def tool_run_artifact_must_be_safe(self) -> "SavedToolMediatedRunArtifactRead":
         if self.tool_result_count != len(self.tool_results):
             raise ValueError("tool_result_count must match frozen tool results")
-        validate_saved_tool_freeze_payload(self.model_dump(mode="python"))
+        validate_saved_tool_freeze_payload(
+            self.model_dump(mode="python"),
+            allow_p36_calculation_values=self.artifact_schema_version == _P36_TOOL_RUN_ARTIFACT_SCHEMA_VERSION,
+            allow_p36_live_markdown=self.artifact_schema_version == _P36_TOOL_RUN_ARTIFACT_SCHEMA_VERSION,
+        )
+        from app.services.agent_team.auditing.v3_value_gates import validate_frozen_artifact_gate_set
+
+        validate_frozen_artifact_gate_set(self)
         return self
 
 
@@ -714,6 +821,7 @@ class SavedEvidenceScopeStateRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
     review_account_selected: bool
+    review_account_display_label: str | None = None
     review_account_included_in_portfolio_scope: bool | None = None
     review_account_is_feasibility_source: bool
     account_level_feasibility_evaluated: bool
@@ -753,6 +861,19 @@ class SavedEvidenceActionabilityRead(BaseModel):
         return self
 
 
+class SavedTradeImpactNarrativeGroupsRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    proceed_statements: tuple[str, ...] = ()
+    not_reviewed_statement: str | None = None
+    verify_statement: str | None = None
+
+    @model_validator(mode="after")
+    def narrative_groups_must_be_safe(self) -> "SavedTradeImpactNarrativeGroupsRead":
+        validate_saved_review_artifact_payload(self.model_dump(mode="python"))
+        return self
+
+
 class SavedEvidenceSectionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
@@ -762,11 +883,118 @@ class SavedEvidenceSectionRead(BaseModel):
     summary_label: str | None = None
     detail_labels: tuple[str, ...] = ()
     caveat_codes: tuple[str, ...] = ()
+    trade_impact_narrative_groups: SavedTradeImpactNarrativeGroupsRead | None = None
 
     @model_validator(mode="after")
     def section_must_be_safe(self) -> "SavedEvidenceSectionRead":
+        if (
+            self.trade_impact_narrative_groups is not None
+            and self.section_key != "before_after_portfolio_impact"
+        ):
+            raise ValueError("trade-impact narrative groups are only approved for before/after exposure sections")
         validate_saved_review_artifact_payload(self.model_dump(mode="python"))
         return self
+
+
+def _validate_derived_exposure_sections(sections: tuple[SavedEvidenceSectionRead, ...]) -> None:
+    seen: set[str] = set()
+    for section in sections:
+        if section.section_key not in _DERIVED_EXPOSURE_SECTION_KEYS:
+            raise ValueError("derived exposure section key is not approved for saved review artifacts")
+        if section.section_key in seen:
+            raise ValueError("derived exposure sections must not contain duplicates")
+        seen.add(section.section_key)
+
+
+def _safe_derived_exposure_sections(
+    sections: tuple[SavedEvidenceSectionRead, ...],
+) -> dict[str, SavedEvidenceSectionRead]:
+    try:
+        _validate_derived_exposure_sections(sections)
+    except ValueError:
+        return {}
+    safe: dict[str, SavedEvidenceSectionRead] = {}
+    for section in sections:
+        if _stored_exposure_section_is_safe(section):
+            safe[section.section_key] = section
+    return safe
+
+
+def _stored_exposure_section_is_safe(section: SavedEvidenceSectionRead) -> bool:
+    payload = section.model_dump(mode="python")
+    if find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS):
+        return False
+    if find_secret_like_values(payload):
+        return False
+    if _display_text_has_internal_token(section):
+        return False
+    try:
+        validate_saved_review_artifact_payload(payload)
+    except ValueError:
+        return False
+    return True
+
+
+def _safe_review_account_display_label(value: str | None) -> str | None:
+    """Keep only a reviewed nickname that remains safe for saved-report prose."""
+
+    if not value:
+        return None
+    label = value.strip()
+    if not label or _INTERNAL_DISPLAY_TOKEN_RE.search(label):
+        return None
+    payload = {"review_account_display_label": label}
+    if find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS):
+        return None
+    if find_secret_like_values(payload):
+        return None
+    try:
+        validate_saved_review_artifact_payload(payload)
+    except ValueError:
+        return None
+    return label
+
+
+def _display_text_has_internal_token(section: SavedEvidenceSectionRead) -> bool:
+    group = section.trade_impact_narrative_groups
+    if group is not None and not isinstance(group, SavedTradeImpactNarrativeGroupsRead):
+        return True
+    display_text = " ".join(
+        value
+        for value in (
+            section.section_label,
+            section.summary_label or "",
+            *section.detail_labels,
+            *((group.proceed_statements if group is not None else ())),
+            *((group.not_reviewed_statement,) if group is not None and group.not_reviewed_statement else ()),
+            *((group.verify_statement,) if group is not None and group.verify_statement else ()),
+        )
+        if value
+    )
+    return _INTERNAL_DISPLAY_TOKEN_RE.search(display_text) is not None
+
+
+def _stub_before_after_portfolio_impact_section() -> SavedEvidenceSectionRead:
+    return SavedEvidenceSectionRead(
+        section_key="before_after_portfolio_impact",
+        section_label="Before/after portfolio impact",
+        availability="not_available",
+        summary_label="Before/after portfolio-impact details were not included in this saved source.",
+    )
+
+
+def _stub_concentration_risk_drift_section(
+    *,
+    highest_severity: str,
+    caveat_codes: tuple[str, ...],
+) -> SavedEvidenceSectionRead:
+    return SavedEvidenceSectionRead(
+        section_key="concentration_risk_drift",
+        section_label="Concentration and risk drift",
+        availability="limited",
+        summary_label=f"Highest deterministic severity: {highest_severity}.",
+        caveat_codes=caveat_codes,
+    )
 
 
 class SavedPublicEvidenceFactRead(BaseModel):
@@ -807,7 +1035,54 @@ class SavedPublicEvidenceSectionRead(BaseModel):
         validate_public_evidence_payload(self.model_dump(mode="python"))
         if self.availability in {"available", "limited"} and self.rights_status == "not_reviewed":
             raise ValueError("available public evidence requires reviewed or internal-demo source rights")
+        _validate_p36_source_snapshot_section(self)
         return self
+
+
+def _validate_p36_source_snapshot_section(section: SavedPublicEvidenceSectionRead) -> None:
+    source_contracts = {
+        "fmp_reported_statement_facts": (
+            "public_fundamentals_snapshot",
+            _FMP_FUNDAMENTALS_FACT_KEYS,
+            "FMP normalized reported statement facts",
+            "Source: Financial Modeling Prep normalized reported statement facts, with labeled fiscal periods and report dates.",
+        ),
+        "fmp_eod_history": (
+            "public_market_context",
+            _FMP_EOD_HISTORY_FACT_KEYS,
+            "FMP end-of-day data (internal evaluation use)",
+            "Source: Financial Modeling Prep normalized end-of-day OHLCV history. Historical end-of-day data only.",
+        ),
+        "fred_macro_series": (
+            "fred_macro_series_snapshot",
+            _FRED_MACRO_SERIES_FACT_KEYS,
+            "FRED normalized macro series observations",
+            "Source: Federal Reserve Economic Data (FRED), normalized series observations and dates.",
+        ),
+    }
+    contract = source_contracts.get(section.source_key)
+    if contract is None:
+        return
+    expected_section_key, allowed_fact_keys, expected_source_label, required_attribution = contract
+    if section.section_key != expected_section_key:
+        raise ValueError("source snapshot was attached to an unapproved public evidence section")
+    if section.source_label != expected_source_label:
+        raise ValueError("source snapshot did not use the reviewed source label")
+    fact_keys = {fact.fact_key for fact in section.facts}
+    if not fact_keys.issubset(allowed_fact_keys):
+        raise ValueError("source snapshot contains an unapproved normalized fact")
+    if section.availability in {"available", "limited"}:
+        if not section.facts:
+            raise ValueError("available source snapshot requires normalized facts")
+        if any(
+            not fact.value_label or not fact.as_of_label or not fact.source_label
+            for fact in section.facts
+        ):
+            raise ValueError("normalized source snapshot facts require value, as-of, and source labels")
+        if required_attribution not in section.limitations:
+            raise ValueError("available source snapshot requires the reviewed attribution")
+    elif section.facts:
+        raise ValueError("unavailable source snapshot must not retain normalized facts")
 
 
 class SavedPublicEvidencePackageRead(BaseModel):
@@ -818,6 +1093,8 @@ class SavedPublicEvidencePackageRead(BaseModel):
     symbol_or_underlying: str | None = None
     public_company_profile: SavedPublicEvidenceSectionRead
     public_fundamentals_snapshot: SavedPublicEvidenceSectionRead
+    # Optional so pre-P36 frozen packages remain readable without migration.
+    fred_macro_series_snapshot: SavedPublicEvidenceSectionRead | None = None
     public_news_snapshot: SavedPublicEvidenceSectionRead
     public_events_calendar: SavedPublicEvidenceSectionRead
     public_technical_context: SavedPublicEvidenceSectionRead
@@ -838,6 +1115,11 @@ class SavedPublicEvidencePackageRead(BaseModel):
                 "public_fundamentals_snapshot",
                 "Public fundamentals snapshot",
                 "No reviewed public fundamentals snapshot is attached to this saved report.",
+            ),
+            fred_macro_series_snapshot=_not_reviewed_public_section(
+                "fred_macro_series_snapshot",
+                "FRED macro series snapshot",
+                "No reviewed FRED macro series snapshot is attached to this saved report.",
             ),
             public_news_snapshot=_not_reviewed_public_section(
                 "public_news_snapshot",
@@ -964,6 +1246,9 @@ class SavedEvidencePackageRead(BaseModel):
             else "Account-level feasibility was not evaluated in the saved review scope."
         )
         highest_severity = deterministic.highest_severity or "not provided"
+        frozen_exposure_sections = _safe_derived_exposure_sections(deterministic.derived_exposure_sections)
+        before_after_section = frozen_exposure_sections.get("before_after_portfolio_impact")
+        concentration_section = frozen_exposure_sections.get("concentration_risk_drift")
 
         return cls(
             source_snapshot=SavedEvidenceSourceSnapshotRead(
@@ -980,6 +1265,9 @@ class SavedEvidencePackageRead(BaseModel):
             ),
             scope_state=SavedEvidenceScopeStateRead(
                 review_account_selected=review_account is not None,
+                review_account_display_label=_safe_review_account_display_label(
+                    review_account.display_label if review_account is not None else None
+                ),
                 review_account_included_in_portfolio_scope=(
                     review_account.is_included_in_portfolio_scope if review_account is not None else None
                 ),
@@ -1015,17 +1303,9 @@ class SavedEvidencePackageRead(BaseModel):
                 summary_label="Saved deterministic portfolio-impact summary is available as reviewed labels and caveats.",
                 caveat_codes=caveat_codes,
             ),
-            before_after_portfolio_impact=SavedEvidenceSectionRead(
-                section_key="before_after_portfolio_impact",
-                section_label="Before/after portfolio impact",
-                availability="not_available",
-                summary_label="Before/after portfolio-impact details were not included in this saved source.",
-            ),
-            concentration_risk_drift=SavedEvidenceSectionRead(
-                section_key="concentration_risk_drift",
-                section_label="Concentration and risk drift",
-                availability="limited",
-                summary_label=f"Highest deterministic severity: {highest_severity}.",
+            before_after_portfolio_impact=before_after_section or _stub_before_after_portfolio_impact_section(),
+            concentration_risk_drift=concentration_section or _stub_concentration_risk_drift_section(
+                highest_severity=highest_severity,
                 caveat_codes=caveat_codes,
             ),
             cash_collateral_caveats=SavedEvidenceSectionRead(

@@ -60,6 +60,22 @@ from app.services.reports.public_evidence import build_public_role_evidence_proj
 
 
 from app.services.agent_team.orchestration.models import *  # noqa: F401,F403
+from app.services.agent_team.auditing.live_report_gates import (
+    LIVE_GATE_WARNING_BY_FLAG,
+    validate_live_report_consistency,
+    validate_live_report_structure,
+)
+from app.services.agent_team.auditing.v3_value_gates import (
+    ADVICE_BOUNDARY_FLAG,
+    ATTRIBUTION_REQUIRED_FLAG,
+    GROUNDING_FLAG,
+    IDENTIFIER_AMBIGUOUS_FLAG,
+    IDENTIFIER_PRIVACY_FLAG,
+    NUMERIC_PROVENANCE_FLAG,
+    STRUCTURE_CONTRACT_FLAG,
+    WHAT_WAS_VERIFIED_FLAG,
+    validate_p36_risk_analysis_section,
+)
 
 
 AUDITOR_EVAL_WARNING_CODES = frozenset(
@@ -68,11 +84,37 @@ AUDITOR_EVAL_WARNING_CODES = frozenset(
         "advice_wording_blocked",
         "invented_metric_blocked",
         "fred_interpretation_blocked",
+        "numeric_consistency_blocked",
+        "category_consistency_blocked",
+        "structure_contract_blocked",
         "live_provider_validation_failed",
+        "portfolio_claim_blocked",
         "sec_interpretation_blocked",
         "source_leak_blocked",
+        "display_token_blocked",
+        ADVICE_BOUNDARY_FLAG,
+        ATTRIBUTION_REQUIRED_FLAG,
+        GROUNDING_FLAG,
+        WHAT_WAS_VERIFIED_FLAG,
+        NUMERIC_PROVENANCE_FLAG,
+        IDENTIFIER_PRIVACY_FLAG,
+        IDENTIFIER_AMBIGUOUS_FLAG,
     }
 )
+P36_LIVE_GATE_WARNING_BY_FLAG = {
+    ADVICE_BOUNDARY_FLAG: "live_advice_boundary_dropped",
+    ATTRIBUTION_REQUIRED_FLAG: "live_attribution_required_dropped",
+    WHAT_WAS_VERIFIED_FLAG: "live_what_was_verified_dropped",
+    GROUNDING_FLAG: "live_grounding_dropped",
+}
+
+# The Risk Manager's reviewed static prompt requires plain-language discussion
+# of these topics.  They describe a topic, not a private value.  This narrow
+# exception applies only while auditing generated role-note prose; compound
+# private tokens, structural disclosures, secrets, and all input/envelope
+# validation remain fail-closed.
+_ROLE_NOTE_TOPIC_TOKENS = frozenset({"cash", "holdings", "positions"})
+_ROLE_NOTE_KEY_VALUE_DISCLOSURE_RE = re.compile(r"\b(?:cash|holdings|positions)\s*[:=]", re.IGNORECASE)
 STRUCTURED_NEGATIVE_SIGNAL_TOKENS = (
     "stale",
     "unavailable",
@@ -130,6 +172,7 @@ def audit_findings(
     received_refs_by_role: dict[str, frozenset[str]],
     *,
     repass: bool = False,
+    p36_risk_mode: bool = False,
 ) -> tuple[AuditorRecord, tuple[RoleFindingSet, ...]]:
     availability_by_role = _availability_by_role(results_by_role)
     usable = usable_content_by_role()
@@ -139,6 +182,42 @@ def audit_findings(
     fixable_failure = False
     for finding_set in finding_sets:
         flags.extend(code for code in finding_set.warning_codes if code in AUDITOR_EVAL_WARNING_CODES)
+        live_report_markdown = finding_set.live_report_markdown
+        live_warning_codes: tuple[str, ...] = ()
+        if live_report_markdown:
+            if p36_risk_mode and finding_set.role_name == "risk_management_agent":
+                live_drop_flag = validate_p36_risk_analysis_section(
+                    markdown=live_report_markdown,
+                    role_results=results_by_role.get(finding_set.role_name, ()),
+                )
+            else:
+                live_drop_flag = validate_live_report_structure(
+                    role_name=finding_set.role_name,
+                    markdown=live_report_markdown,
+                )
+                if live_drop_flag is None:
+                    live_drop_flag = _hard_block_flag(
+                        RoleFinding(
+                            finding_type="missing_context",
+                            claim_text=live_report_markdown,
+                            evidence_refs=tuple(received_refs_by_role.get(finding_set.role_name, frozenset())),
+                        ),
+                        allow_role_note_topic_vocabulary=True,
+                    )
+                if live_drop_flag is None:
+                    live_drop_flag = validate_live_report_consistency(
+                        markdown=live_report_markdown,
+                        role_results=results_by_role.get(finding_set.role_name, ()),
+                    )
+            if live_drop_flag is not None:
+                dropped.append(live_drop_flag)
+                flags.append(live_drop_flag)
+                warning = LIVE_GATE_WARNING_BY_FLAG.get(
+                    live_drop_flag,
+                    P36_LIVE_GATE_WARNING_BY_FLAG.get(live_drop_flag, "live_provider_safety_fallback"),
+                )
+                live_warning_codes = (warning,)
+                live_report_markdown = None
         findings: list[RoleFinding] = []
         for finding in finding_set.findings:
             blocked_flag = _hard_block_flag(finding)
@@ -178,8 +257,9 @@ def audit_findings(
                 role_name=finding_set.role_name,
                 role_status=finding_set.role_status,
                 findings=tuple(findings),
-                warning_codes=tuple(dict.fromkeys((*finding_set.warning_codes, *flags))),
+                warning_codes=tuple(dict.fromkeys((*finding_set.warning_codes, *live_warning_codes, *flags))),
                 unavailable_reason=finding_set.unavailable_reason,
+                live_report_markdown=live_report_markdown,
             )
         )
     contradictions = _detect_contradictions(tuple(audited))
@@ -199,11 +279,29 @@ def audit_findings(
     )
 
 
-def _hard_block_flag(finding: RoleFinding) -> str | None:
+def _hard_block_flag(
+    finding: RoleFinding,
+    *,
+    allow_role_note_topic_vocabulary: bool = False,
+) -> str | None:
     payload = asdict(finding)
-    if find_forbidden_keys(payload, forbidden_keys=TOOL_FORBIDDEN_KEYS) or find_forbidden_string_values(payload):
+    if find_forbidden_keys(payload, forbidden_keys=TOOL_FORBIDDEN_KEYS):
+        return "private_leak_blocked"
+    if allow_role_note_topic_vocabulary:
+        # Keep refs, caveat metadata, and every non-prose field under the full
+        # scan. Only this generated role-note sentence may use the three
+        # reviewed topic words in ordinary language.
+        non_prose_payload = {**payload, "claim_text": ""}
+        if find_forbidden_string_values(non_prose_payload) or find_forbidden_string_values(
+            finding.claim_text,
+            ignored_plain_tokens=_ROLE_NOTE_TOPIC_TOKENS,
+        ):
+            return "private_leak_blocked"
+    elif find_forbidden_string_values(payload):
         return "private_leak_blocked"
     rendered = repr(payload).lower()
+    if allow_role_note_topic_vocabulary and _ROLE_NOTE_KEY_VALUE_DISCLOSURE_RE.search(finding.claim_text):
+        return "private_leak_blocked"
     if any(phrase in rendered for phrase in (*REPORT_PROHIBITED_PHRASES, *TOOL_PROHIBITED_PHRASES)):
         return "advice_wording_blocked"
     if find_prohibited_llm_phrases(payload):

@@ -64,6 +64,19 @@ FindingType = Literal["ignored_risk", "missing_context", "contradiction", "open_
 
 MAX_TOOL_CALLS_PER_ROLE = 8
 MAX_TOOL_CALLS_TOTAL = 16
+# Tier 1 P36 limits apply to the eventual five-role mediated run.  The
+# Risk-only T5A-1 loop consumes a bounded subset of these limits; later role
+# activation will share the same constants rather than reviving the P33 caps.
+P36_TYPICAL_LLM_CALLS_PER_RUN = 10
+P36_LLM_CALLS_HARD_CAP = 19
+P36_TYPICAL_TOOL_REQUESTS_PER_RUN = 20
+P36_TOOL_REQUESTS_HARD_CAP = 40
+P36_ANALYST_MAX_TOKENS_PER_ITERATION = 2000
+P36_RISK_MAX_PROVIDER_CALLS = 3
+P36_RISK_MAX_TOOL_REQUESTS = 10
+# Three thirty-second requests are the Risk slice's maximum wall-clock budget.
+P36_RISK_WALL_CLOCK_SECONDS = 90
+P36_RISK_TOKEN_CEILING = P36_RISK_MAX_PROVIDER_CALLS * P36_ANALYST_MAX_TOKENS_PER_ITERATION
 MAX_ROLES = len(AGENT_TEAM_ROLES)
 MAX_PLANNER_REPASSES = 1
 PLAN_VERSION = "p33a_plan_v1"
@@ -71,7 +84,13 @@ AUDIT_VERSION = "p33a_audit_v1"
 PROVIDER_MODE = "tool_mediated_mock"
 LIVE_PROVIDER_MODE = "tool_mediated_live"
 QUESTION = "what_would_be_ignored"
-LIVE_PROMPT_VERSION = "p34a-tool-mediated-role-v2"
+LIVE_PROMPT_VERSION = "p35-role-note-v2"
+LIVE_ROLE_MAX_TOKENS: dict[str, int] = {
+    "technical_analyst": 600,
+    "risk_management_agent": 600,
+    "fundamentals_analyst": 600,
+    "news_analyst": 600,
+}
 PLAN_DIMENSIONS = (
     "risk_freshness",
     "scope_feasibility",
@@ -92,6 +111,7 @@ TOOL_FIXED_CONTENT_REFS: dict[str, tuple[str, ...]] = {
     ),
     "broker_snapshot_freshness": ("freshness",),
     "market_quote_freshness": ("market_quote_freshness",),
+    "market_context_snapshot": ("public_market_context",),
     "public_company_profile": ("public_company_profile",),
     "economic_awareness_context": ("economic_awareness_snapshot",),
     "sec_recent_filings_metadata": ("public_events_calendar",),
@@ -241,6 +261,7 @@ class RoleFindingSet:
     findings: tuple[RoleFinding, ...]
     warning_codes: tuple[str, ...]
     unavailable_reason: str | None = None
+    live_report_markdown: str | None = None
 
 
 @dataclass(frozen=True)
@@ -303,7 +324,13 @@ class ToolMediatedRunState:
     provider_runs: tuple[ProviderRunMeta, ...] = ()
 
     def __post_init__(self) -> None:
-        validate_saved_tool_freeze_payload(asdict(self))
+        has_p36_prompt = any(run.prompt_version == "p36-role-analysis-v1" for run in self.provider_runs)
+        has_p36_calculation = any(result.contract_version == "p36_calc_envelope_v1" for result in self.tool_results)
+        validate_saved_tool_freeze_payload(
+            asdict(self),
+            allow_p36_calculation_values=has_p36_calculation,
+            allow_p36_live_markdown=has_p36_prompt,
+        )
 
 
 def _now_utc() -> datetime:

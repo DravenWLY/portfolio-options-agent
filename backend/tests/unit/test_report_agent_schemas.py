@@ -49,6 +49,7 @@ from app.services.reports.public_evidence import (
     build_public_role_evidence_projection,
 )
 from app.services.agent_team.safety.report_output_safety import validate_agent_team_report_output
+from app.services.trade_review import exposure_adapter as exposure_adapter_service
 
 
 pytestmark = pytest.mark.unit
@@ -175,6 +176,152 @@ def test_saved_review_source_payload_validation_accepts_complete_stored_json() -
     )
 
     assert _saved_review_source_payload_is_valid(source) is True
+
+
+def test_deterministic_summary_accepts_approved_derived_exposure_sections() -> None:
+    payload = _saved_deterministic_summary().model_dump(mode="json")
+    payload["derived_exposure_sections"] = [
+        section.model_dump(mode="json") for section in _derived_exposure_sections()
+    ]
+    roundtrip = SavedDeterministicReviewSummaryRead.model_validate(payload)
+
+    assert tuple(section.section_key for section in roundtrip.derived_exposure_sections) == (
+        "before_after_portfolio_impact",
+        "concentration_risk_drift",
+    )
+
+
+@pytest.mark.parametrize(
+    "sections",
+    (
+        (
+            SavedEvidenceSectionRead(
+                section_key="market_quote_freshness",
+                section_label="Market quote freshness",
+                availability="available",
+                summary_label="Market quote freshness is available.",
+            ),
+        ),
+        (
+            SavedEvidenceSectionRead(
+                section_key="before_after_portfolio_impact",
+                section_label="Before/after portfolio impact",
+                availability="available",
+                summary_label="First section.",
+            ),
+            SavedEvidenceSectionRead(
+                section_key="before_after_portfolio_impact",
+                section_label="Before/after portfolio impact",
+                availability="limited",
+                summary_label="Duplicate section.",
+            ),
+        ),
+    ),
+)
+def test_deterministic_summary_rejects_unapproved_or_duplicate_derived_sections(
+    sections: tuple[SavedEvidenceSectionRead, ...],
+) -> None:
+    payload = _saved_deterministic_summary().model_dump(mode="json")
+    payload["derived_exposure_sections"] = [section.model_dump(mode="json") for section in sections]
+
+    with pytest.raises(ValidationError):
+        SavedDeterministicReviewSummaryRead.model_validate(payload)
+
+
+def test_saved_evidence_package_uses_frozen_derived_exposure_sections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = _saved_review_artifact(
+        deterministic_summary=_saved_deterministic_summary().model_copy(
+            update={"derived_exposure_sections": _derived_exposure_sections()},
+        )
+    )
+    monkeypatch.setattr(
+        exposure_adapter_service,
+        "build_trade_exposure_impact",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("readback must not recompute exposure impact")),
+    )
+
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
+
+    assert evidence.before_after_portfolio_impact.availability == "available"
+    assert evidence.before_after_portfolio_impact.summary_label == "Before/after display section."
+    assert evidence.before_after_portfolio_impact.detail_labels == ("Before table row: $1,000 to $1,500.",)
+    assert evidence.before_after_portfolio_impact.trade_impact_narrative_groups is not None
+    assert evidence.before_after_portfolio_impact.trade_impact_narrative_groups.proceed_statements == (
+        "Proceeding would create a new $1,500 reviewed position.",
+    )
+    assert (
+        evidence.before_after_portfolio_impact.trade_impact_narrative_groups.not_reviewed_statement
+        == "Not reviewed: fund holdings and taxes."
+    )
+    assert evidence.concentration_risk_drift.availability == "available"
+    assert evidence.concentration_risk_drift.summary_label == "Concentration display section."
+
+
+def test_saved_evidence_package_keeps_legacy_stubs_without_frozen_sections() -> None:
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(_saved_review_artifact())
+
+    assert evidence.before_after_portfolio_impact.availability == "not_available"
+    assert evidence.before_after_portfolio_impact.summary_label == (
+        "Before/after portfolio-impact details were not included in this saved source."
+    )
+    assert evidence.concentration_risk_drift.availability == "limited"
+    assert evidence.concentration_risk_drift.summary_label == "Highest deterministic severity: warning."
+
+
+def test_saved_evidence_package_fails_closed_on_poisoned_frozen_section() -> None:
+    poisoned = SavedEvidenceSectionRead(
+        section_key="before_after_portfolio_impact",
+        section_label="Before/after portfolio impact",
+        availability="available",
+        summary_label="manual_review_required leaked into display text.",
+        detail_labels=("Display row stays frozen.",),
+    )
+    artifact = _saved_review_artifact(
+        deterministic_summary=_saved_deterministic_summary().model_copy(
+            update={"derived_exposure_sections": (poisoned, *_derived_exposure_sections()[1:])},
+        )
+    )
+
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
+
+    assert evidence.before_after_portfolio_impact.availability == "not_available"
+    assert evidence.before_after_portfolio_impact.summary_label == (
+        "Before/after portfolio-impact details were not included in this saved source."
+    )
+    assert evidence.concentration_risk_drift.summary_label == "Concentration display section."
+
+
+def test_evidence_section_rejects_trade_impact_groups_on_unapproved_section() -> None:
+    with pytest.raises(ValidationError):
+        SavedEvidenceSectionRead(
+            section_key="concentration_risk_drift",
+            section_label="Concentration and risk drift",
+            availability="available",
+            summary_label="Concentration display section.",
+            trade_impact_narrative_groups={
+                "proceed_statements": ("Proceeding statement belongs only on before/after impact.",),
+            },
+        )
+
+
+def test_saved_evidence_package_fails_closed_on_poisoned_narrative_group() -> None:
+    base = _derived_exposure_sections()[0].model_dump(mode="python")
+    base["trade_impact_narrative_groups"] = {
+        "proceed_statements": ("manual_review_required leaked into grouped display text.",),
+    }
+    poisoned = SavedEvidenceSectionRead.model_validate(base)
+    artifact = _saved_review_artifact(
+        deterministic_summary=_saved_deterministic_summary().model_copy(
+            update={"derived_exposure_sections": (poisoned, *_derived_exposure_sections()[1:])},
+        )
+    )
+
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
+
+    assert evidence.before_after_portfolio_impact.availability == "not_available"
+    assert evidence.before_after_portfolio_impact.trade_impact_narrative_groups is None
 
 
 @pytest.mark.parametrize(
@@ -362,7 +509,7 @@ def test_saved_review_artifact_read_preserves_generation_time_scope_and_summarie
     assert payload.agent_summary is not None
 
 
-def test_saved_evidence_package_projects_from_saved_artifact_without_account_labels_or_refs() -> None:
+def test_saved_evidence_package_projects_reviewed_account_nickname_without_account_refs() -> None:
     artifact = _saved_review_artifact()
 
     evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
@@ -375,6 +522,7 @@ def test_saved_evidence_package_projects_from_saved_artifact_without_account_lab
     assert evidence.trade_intent_summary.supported_flow == "covered_call"
     assert evidence.trade_intent_summary.symbol_or_underlying == "HOOD"
     assert evidence.scope_state.review_account_selected is True
+    assert evidence.scope_state.review_account_display_label == "Fidelity taxable"
     assert evidence.scope_state.portfolio_scope_mode == "selected_context"
     assert evidence.scope_state.account_level_feasibility_evaluated is True
     assert evidence.market_quote_freshness.summary_label == "Market quote from generated review"
@@ -384,9 +532,32 @@ def test_saved_evidence_package_projects_from_saved_artifact_without_account_lab
     assert evidence.public_evidence.public_evidence_schema_version == "p29b_public_v1"
     assert evidence.public_evidence.public_company_profile.availability == "not_reviewed"
     assert evidence.public_evidence.public_company_profile.rights_status == "not_reviewed"
-    assert "fidelity taxable" not in rendered
+    assert "fidelity taxable" in rendered
     assert "acctref_reportscope1" not in rendered
     assert "ctx_reportscope1" not in rendered
+
+
+def test_saved_evidence_package_omits_display_label_without_review_account() -> None:
+    scope = _saved_scope_metadata().model_copy(update={"review_account": None})
+    artifact = _saved_review_artifact().model_copy(update={"scope_metadata": scope})
+
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
+
+    assert evidence.scope_state.review_account_selected is False
+    assert evidence.scope_state.review_account_display_label is None
+
+
+@pytest.mark.parametrize("unsafe_label", ("eod_not_live_prices", "access_key=syntheticsecret"))
+def test_saved_evidence_package_drops_unsafe_review_account_display_label(unsafe_label: str) -> None:
+    scope = _saved_scope_metadata()
+    assert scope.review_account is not None
+    poisoned_account = scope.review_account.model_copy(update={"display_label": unsafe_label})
+    poisoned_scope = scope.model_copy(update={"review_account": poisoned_account})
+    artifact = _saved_review_artifact().model_copy(update={"scope_metadata": poisoned_scope})
+
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
+
+    assert evidence.scope_state.review_account_display_label is None
 
 
 def test_saved_evidence_package_uses_saved_public_evidence_when_present() -> None:
@@ -606,6 +777,7 @@ def test_saved_public_evidence_package_defaults_to_not_reviewed_sections() -> No
     sections = (
         public_evidence.public_company_profile,
         public_evidence.public_fundamentals_snapshot,
+        public_evidence.fred_macro_series_snapshot,
         public_evidence.public_news_snapshot,
         public_evidence.public_events_calendar,
         public_evidence.public_technical_context,
@@ -616,6 +788,7 @@ def test_saved_public_evidence_package_defaults_to_not_reviewed_sections() -> No
     assert {section.section_key for section in sections} == {
         "public_company_profile",
         "public_fundamentals_snapshot",
+        "fred_macro_series_snapshot",
         "public_news_snapshot",
         "public_events_calendar",
         "public_technical_context",
@@ -623,6 +796,46 @@ def test_saved_public_evidence_package_defaults_to_not_reviewed_sections() -> No
     }
     assert {section.availability for section in sections} == {"not_reviewed"}
     assert {section.rights_status for section in sections} == {"not_reviewed"}
+
+
+def test_p36_fmp_snapshot_is_frozen_but_not_yet_role_projected_before_t4c() -> None:
+    fundamentals = SavedPublicEvidenceSectionRead(
+        section_key="public_fundamentals_snapshot",
+        section_label="Public fundamentals snapshot",
+        availability="available",
+        freshness_category="fresh",
+        freshness_label="Synthetic statement facts collected for this saved report",
+        source_label="FMP normalized reported statement facts",
+        source_key="fmp_reported_statement_facts",
+        rights_status="reviewed",
+        facts=(
+            SavedPublicEvidenceFactRead(
+                fact_key="income_statement_revenue",
+                fact_label="Income statement: Revenue",
+                value_label="1200 USD",
+                as_of_label="Fiscal period: Q1 2026; report date: 2026-05-01; currency: USD",
+                source_label="FMP normalized reported statement facts",
+            ),
+        ),
+        limitations=(
+            "Source: Financial Modeling Prep normalized reported statement facts, with labeled fiscal periods and report dates.",
+            "Reported-statement coverage may be delayed, incomplete, revised, or unavailable on the free tier. This report does not treat statement facts as a trading signal.",
+        ),
+        caveat_codes=("fmp_reported_statement_facts_only",),
+    )
+    public_evidence = SavedPublicEvidencePackageRead.not_reviewed("HOOD").model_copy(
+        update={
+            "public_evidence_mode": "provider_reference",
+            "public_fundamentals_snapshot": fundamentals,
+        }
+    )
+    artifact = _saved_review_artifact().model_copy(update={"public_evidence": public_evidence})
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
+
+    projection = build_public_role_evidence_projection(evidence, role_name="fundamentals_analyst")
+
+    assert "public_fundamentals_snapshot" not in projection.allowed_section_keys
+    assert "public_fundamentals_snapshot" not in projection.citable_section_keys
 
 
 def test_public_evidence_projection_default_provider_is_not_reviewed_and_offline() -> None:
@@ -2394,7 +2607,10 @@ def _saved_deterministic_summary() -> SavedDeterministicReviewSummaryRead:
     )
 
 
-def _saved_review_artifact() -> SavedReviewArtifactRead:
+def _saved_review_artifact(
+    *,
+    deterministic_summary: SavedDeterministicReviewSummaryRead | None = None,
+) -> SavedReviewArtifactRead:
     generated = datetime.now(UTC)
     return SavedReviewArtifactRead(
         artifact_reference="svrev_savedreview1",
@@ -2410,7 +2626,7 @@ def _saved_review_artifact() -> SavedReviewArtifactRead:
             updated_at=generated,
         ),
         scope_metadata=_saved_scope_metadata(),
-        deterministic_summary=_saved_deterministic_summary(),
+        deterministic_summary=deterministic_summary or _saved_deterministic_summary(),
         agent_summary=SavedAgentTeamSummaryRead(
             run_status="completed",
             provider_mode="mock",
@@ -2430,6 +2646,32 @@ def _saved_review_artifact() -> SavedReviewArtifactRead:
         review_pipeline_label="Portfolio Copilot review pipeline",
         limitations=("Saved review snapshot generated from reviewed data available at the time.",),
         caveat_codes=("selected_context_scope",),
+    )
+
+
+def _derived_exposure_sections() -> tuple[SavedEvidenceSectionRead, SavedEvidenceSectionRead]:
+    return (
+        SavedEvidenceSectionRead(
+            section_key="before_after_portfolio_impact",
+            section_label="Before/after portfolio impact",
+            availability="available",
+            summary_label="Before/after display section.",
+            detail_labels=("Before table row: $1,000 to $1,500.",),
+            caveat_codes=("selected_context_scope",),
+            trade_impact_narrative_groups={
+                "proceed_statements": ("Proceeding would create a new $1,500 reviewed position.",),
+                "not_reviewed_statement": "Not reviewed: fund holdings and taxes.",
+                "verify_statement": "Verify the frozen exposure math against current app screens.",
+            },
+        ),
+        SavedEvidenceSectionRead(
+            section_key="concentration_risk_drift",
+            section_label="Concentration and risk drift",
+            availability="available",
+            summary_label="Concentration display section.",
+            detail_labels=("Reference point was reviewed.",),
+            caveat_codes=("selected_context_scope",),
+        ),
     )
 
 

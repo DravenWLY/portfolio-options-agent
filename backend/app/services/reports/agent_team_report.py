@@ -26,6 +26,13 @@ from app.services.reports.public_evidence import (
     build_public_evidence_projection,
     build_public_role_evidence_projection,
 )
+from app.services.reports.source_snapshots import (
+    FmpFundamentalsExecutionContext,
+    FmpFundamentalsSourcePolicy,
+    FredMacroSeriesExecutionContext,
+    FredMacroSeriesSourcePolicy,
+)
+from app.services.market_data.eod_history import MarketContextExecutionContext, MarketContextPolicy
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -112,6 +119,12 @@ def generate_agent_team_report_for_thread(
     mode: AgentTeamReportGenerationMode = "deterministic_template",
     edgar_policy: EdgarCompanyProfileSourcePolicy | None = None,
     edgar_client: EdgarCompanyProfileClient | None = None,
+    fmp_fundamentals_policy: FmpFundamentalsSourcePolicy | None = None,
+    fmp_fundamentals_context: FmpFundamentalsExecutionContext | None = None,
+    fmp_eod_history_policy: MarketContextPolicy | None = None,
+    fmp_eod_history_context: MarketContextExecutionContext | None = None,
+    fred_macro_series_policy: FredMacroSeriesSourcePolicy | None = None,
+    fred_macro_series_context: FredMacroSeriesExecutionContext | None = None,
     provider_resolution: "LLMProviderResolution | None" = None,
 ) -> SavedAgentTeamSummaryRead | None:
     """Persist a sanitized Agent Team report summary for an existing saved artifact."""
@@ -136,6 +149,12 @@ def generate_agent_team_report_for_thread(
                         symbol_or_underlying=evidence.trade_intent_summary.symbol_or_underlying,
                         edgar_policy=edgar_policy,
                         edgar_client=edgar_client,
+                        fmp_fundamentals_policy=fmp_fundamentals_policy,
+                        fmp_fundamentals_context=fmp_fundamentals_context,
+                        fmp_eod_history_policy=fmp_eod_history_policy,
+                        fmp_eod_history_context=fmp_eod_history_context,
+                        fred_macro_series_policy=fred_macro_series_policy,
+                        fred_macro_series_context=fred_macro_series_context,
                     )
                 }
             )
@@ -563,13 +582,17 @@ def _validation_failed_summary(
     evidence: SavedEvidencePackageRead,
     *,
     report_generated_at: datetime,
+    eval_flag: str | None = None,
 ) -> SavedAgentTeamSummaryRead:
+    warning_codes = tuple(
+        dict.fromkeys(("agent_output_failed_safety_validation", *((eval_flag,) if eval_flag else ())))
+    )
     return SavedAgentTeamSummaryRead(
         run_status="failed",
         provider_mode="deterministic_template",
         report_generated_at=report_generated_at,
         role_summaries=(),
-        warning_codes=("agent_output_failed_safety_validation",),
+        warning_codes=warning_codes,
         report_status="validation_failed",
         final_synthesis_markdown=None,
         final_synthesis_authored_by=None,
@@ -587,8 +610,13 @@ def _validate_or_fallback(
     try:
         validate_agent_team_report_output(payload, label="agent-team saved report", evidence_package=evidence)
         return SavedAgentTeamSummaryRead.model_validate(payload)
-    except (TypeError, ValidationError, ValueError):
-        return _validation_failed_summary(evidence, report_generated_at=report_generated_at or _now_utc())
+    except (TypeError, ValidationError, ValueError) as exc:
+        eval_flag = "display_token_blocked" if "display_token_blocked" in str(exc) else None
+        return _validation_failed_summary(
+            evidence,
+            report_generated_at=report_generated_at or _now_utc(),
+            eval_flag=eval_flag,
+        )
 
 
 def build_validation_failed_summary_for_test(

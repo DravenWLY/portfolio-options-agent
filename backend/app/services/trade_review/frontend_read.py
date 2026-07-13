@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 import hashlib
-from typing import Any
+from typing import Any, Callable, Protocol
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
@@ -18,6 +18,7 @@ from app.models.cash_balance import CashBalance
 from app.models.option_contract import OptionContract
 from app.models.option_position import OptionPosition
 from app.models.stock_position import StockPosition
+from app.services.broker_import.statuses import DATA_FRESHNESS_STATUSES
 from app.schemas.actionability import (
     ActionabilityReason,
     BrokerSnapshotMetadata,
@@ -93,6 +94,11 @@ from app.services.trade_review.context import (
     PortfolioReviewContext,
     StockPositionContext,
 )
+from app.services.trade_review.exposure_adapter import (
+    FUNDING_SHORTFALL_CAVEAT_CODE,
+    try_build_exposure_evidence_sections,
+    unavailable_exposure_evidence_sections,
+)
 from app.services.trade_review.models import (
     ETFTradeIntent,
     OptionLeg,
@@ -121,6 +127,9 @@ _DEMO_SCOPE_COMBINED_REFERENCE = "scope_demo_combined"
 _DEMO_SCOPE_UNAVAILABLE_REFERENCE = "scope_demo_unavailable"
 _DEMO_EMPTY_USER_REFERENCE = "00000000-0000-0000-0000-000000000000"
 _PHASE20B_DEMO_NOTICE = "demo · not yet connected"
+# This is the existing Account Details display vocabulary.  The selected-account
+# snapshot resolver separately preserves canonical broker freshness for the
+# actionability schema without widening this frontend read contract.
 _BROKER_FRESHNESS_STATUS_READ_VALUES = {"fresh", "manual_review", "stale", "unknown", "unavailable"}
 _POSITION_DEPENDENT_REAL_BROKER_FLOWS = {
     "stock_sell_trim",
@@ -130,12 +139,30 @@ _POSITION_DEPENDENT_REAL_BROKER_FLOWS = {
 }
 
 
+class _ExposureReviewContext(Protocol):
+    """The deliberately small surface used by deterministic impact consumers."""
+
+    summary_as_of: datetime
+    cash: Any
+    stock_positions: tuple[Any, ...]
+    option_positions: tuple[Any, ...]
+
+
 @dataclass(frozen=True)
 class _ResolvedPortfolioContext:
-    context: PortfolioReviewContext
+    context: _ExposureReviewContext
     summary: PortfolioContextSummaryRead | None
     broker_snapshot: BrokerSnapshotMetadata
     market_quotes: MarketQuotesMetadata
+    account_snapshot_unavailable: bool = False
+
+
+@dataclass(frozen=True)
+class _SelectedAccountSnapshotResolution:
+    """Keep selected-account resolution failures distinct from demo selection."""
+
+    resolved: _ResolvedPortfolioContext | None = None
+    requested_but_unavailable: bool = False
 
 
 @dataclass(frozen=True)
@@ -154,6 +181,71 @@ class _NormalizedAccountMetrics:
     options_market_value: Decimal | None = None
     stock_position_count: int | None = None
     option_position_count: int | None = None
+
+
+@dataclass(frozen=True)
+class _SelectedAccountCashSnapshot:
+    """Transient, lossy funding input for deterministic portfolio review."""
+
+    available_funding_value: Decimal
+    snapshot_as_of: datetime
+
+    @property
+    def free_cash(self) -> Decimal:
+        """Expose only the adapter-compatible value; it is never serialized."""
+
+        return self.available_funding_value
+
+
+@dataclass(frozen=True)
+class _SelectedAccountEquityExposure:
+    """Position projection without identity, quantity, cost, or payload fields."""
+
+    symbol: str
+    asset_type: str
+    market_value: Decimal | None
+    snapshot_as_of: datetime
+
+
+@dataclass(frozen=True)
+class _SelectedAccountOptionExposure:
+    """Options remain an aggregate-compatible asset-class input only."""
+
+    symbol: str
+    asset_type: str
+    market_value: Decimal | None
+    snapshot_as_of: datetime
+
+
+@dataclass(frozen=True)
+class _SelectedAccountSnapshotContext:
+    """Safe account-snapshot view consumed by impact and exposure calculations.
+
+    The persisted broker rows are intentionally reduced before this point.  The
+    properties below retain compatibility with the existing deterministic
+    consumers without adding their private field names to the context dump.
+    """
+
+    snapshot_as_of: datetime
+    funding_snapshot: _SelectedAccountCashSnapshot | None
+    equity_exposures: tuple[_SelectedAccountEquityExposure, ...]
+    option_exposures: tuple[_SelectedAccountOptionExposure, ...]
+
+    @property
+    def summary_as_of(self) -> datetime:
+        return self.snapshot_as_of
+
+    @property
+    def cash(self) -> _SelectedAccountCashSnapshot | None:
+        return self.funding_snapshot
+
+    @property
+    def stock_positions(self) -> tuple[_SelectedAccountEquityExposure, ...]:
+        return self.equity_exposures
+
+    @property
+    def option_positions(self) -> tuple[_SelectedAccountOptionExposure, ...]:
+        return self.option_exposures
 
 
 def build_trade_review_workspace_read(
@@ -1356,12 +1448,66 @@ def build_trade_review_workspace_preview(
         risk=risk,
         market_snapshot=market_snapshot,
     )
-    return build_trade_review_workspace_read(
+    workspace = build_trade_review_workspace_read(
         projection=to_agent_safe_projection(report),
         actionability=actionability,
         review_reference=report.intent_id,
         supported_flow=payload.supported_flow,
         generated_at=generated,
+    )
+    return workspace
+
+
+def _workspace_with_exposure_caveats(
+    workspace: TradeReviewWorkspaceRead,
+    sections: tuple[Any, ...],
+) -> TradeReviewWorkspaceRead:
+    section_caveat_codes = {
+        code
+        for section in sections
+        for code in tuple(getattr(section, "caveat_codes", ()))
+    }
+    additions = {
+        FUNDING_SHORTFALL_CAVEAT_CODE: WorkspaceCaveatRead(
+            code=FUNDING_SHORTFALL_CAVEAT_CODE,
+            severity="warning",
+            applies_to="cash_collateral_impact",
+            message=(
+                "The reviewed cash snapshot did not cover the proposed purchase; "
+                "external funding was assumed for deterministic exposure math."
+            ),
+        ),
+        "position_market_value_unavailable": WorkspaceCaveatRead(
+            code="position_market_value_unavailable",
+            severity="warning",
+            applies_to="portfolio_impact",
+            message=(
+                "Some reviewed position values were unavailable, so deterministic exposure math excludes those inputs."
+            ),
+        ),
+        "account_snapshot_unavailable": WorkspaceCaveatRead(
+            code="account_snapshot_unavailable",
+            severity="warning",
+            applies_to="scope_metadata",
+            message=(
+                "The selected account's synced snapshot was unavailable, so exposure impact was not computed."
+            ),
+        ),
+    }
+    new_caveats = tuple(
+        caveat
+        for code, caveat in additions.items()
+        if code in section_caveat_codes and not any(existing.code == code for existing in workspace.caveats)
+    )
+    if not new_caveats:
+        return workspace
+    return workspace.model_copy(
+        update={
+            "caveats": (
+                *workspace.caveats,
+                *new_caveats,
+            )
+        }
     )
 
 
@@ -1809,11 +1955,13 @@ def _broker_snapshot_status(
     connection: BrokerConnection,
     *,
     has_successful_sync: bool = False,
+    preserve_canonical_sync_freshness: bool = False,
 ) -> str:
     status = account.data_freshness_status.strip().lower()
     if status == "unknown" and has_successful_sync:
         return "manual_review"
-    if status in _BROKER_FRESHNESS_STATUS_READ_VALUES:
+    allowed_statuses = DATA_FRESHNESS_STATUSES if preserve_canonical_sync_freshness else _BROKER_FRESHNESS_STATUS_READ_VALUES
+    if status in allowed_statuses:
         return status
     connection_statuses = {
         connection.connection_status.strip().lower(),
@@ -2330,6 +2478,7 @@ def _report_scope_metadata_for_workspace(
     review_account_selection: ReviewAccountSelectionRequest | None = None,
     db: Session | None = None,
     current_user_id: UUID | None = None,
+    account_snapshot_unavailable: bool = False,
 ) -> ReportScopeMetadataRead:
     if portfolio_context_summary is None:
         scope = _portfolio_scope_read(
@@ -2359,6 +2508,77 @@ def _report_scope_metadata_for_workspace(
         db=db,
         current_user_id=current_user_id,
     )
+    if account_snapshot_unavailable:
+        account_label = review_account.display_label if review_account is not None else "Review account unresolved"
+        scope_caveat_codes = (
+            "selected_context_scope",
+            "account_snapshot_unavailable",
+            "account_level_feasibility_not_evaluated",
+            *(() if review_account is not None else ("review_account_unresolved",)),
+        )
+        scope = _portfolio_scope_read(
+            scope_reference=_opaque_scope_reference(("review_snapshot_unavailable", portfolio_context_summary.context_reference)),
+            scope_mode="unavailable",
+            display_label="Account snapshot unavailable",
+            selection_mode=portfolio_context_summary.selection_mode,
+            context_reference=portfolio_context_summary.context_reference,
+            included_account_labels=(),
+            excluded_account_labels=(),
+            account_level_feasibility_evaluated=False,
+            account_level_feasibility_label="Account-level feasibility not evaluated",
+            caveat_codes=scope_caveat_codes,
+        )
+        read = ReportScopeMetadataRead(
+            review_account=review_account,
+            portfolio_context_scope=scope,
+            scope_summary_label=f"Review account: {account_label} · Context scope: Account snapshot unavailable.",
+            account_level_feasibility_evaluated=False,
+            scope_caveat_codes=scope_caveat_codes,
+        )
+        validate_trade_review_workspace_payload(read.model_dump(mode="python"))
+        return read
+
+    is_account_snapshot_scope = portfolio_context_summary.context_source == "account_snapshot"
+    if is_account_snapshot_scope:
+        account_label = portfolio_context_summary.label or "Reviewed account"
+        if review_account is not None:
+            review_account = review_account.model_copy(
+                update={
+                    "display_label": account_label,
+                    "is_included_in_portfolio_scope": True,
+                }
+            )
+        account_level_feasibility_label = "Account-level feasibility not evaluated"
+        scope_summary_label = f"Review account: {account_label} · Context scope: Selected account snapshot."
+        scope_caveat_codes = (
+            "selected_context_scope",
+            "account_level_feasibility_not_evaluated",
+            "cash_collateral_policy_not_reviewed",
+            "cash_collateral_not_fully_modeled",
+        )
+        included_account_labels = (account_label,) if review_account is not None else ()
+        scope = _portfolio_scope_read(
+            scope_reference=_opaque_scope_reference(("review_snapshot", portfolio_context_summary.context_reference)),
+            scope_mode="single_account",
+            display_label=account_label,
+            selection_mode=portfolio_context_summary.selection_mode,
+            context_reference=portfolio_context_summary.context_reference,
+            included_account_labels=included_account_labels,
+            excluded_account_labels=(),
+            account_level_feasibility_evaluated=False,
+            account_level_feasibility_label=account_level_feasibility_label,
+            caveat_codes=scope_caveat_codes,
+        )
+        read = ReportScopeMetadataRead(
+            review_account=review_account,
+            portfolio_context_scope=scope,
+            scope_summary_label=scope_summary_label,
+            account_level_feasibility_evaluated=False,
+            scope_caveat_codes=scope_caveat_codes,
+        )
+        validate_trade_review_workspace_payload(read.model_dump(mode="python"))
+        return read
+
     account_level_feasibility_evaluated = (
         review_account is not None and review_account.is_account_level_feasibility_source
     )
@@ -2769,11 +2989,18 @@ def build_trade_review_workspace_portfolio_preview(
     generated_at: datetime | None = None,
     db: Session | None = None,
     current_user_id: UUID | None = None,
+    derived_exposure_sections_callback: Callable[[tuple[Any, ...]], None] | None = None,
 ) -> TradeReviewWorkspaceRead:
     """Build a portfolio-backed preview from server-owned sanitized context."""
 
     generated = generated_at or datetime.now(UTC)
-    resolved = _resolve_portfolio_context(payload.portfolio_context_selection, generated_at=generated)
+    resolved = _resolve_portfolio_context(
+        payload.portfolio_context_selection,
+        generated_at=generated,
+        review_account_selection=payload.review_account_selection,
+        db=db,
+        current_user_id=current_user_id,
+    )
     actionability = evaluate_portfolio_snapshot_actionability(
         PortfolioActionabilityInput(
             broker_snapshot=resolved.broker_snapshot,
@@ -2782,11 +3009,15 @@ def build_trade_review_workspace_portfolio_preview(
         ),
         evaluated_at=generated,
     )
+    preview_user_id = getattr(resolved.context, "user_id", None)
+    preview_account_id = getattr(resolved.context, "account_id", None)
     intent = _preview_intent(
         payload,
         generated_at=generated,
-        user_id=resolved.context.user_id,
-        account_id=resolved.context.account_id,
+        # A lossy selected-account context intentionally carries no account
+        # identity. Its transient intent ids are redacted before saving.
+        user_id=preview_user_id or uuid4(),
+        account_id=preview_account_id or uuid4(),
         broker_portfolio_status=resolved.broker_snapshot.freshness_status,
         market_quote_status=resolved.market_quotes.freshness_status,
         intent_prefix="portfolio-preview",
@@ -2806,6 +3037,22 @@ def build_trade_review_workspace_portfolio_preview(
         market_snapshot=market_snapshot,
         payoff=payoff,
     )
+    derived_exposure_sections: tuple[Any, ...] = ()
+    if resolved.account_snapshot_unavailable:
+        derived_exposure_sections = unavailable_exposure_evidence_sections(("account_snapshot_unavailable",))
+    else:
+        try:
+            derived_exposure_sections = try_build_exposure_evidence_sections(
+                portfolio_context=resolved.context,
+                intent=intent,
+            )
+        except Exception:
+            derived_exposure_sections = ()
+    if derived_exposure_sections_callback is not None:
+        try:
+            derived_exposure_sections_callback(derived_exposure_sections)
+        except Exception:
+            pass
     risk = TradeReviewRiskEngine().evaluate(
         validation=validation,
         portfolio_impact=impact,
@@ -2820,7 +3067,7 @@ def build_trade_review_workspace_portfolio_preview(
         risk=risk,
         market_snapshot=market_snapshot,
     )
-    return build_trade_review_workspace_read(
+    workspace = build_trade_review_workspace_read(
         projection=to_agent_safe_projection(report),
         actionability=actionability,
         review_reference=report.intent_id,
@@ -2831,9 +3078,11 @@ def build_trade_review_workspace_portfolio_preview(
             review_account_selection=payload.review_account_selection,
             db=db,
             current_user_id=current_user_id,
+            account_snapshot_unavailable=resolved.account_snapshot_unavailable,
         ),
         generated_at=generated,
     )
+    return _workspace_with_exposure_caveats(workspace, derived_exposure_sections)
 
 
 def _intent_summary(
@@ -3378,7 +3627,26 @@ def _resolve_portfolio_context(
     selection: PortfolioContextSelectionRequest,
     *,
     generated_at: datetime,
+    review_account_selection: ReviewAccountSelectionRequest | None = None,
+    db: Session | None = None,
+    current_user_id: UUID | None = None,
 ) -> _ResolvedPortfolioContext:
+    selected_account_snapshot = _resolve_selected_account_snapshot_context(
+        selection=selection,
+        review_account_selection=review_account_selection,
+        db=db,
+        current_user_id=current_user_id,
+        generated_at=generated_at,
+    )
+    if selected_account_snapshot.resolved is not None:
+        return selected_account_snapshot.resolved
+    if selected_account_snapshot.requested_but_unavailable:
+        return _unavailable_selected_account_snapshot_context(
+            selection=selection,
+            review_account_selection=review_account_selection,
+            generated_at=generated_at,
+        )
+
     reference = _LATEST_CONTEXT_REFERENCE if selection.mode == "latest_available" else selection.context_reference
     if reference == _NO_CONTEXT_REFERENCE:
         return _resolved_context(
@@ -3487,6 +3755,242 @@ def _resolve_portfolio_context(
         option_position_count=1,
         cash_available=True,
     )
+
+
+def _resolve_selected_account_snapshot_context(
+    *,
+    selection: PortfolioContextSelectionRequest,
+    review_account_selection: ReviewAccountSelectionRequest | None,
+    db: Session | None,
+    current_user_id: UUID | None,
+    generated_at: datetime,
+) -> _SelectedAccountSnapshotResolution:
+    """Project the selected account's latest synced rows into a lossy context.
+
+    This boundary reads local synchronized records only.  It does not trigger a
+    broker sync or pass ORM instances, identifiers, quantities, cost basis, or
+    provider payloads to the review context.
+    """
+
+    if (
+        db is None
+        or current_user_id is None
+        or review_account_selection is None
+        or review_account_selection.mode != "selected_account"
+        or review_account_selection.account_reference is None
+    ):
+        return _SelectedAccountSnapshotResolution()
+    try:
+        row = _broker_account_detail_row_for_account_reference(
+            db,
+            user_id=current_user_id,
+            account_reference=review_account_selection.account_reference,
+        )
+    except SQLAlchemyError:
+        return _SelectedAccountSnapshotResolution(requested_but_unavailable=True)
+    if row is None or row.broker_account.account_id is None or row.latest_sync_run is None:
+        return _SelectedAccountSnapshotResolution(requested_but_unavailable=True)
+
+    broker_account = row.broker_account
+    latest_sync_run = row.latest_sync_run
+    try:
+        cash_row = db.scalar(
+            select(CashBalance)
+            .where(
+                CashBalance.account_id == broker_account.account_id,
+                CashBalance.sync_run_id == latest_sync_run.id,
+            )
+            .order_by(CashBalance.as_of.desc(), CashBalance.created_at.desc(), CashBalance.id.desc())
+            .limit(1)
+        )
+        stock_rows = list(
+            db.scalars(
+                select(StockPosition)
+                .where(
+                    StockPosition.account_id == broker_account.account_id,
+                    StockPosition.sync_run_id == latest_sync_run.id,
+                )
+                .order_by(
+                    StockPosition.symbol.asc(),
+                    StockPosition.as_of.desc(),
+                    StockPosition.created_at.desc(),
+                    StockPosition.id.desc(),
+                )
+            )
+        )
+        option_rows = list(
+            db.execute(
+                select(OptionPosition, OptionContract)
+                .join(OptionContract, OptionPosition.option_contract_id == OptionContract.id)
+                .where(
+                    OptionPosition.account_id == broker_account.account_id,
+                    OptionPosition.sync_run_id == latest_sync_run.id,
+                    OptionPosition.status == "open",
+                    OptionContract.expiration_date >= generated_at.date(),
+                )
+                .order_by(
+                    OptionPosition.option_contract_id.asc(),
+                    OptionPosition.as_of.desc(),
+                    OptionPosition.created_at.desc(),
+                    OptionPosition.id.desc(),
+                )
+            )
+        )
+    except SQLAlchemyError:
+        return _SelectedAccountSnapshotResolution(requested_but_unavailable=True)
+
+    latest_stock_rows = _latest_stock_positions_by_symbol(stock_rows)
+    latest_option_rows = _latest_option_position_rows_by_contract(option_rows)
+    snapshot_times = [
+        value
+        for value in (
+            cash_row.as_of if cash_row is not None else None,
+            *(position.as_of for position in latest_stock_rows),
+            *(position.as_of for position, _contract in latest_option_rows),
+            latest_sync_run.completed_at,
+            latest_sync_run.started_at,
+            broker_account.last_successful_sync_at,
+            row.broker_connection.last_successful_sync_at,
+        )
+        if value is not None
+    ]
+    snapshot_as_of = max(snapshot_times, default=generated_at)
+    broker_snapshot_as_of = (
+        latest_sync_run.completed_at
+        or latest_sync_run.started_at
+        or broker_account.last_successful_sync_at
+        or row.broker_connection.last_successful_sync_at
+        or snapshot_as_of
+    )
+    funding_snapshot = (
+        _SelectedAccountCashSnapshot(
+            available_funding_value=Decimal(cash_row.free_cash),
+            snapshot_as_of=cash_row.as_of,
+        )
+        if cash_row is not None
+        else None
+    )
+    equity_exposures = tuple(
+        _SelectedAccountEquityExposure(
+            symbol=position.symbol.strip().upper(),
+            asset_type=position.asset_type,
+            market_value=Decimal(position.market_value) if position.market_value is not None else None,
+            snapshot_as_of=position.as_of,
+        )
+        for position in latest_stock_rows
+        if position.symbol.strip()
+    )
+    option_exposures = tuple(
+        _SelectedAccountOptionExposure(
+            symbol=contract.underlying_symbol.strip().upper(),
+            asset_type="option",
+            market_value=Decimal(position.market_value) if position.market_value is not None else None,
+            snapshot_as_of=position.as_of,
+        )
+        for position, contract in latest_option_rows
+        if contract.underlying_symbol.strip()
+    )
+    broker_status = _snapshot_freshness_status(
+        _broker_snapshot_status(
+            broker_account,
+            row.broker_connection,
+            has_successful_sync=True,
+            preserve_canonical_sync_freshness=True,
+        )
+    )
+    broker_snapshot = BrokerSnapshotMetadata(
+        source="snaptrade" if row.broker_connection.provider.strip().lower() == "snaptrade" else "manual",
+        freshness_status=broker_status,
+        sync_status=latest_sync_run.status,
+        as_of=broker_snapshot_as_of,
+        received_at=latest_sync_run.completed_at,
+        last_successful_sync_at=(
+            broker_account.last_successful_sync_at or row.broker_connection.last_successful_sync_at
+        ),
+        provider_status="available",
+    )
+    nickname = (broker_account.user_nickname or "").strip()
+    account_label = nickname or "Reviewed account"
+    context_reference = f"ctx_{_opaque_digest(('review_snapshot', broker_account.id, latest_sync_run.id))}"
+    return _SelectedAccountSnapshotResolution(
+        resolved=_ResolvedPortfolioContext(
+            context=_SelectedAccountSnapshotContext(
+                snapshot_as_of=snapshot_as_of,
+                funding_snapshot=funding_snapshot,
+                equity_exposures=equity_exposures,
+                option_exposures=option_exposures,
+            ),
+            summary=PortfolioContextSummaryRead(
+                context_reference=context_reference,
+                context_source="account_snapshot",
+                selection_mode=selection.mode,
+                summary_as_of=snapshot_as_of,
+                latest_snapshot_as_of=snapshot_as_of,
+                broker_snapshot=broker_snapshot,
+                stock_position_count=len(equity_exposures),
+                option_position_count=len(option_exposures),
+                cash_state="available" if funding_snapshot is not None else "unavailable",
+                label=account_label,
+            ),
+            broker_snapshot=broker_snapshot,
+            market_quotes=_default_portfolio_market_quotes(generated_at),
+        )
+    )
+
+
+def _unavailable_selected_account_snapshot_context(
+    *,
+    selection: PortfolioContextSelectionRequest,
+    review_account_selection: ReviewAccountSelectionRequest | None,
+    generated_at: datetime,
+) -> _ResolvedPortfolioContext:
+    """Keep a failed selected-account request from inheriting demo values."""
+
+    account_reference = review_account_selection.account_reference if review_account_selection is not None else None
+    context_reference = f"ctx_{_opaque_digest(('review_snapshot_unavailable', account_reference))}"
+    broker_snapshot = BrokerSnapshotMetadata(
+        source="snaptrade",
+        freshness_status="unknown",
+        provider_status="unavailable",
+    )
+    market_quotes = MarketQuotesMetadata(
+        freshness_status="unknown",
+        data_mode="unknown",
+        actionability_status="blocked_unknown_quote",
+        provider_status="unknown",
+    )
+    return _ResolvedPortfolioContext(
+        context=_SelectedAccountSnapshotContext(
+            snapshot_as_of=generated_at,
+            funding_snapshot=None,
+            equity_exposures=(),
+            option_exposures=(),
+        ),
+        summary=PortfolioContextSummaryRead(
+            context_reference=context_reference,
+            context_source="account_snapshot",
+            selection_mode=selection.mode,
+            summary_as_of=None,
+            latest_snapshot_as_of=None,
+            broker_snapshot=broker_snapshot,
+            stock_position_count=0,
+            option_position_count=0,
+            cash_state="unavailable",
+            label="Account snapshot unavailable",
+        ),
+        broker_snapshot=broker_snapshot,
+        market_quotes=market_quotes,
+        account_snapshot_unavailable=True,
+    )
+
+
+def _snapshot_freshness_status(status: str) -> str:
+    """Map account-detail freshness labels into the actionability schema safely."""
+
+    return {
+        "manual_review": "cached",
+        "unavailable": "error",
+    }.get(status, status if status in DATA_FRESHNESS_STATUSES else "unknown")
 
 
 def _default_portfolio_market_quotes(generated_at: datetime) -> MarketQuotesMetadata:

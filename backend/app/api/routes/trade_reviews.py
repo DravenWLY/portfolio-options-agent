@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.schemas.reports import SavedDeterministicReviewSummaryRead, SavedReviewArtifactCreateRequest
+from app.schemas.reports import SavedDeterministicReviewSummaryRead, SavedEvidenceSectionRead, SavedReviewArtifactCreateRequest
 from app.schemas.trade_review_workspace import (
     TradeReviewPortfolioPreviewRequest,
     TradeReviewWorkspacePreviewRequest,
@@ -47,8 +47,26 @@ def preview_portfolio_trade_review(
 ) -> TradeReviewWorkspaceRead:
     """Return a deterministic portfolio-backed trade-review workspace preview."""
 
-    workspace = build_trade_review_workspace_portfolio_preview(payload, db=db, current_user_id=current_user_id)
-    return _workspace_with_saved_review_source_reference(workspace, db=db, current_user_id=current_user_id)
+    derived_exposure_sections: list[SavedEvidenceSectionRead] = []
+
+    def _capture_derived_exposure_sections(sections: tuple[object, ...]) -> None:
+        derived_exposure_sections.clear()
+        derived_exposure_sections.extend(
+            section for section in sections if isinstance(section, SavedEvidenceSectionRead)
+        )
+
+    workspace = build_trade_review_workspace_portfolio_preview(
+        payload,
+        db=db,
+        current_user_id=current_user_id,
+        derived_exposure_sections_callback=_capture_derived_exposure_sections,
+    )
+    return _workspace_with_saved_review_source_reference(
+        workspace,
+        db=db,
+        current_user_id=current_user_id,
+        derived_exposure_sections=tuple(derived_exposure_sections),
+    )
 
 
 def _workspace_with_saved_review_source_reference(
@@ -56,6 +74,7 @@ def _workspace_with_saved_review_source_reference(
     *,
     db: Session,
     current_user_id: UUID | None,
+    derived_exposure_sections: tuple[SavedEvidenceSectionRead, ...] = (),
 ) -> TradeReviewWorkspaceRead:
     if current_user_id is None or workspace.scope_metadata is None:
         return workspace
@@ -69,7 +88,11 @@ def _workspace_with_saved_review_source_reference(
             title=f"{_review_flow_label(workspace.supported_flow)} snapshot",
             report_type="trade_review",
             scope_metadata=_saved_review_safe_scope_metadata(workspace.scope_metadata),
-            deterministic_summary=_deterministic_summary_from_workspace(workspace, caveat_codes=caveat_codes),
+            deterministic_summary=_deterministic_summary_from_workspace(
+                workspace,
+                caveat_codes=caveat_codes,
+                derived_exposure_sections=derived_exposure_sections,
+            ),
             generated_at=workspace.generated_at,
             limitations=("Saved review source generated from reviewed backend workspace output.",),
             caveat_codes=caveat_codes,
@@ -106,6 +129,7 @@ def _deterministic_summary_from_workspace(
     workspace: TradeReviewWorkspaceRead,
     *,
     caveat_codes: tuple[str, ...],
+    derived_exposure_sections: tuple[SavedEvidenceSectionRead, ...] = (),
 ) -> SavedDeterministicReviewSummaryRead:
     return SavedDeterministicReviewSummaryRead(
         supported_flow=workspace.supported_flow,
@@ -118,6 +142,7 @@ def _deterministic_summary_from_workspace(
         broker_snapshot_freshness_label=_broker_snapshot_freshness_label(workspace),
         market_quote_freshness_label=_market_quote_freshness_label(workspace),
         caveat_codes=caveat_codes,
+        derived_exposure_sections=derived_exposure_sections,
     )
 
 

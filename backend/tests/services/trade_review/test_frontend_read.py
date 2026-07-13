@@ -1,11 +1,15 @@
+from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.schemas.actionability import BrokerSnapshotMetadata, MarketQuotesMetadata, PortfolioActionabilityInput, UserConfirmationMetadata
+from app.schemas.reports import SavedEvidenceSectionRead
 from app.schemas.trade_review_workspace import (
+    PortfolioContextSelectionRequest,
     PortfolioScopeRead,
     ReportScopeMetadataRead,
     ReviewAccountRead,
@@ -14,15 +18,20 @@ from app.schemas.trade_review_workspace import (
     TradeReviewWorkspaceRead,
     validate_trade_review_workspace_payload,
 )
+from app.models.account import Account
 from app.models.broker_account import BrokerAccount
 from app.models.broker_connection import BrokerConnection
 from app.models.broker_sync_run import BrokerSyncRun
+from app.models.cash_balance import CashBalance
 from app.models.option_contract import OptionContract
 from app.models.option_position import OptionPosition
 from app.models.stock_position import StockPosition
+from app.models.user import User
+from app.services.broker_import.statuses import DATA_FRESHNESS_STATUSES
 from app.services.agents import PortfolioAgentTeamOrchestrator
 from app.services.privacy import FORBIDDEN_PRIVATE_CONTEXT_KEYS, FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.risk.violations import RiskRuleViolation
+from app.services.trade_review import frontend_read as frontend_read_service
 from app.services.trade_review import AgentSafePortfolioImpact, PortfolioReviewContext, StockPositionContext
 from app.services.trade_review.actionability import evaluate_portfolio_snapshot_actionability
 from app.services.trade_review.frontend_read import (
@@ -31,6 +40,7 @@ from app.services.trade_review.frontend_read import (
     get_account_details_for_user,
     get_dashboard_account_summary_for_user,
     _account_details_from_broker_rows,
+    _broker_snapshot_status,
     _BrokerAccountDetailsRow,
     _NormalizedAccountMetrics,
     _latest_option_positions_by_contract,
@@ -42,6 +52,7 @@ from app.services.trade_review.frontend_read import (
     _option_tax_lot_rows,
     _review_account_for_broker_rows,
     _resolve_portfolio_context,
+    _snapshot_freshness_status,
     _selected_account_details_from_broker_row,
 )
 from app.services.trade_review.payoff import PayoffReview, PayoffScenarioPoint
@@ -396,6 +407,7 @@ def test_portfolio_preview_service_returns_safe_context_summary() -> None:
     assert read.actionability.review_actionability_status == "manual_confirmation_required"
     assert read.actionability.broker_snapshot.freshness_scope == "broker_snapshot"
     assert read.actionability.market_quotes.freshness_scope == "market_quote"
+    assert "account_snapshot_unavailable" not in {caveat.code for caveat in read.caveats}
     assert not find_forbidden_keys(read.model_dump(mode="python"), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
 
 
@@ -667,6 +679,733 @@ def test_portfolio_preview_service_preserves_no_context_available_state() -> Non
     assert read.actionability.review_actionability_status == "blocked_unknown_freshness"
     assert any(warning.code == "unknown_freshness" for warning in read.deterministic_review.missing_data_warnings)
     assert not find_forbidden_keys(read.model_dump(mode="python"), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_portfolio_preview_exposure_adapter_failure_does_not_break_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def _raise_from_adapter(**kwargs):
+        nonlocal calls
+        calls += 1
+        raise AssertionError("adapter failure should not fail preview")
+
+    monkeypatch.setattr(frontend_read_service, "try_build_exposure_evidence_sections", _raise_from_adapter)
+
+    read = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="stock_buy",
+            symbol="XYZ",
+            quantity=Decimal("3"),
+            price_assumption=Decimal("50"),
+        ),
+        generated_at=NOW,
+    )
+
+    assert calls == 1
+    assert read.supported_flow == "stock_buy"
+    assert read.deterministic_review.portfolio_impact.concentration_symbol == "XYZ"
+    assert not find_forbidden_keys(read.model_dump(mode="python"), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_portfolio_preview_surfaces_funding_shortfall_caveat_from_frozen_exposure_sections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sections = (
+        SavedEvidenceSectionRead(
+            section_key="before_after_portfolio_impact",
+            section_label="Before/after portfolio impact",
+            availability="available",
+            summary_label="Synthetic frozen before/after impact.",
+            caveat_codes=("funding_shortfall_detected",),
+        ),
+        SavedEvidenceSectionRead(
+            section_key="concentration_risk_drift",
+            section_label="Concentration and risk drift",
+            availability="available",
+            summary_label="Synthetic frozen concentration impact.",
+            caveat_codes=("funding_shortfall_detected",),
+        ),
+    )
+    monkeypatch.setattr(
+        frontend_read_service,
+        "try_build_exposure_evidence_sections",
+        lambda **_kwargs: sections,
+    )
+
+    read = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="stock_buy",
+            symbol="XYZ",
+            quantity=Decimal("3"),
+            price_assumption=Decimal("50"),
+        ),
+        generated_at=NOW,
+    )
+
+    shortfall = next(caveat for caveat in read.caveats if caveat.code == "funding_shortfall_detected")
+    assert shortfall.severity == "warning"
+    assert shortfall.applies_to == "cash_collateral_impact"
+    assert "external funding was assumed" in shortfall.message
+
+
+def test_selected_account_snapshot_resolver_projects_only_safe_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    synced_at = datetime(2026, 5, 17, 15, 30, tzinfo=UTC)
+    user_id = uuid4()
+    account_id = uuid4()
+    connection = BrokerConnection(
+        id=uuid4(),
+        user_id=user_id,
+        provider="snaptrade",
+        broker_name="Provider brokerage name should not render",
+        provider_connection_id="provider_connection_id_projection_secret",
+        connection_status="connected",
+        sync_status="idle",
+        data_freshness_status="stale",
+        last_successful_sync_at=synced_at,
+    )
+    broker_account = BrokerAccount(
+        id=uuid4(),
+        broker_connection_id=connection.id,
+        account_id=account_id,
+        provider_account_id="provider_account_id_projection_secret",
+        display_name="Provider account ending 1234 should not render",
+        user_nickname="Growth Demo Account",
+        account_type="taxable_individual",
+        sync_status="idle",
+        data_freshness_status="stale",
+        last_successful_sync_at=synced_at,
+        raw_payload={"provider_account_id": "provider_account_id_projection_secret"},
+    )
+    sync_run = BrokerSyncRun(
+        id=uuid4(),
+        broker_connection_id=connection.id,
+        broker_account_id=broker_account.id,
+        trigger="manual",
+        status="succeeded",
+        started_at=synced_at,
+        completed_at=synced_at,
+        provider_request_id="provider_request_id_projection_secret",
+        accounts_count=1,
+        positions_count=2,
+        transactions_count=0,
+    )
+    cash_row = CashBalance(
+        account_id=account_id,
+        sync_run_id=sync_run.id,
+        total_cash=Decimal("600.00"),
+        available_cash=Decimal("500.00"),
+        buying_power=Decimal("900.00"),
+        reserved_collateral_cash=Decimal("0.00"),
+        free_cash=Decimal("500.00"),
+        premium_income_cash=Decimal("0.00"),
+        dca_cash=Decimal("0.00"),
+        source="snaptrade",
+        source_ref="provider_cash_projection_secret",
+        data_freshness_status="stale",
+        as_of=synced_at,
+    )
+    stock_rows = (
+        StockPosition(
+            account_id=account_id,
+            sync_run_id=sync_run.id,
+            symbol="XYZ",
+            asset_type="stock",
+            quantity=Decimal("7"),
+            market_value=Decimal("840.00"),
+            source="snaptrade",
+            source_ref="provider_stock_projection_secret",
+            data_freshness_status="stale",
+            raw_provider_payload={"quantity": "7", "provider_account_id": "provider_account_id_projection_secret"},
+            as_of=synced_at,
+        ),
+        StockPosition(
+            account_id=account_id,
+            sync_run_id=sync_run.id,
+            symbol="QQQ",
+            asset_type="etf",
+            quantity=Decimal("2"),
+            market_value=None,
+            source="snaptrade",
+            source_ref="provider_stock_missing_value_projection_secret",
+            data_freshness_status="stale",
+            as_of=synced_at,
+        ),
+    )
+
+    class _SnapshotSession:
+        def scalar(self, _statement):
+            return cash_row
+
+        def scalars(self, _statement):
+            return stock_rows
+
+        def execute(self, _statement):
+            return ()
+
+    row = _BrokerAccountDetailsRow(
+        broker_account=broker_account,
+        broker_connection=connection,
+        latest_sync_run=sync_run,
+        metrics=_NormalizedAccountMetrics(),
+    )
+    monkeypatch.setattr(
+        frontend_read_service,
+        "_broker_account_detail_row_for_account_reference",
+        lambda *_args, **_kwargs: row,
+    )
+    selection = ReviewAccountSelectionRequest(
+        mode="selected_account",
+        account_reference=_opaque_account_reference(broker_account.id),
+    )
+    resolved = _resolve_portfolio_context(
+        PortfolioContextSelectionRequest(),
+        generated_at=NOW,
+        review_account_selection=selection,
+        db=_SnapshotSession(),
+        current_user_id=user_id,
+    )
+
+    assert resolved.summary is not None
+    assert resolved.summary.context_source == "account_snapshot"
+    assert resolved.summary.label == "Growth Demo Account"
+    assert resolved.account_snapshot_unavailable is False
+    assert resolved.broker_snapshot.freshness_status == "stale"
+    context_payload = asdict(resolved.context)
+    assert not find_forbidden_keys(context_payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+    rendered_context = repr(context_payload).lower()
+    assert "provider_account_id_projection_secret" not in rendered_context
+    assert "provider_connection_id_projection_secret" not in rendered_context
+    assert "provider_stock_projection_secret" not in rendered_context
+    assert "quantity" not in rendered_context
+    assert "buying_power" not in rendered_context
+
+    sections = frontend_read_service.try_build_exposure_evidence_sections(
+        portfolio_context=resolved.context,
+        intent=frontend_read_service._preview_intent(
+            TradeReviewPortfolioPreviewRequest(
+                supported_flow="stock_buy",
+                symbol="XYZ",
+                quantity=Decimal("3"),
+                price_assumption=Decimal("50"),
+            ),
+            generated_at=NOW,
+        ),
+    )
+    assert any("position_market_value_unavailable" in section.caveat_codes for section in sections)
+
+
+@pytest.mark.parametrize("freshness_status", ("cached", "delayed"))
+def test_selected_account_snapshot_preserves_canonical_broker_freshness_for_actionability(
+    monkeypatch: pytest.MonkeyPatch,
+    freshness_status: str,
+) -> None:
+    synced_at = datetime(2026, 5, 17, 15, 30, tzinfo=UTC)
+    user_id = uuid4()
+    connection = BrokerConnection(
+        id=uuid4(),
+        user_id=user_id,
+        provider="snaptrade",
+        broker_name="Synthetic Broker",
+        provider_connection_id="synthetic_connection",
+        connection_status="connected",
+        sync_status="succeeded",
+        data_freshness_status=freshness_status,
+        last_successful_sync_at=synced_at,
+    )
+    broker_account = BrokerAccount(
+        id=uuid4(),
+        broker_connection_id=connection.id,
+        account_id=uuid4(),
+        provider_account_id="synthetic_account",
+        display_name="Synthetic account",
+        user_nickname="Synthetic review account",
+        account_type="taxable_individual",
+        sync_status="succeeded",
+        data_freshness_status=freshness_status,
+        last_successful_sync_at=synced_at,
+    )
+    sync_run = BrokerSyncRun(
+        id=uuid4(),
+        broker_connection_id=connection.id,
+        broker_account_id=broker_account.id,
+        trigger="manual",
+        status="succeeded",
+        started_at=synced_at,
+        completed_at=synced_at,
+        accounts_count=1,
+        positions_count=0,
+        transactions_count=0,
+    )
+
+    class _SnapshotSession:
+        def scalar(self, _statement):
+            return None
+
+        def scalars(self, _statement):
+            return ()
+
+        def execute(self, _statement):
+            return ()
+
+    row = _BrokerAccountDetailsRow(
+        broker_account=broker_account,
+        broker_connection=connection,
+        latest_sync_run=sync_run,
+        metrics=_NormalizedAccountMetrics(),
+    )
+    monkeypatch.setattr(
+        frontend_read_service,
+        "_broker_account_detail_row_for_account_reference",
+        lambda *_args, **_kwargs: row,
+    )
+
+    resolved = _resolve_portfolio_context(
+        PortfolioContextSelectionRequest(),
+        generated_at=NOW,
+        review_account_selection=ReviewAccountSelectionRequest(
+            mode="selected_account",
+            account_reference=_opaque_account_reference(broker_account.id),
+        ),
+        db=_SnapshotSession(),
+        current_user_id=user_id,
+    )
+
+    assert resolved.broker_snapshot.freshness_status == freshness_status
+    unconfirmed = evaluate_portfolio_snapshot_actionability(
+        PortfolioActionabilityInput(
+            broker_snapshot=resolved.broker_snapshot,
+            market_quotes=resolved.market_quotes,
+        ),
+        evaluated_at=NOW,
+    )
+    confirmed = evaluate_portfolio_snapshot_actionability(
+        PortfolioActionabilityInput(
+            broker_snapshot=resolved.broker_snapshot,
+            market_quotes=resolved.market_quotes,
+            user_confirmation=UserConfirmationMetadata(
+                state="confirmed",
+                confirmed_at=NOW,
+                expires_at=NOW + timedelta(minutes=30),
+            ),
+        ),
+        evaluated_at=NOW,
+    )
+
+    assert unconfirmed.review_actionability_status == "manual_confirmation_required"
+    assert not unconfirmed.review_actionability_status.startswith("blocked_")
+    assert confirmed.review_actionability_status == "analysis_only"
+    assert confirmed.can_run_agent_explanation is True
+
+
+def test_selected_account_snapshot_freshness_mapping_keeps_successful_sync_rescue_and_fails_closed() -> None:
+    connection = BrokerConnection(
+        id=uuid4(),
+        user_id=uuid4(),
+        provider="snaptrade",
+        broker_name="Synthetic Broker",
+        provider_connection_id="synthetic_connection",
+        connection_status="connected",
+        sync_status="succeeded",
+        data_freshness_status="unknown",
+    )
+    broker_account = BrokerAccount(
+        id=uuid4(),
+        broker_connection_id=connection.id,
+        account_id=uuid4(),
+        provider_account_id="synthetic_account",
+        display_name="Synthetic account",
+        account_type="taxable_individual",
+        sync_status="succeeded",
+        data_freshness_status="unknown",
+    )
+
+    assert set(DATA_FRESHNESS_STATUSES) >= {"cached", "delayed"}
+    rescued = _broker_snapshot_status(
+        broker_account,
+        connection,
+        has_successful_sync=True,
+        preserve_canonical_sync_freshness=True,
+    )
+    assert rescued == "manual_review"
+    assert _snapshot_freshness_status(rescued) == "cached"
+
+    broker_account.data_freshness_status = "unrecognized_status"
+    assert _broker_snapshot_status(
+        broker_account,
+        connection,
+        has_successful_sync=False,
+        preserve_canonical_sync_freshness=True,
+    ) == "unknown"
+
+
+@pytest.mark.parametrize("failure_mode", ("unmatched", "no_completed_sync", "query_error"))
+def test_selected_account_snapshot_resolution_failure_never_uses_demo_exposure(
+    monkeypatch: pytest.MonkeyPatch,
+    failure_mode: str,
+) -> None:
+    user_id = uuid4()
+    account_reference = _opaque_account_reference(uuid4())
+    selection = ReviewAccountSelectionRequest(
+        mode="selected_account",
+        account_reference=account_reference,
+    )
+    review_account = (
+        ReviewAccountRead(
+            account_reference=account_reference,
+            display_label="Growth Demo Account",
+            account_kind_label="Taxable brokerage",
+            is_review_account=True,
+            is_included_in_portfolio_scope=False,
+            is_account_level_feasibility_source=False,
+        )
+        if failure_mode == "no_completed_sync"
+        else None
+    )
+    monkeypatch.setattr(
+        frontend_read_service,
+        "_review_account_for_workspace_selection",
+        lambda *_args, **_kwargs: review_account,
+    )
+    if failure_mode == "unmatched":
+        monkeypatch.setattr(
+            frontend_read_service,
+            "_broker_account_detail_row_for_account_reference",
+            lambda *_args, **_kwargs: None,
+        )
+    elif failure_mode == "no_completed_sync":
+        connection = BrokerConnection(
+            id=uuid4(),
+            user_id=user_id,
+            provider="snaptrade",
+            broker_name="Synthetic broker",
+            provider_connection_id="provider_connection_id_no_sync_secret",
+            connection_status="connected",
+            sync_status="idle",
+            data_freshness_status="unknown",
+        )
+        broker_account = BrokerAccount(
+            id=uuid4(),
+            broker_connection_id=connection.id,
+            account_id=uuid4(),
+            provider_account_id="provider_account_id_no_sync_secret",
+            display_name="Provider account should not render",
+            user_nickname="Growth Demo Account",
+            account_type="taxable_individual",
+            sync_status="idle",
+            data_freshness_status="unknown",
+        )
+        row = _BrokerAccountDetailsRow(
+            broker_account=broker_account,
+            broker_connection=connection,
+            latest_sync_run=None,
+            metrics=_NormalizedAccountMetrics(),
+        )
+        monkeypatch.setattr(
+            frontend_read_service,
+            "_broker_account_detail_row_for_account_reference",
+            lambda *_args, **_kwargs: row,
+        )
+    else:
+        def _raise_query_error(*_args, **_kwargs):
+            raise SQLAlchemyError("synthetic selected-account query failure")
+
+        monkeypatch.setattr(
+            frontend_read_service,
+            "_broker_account_detail_row_for_account_reference",
+            _raise_query_error,
+        )
+
+    captured_sections: list[SavedEvidenceSectionRead] = []
+    read = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="stock_buy",
+            symbol="XYZ",
+            quantity=Decimal("3"),
+            price_assumption=Decimal("50"),
+            review_account_selection=selection,
+        ),
+        generated_at=NOW,
+        db=object(),
+        current_user_id=user_id,
+        derived_exposure_sections_callback=captured_sections.extend,
+    )
+
+    assert read.portfolio_context is not None
+    assert read.portfolio_context.context_source == "account_snapshot"
+    assert read.portfolio_context.label == "Account snapshot unavailable"
+    assert read.portfolio_context.stock_position_count == 0
+    assert read.portfolio_context.option_position_count == 0
+    assert read.portfolio_context.cash_state == "unavailable"
+    assert captured_sections
+    assert {section.availability for section in captured_sections} == {"not_available"}
+    assert all("account_snapshot_unavailable" in section.caveat_codes for section in captured_sections)
+    assert all(not section.detail_labels for section in captured_sections)
+    frozen_sections = repr(tuple(section.model_dump(mode="python") for section in captured_sections))
+    assert "$5,000.00" not in frozen_sections
+    assert "$4,000.00" not in frozen_sections
+    assert "ctx_demo_latest" not in frozen_sections
+
+    assert read.scope_metadata is not None
+    scope = read.scope_metadata.portfolio_context_scope
+    assert scope.scope_mode == "unavailable"
+    assert scope.display_label == "Account snapshot unavailable"
+    assert scope.included_account_labels == ()
+    assert "account_snapshot_unavailable" in scope.caveat_codes
+    assert "Account snapshot unavailable" in read.scope_metadata.scope_summary_label
+    assert "account_snapshot_unavailable" in {caveat.code for caveat in read.caveats}
+    if failure_mode == "no_completed_sync":
+        assert read.scope_metadata.review_account is not None
+        assert read.scope_metadata.review_account.display_label == "Growth Demo Account"
+        assert read.scope_metadata.review_account.is_included_in_portfolio_scope is False
+    else:
+        assert read.scope_metadata.review_account is None
+        assert "Review account unresolved" in read.scope_metadata.scope_summary_label
+
+
+def test_selected_account_snapshot_context_is_lossy_and_replaces_demo_scope(
+    db_session,
+) -> None:
+    synced_at = datetime(2026, 5, 17, 15, 30, tzinfo=UTC)
+    user = User(display_name="Snapshot User", email="snapshot-user@example.com")
+    db_session.add(user)
+    db_session.flush()
+    account = Account(
+        user_id=user.id,
+        broker_name="Synthetic Broker",
+        account_type="taxable_individual",
+        display_name="Internal snapshot account should not render",
+        is_manual=False,
+    )
+    db_session.add(account)
+    db_session.flush()
+    connection = BrokerConnection(
+        user_id=user.id,
+        provider="snaptrade",
+        broker_name="Provider brokerage name should not render",
+        provider_connection_id="provider_connection_id_snapshot_secret",
+        connection_status="connected",
+        sync_status="idle",
+        data_freshness_status="stale",
+        last_successful_sync_at=synced_at,
+    )
+    db_session.add(connection)
+    db_session.flush()
+    broker_account = BrokerAccount(
+        broker_connection_id=connection.id,
+        account_id=account.id,
+        provider_account_id="provider_account_id_snapshot_secret",
+        display_name="Provider account ending 1234 should not render",
+        user_nickname="Growth Demo Account",
+        account_type="taxable_individual",
+        sync_status="idle",
+        data_freshness_status="stale",
+        last_successful_sync_at=synced_at,
+        raw_payload={"provider_account_id": "provider_account_id_snapshot_secret"},
+    )
+    db_session.add(broker_account)
+    db_session.flush()
+    sync_run = BrokerSyncRun(
+        broker_connection_id=connection.id,
+        broker_account_id=broker_account.id,
+        trigger="manual",
+        status="succeeded",
+        started_at=synced_at,
+        completed_at=synced_at,
+        provider_request_id="provider_request_id_snapshot_secret",
+        accounts_count=1,
+        positions_count=2,
+        transactions_count=0,
+    )
+    db_session.add(sync_run)
+    db_session.flush()
+    db_session.add_all(
+        (
+            CashBalance(
+                account_id=account.id,
+                sync_run_id=sync_run.id,
+                total_cash=Decimal("600.00"),
+                available_cash=Decimal("500.00"),
+                buying_power=Decimal("900.00"),
+                reserved_collateral_cash=Decimal("0.00"),
+                free_cash=Decimal("500.00"),
+                premium_income_cash=Decimal("0.00"),
+                dca_cash=Decimal("0.00"),
+                source="snaptrade",
+                source_ref="provider_cash_snapshot_secret",
+                data_freshness_status="stale",
+                as_of=synced_at,
+            ),
+            StockPosition(
+                account_id=account.id,
+                sync_run_id=sync_run.id,
+                symbol="XYZ",
+                asset_type="stock",
+                quantity=Decimal("7"),
+                market_value=Decimal("840.00"),
+                source="snaptrade",
+                source_ref="provider_stock_snapshot_secret",
+                data_freshness_status="stale",
+                raw_provider_payload={"quantity": "7", "provider_account_id": "provider_account_id_snapshot_secret"},
+                as_of=synced_at,
+            ),
+            StockPosition(
+                account_id=account.id,
+                sync_run_id=sync_run.id,
+                symbol="QQQ",
+                asset_type="etf",
+                quantity=Decimal("2"),
+                market_value=None,
+                source="snaptrade",
+                source_ref="provider_stock_missing_value_secret",
+                data_freshness_status="stale",
+                raw_provider_payload={"quantity": "2", "provider_account_id": "provider_account_id_snapshot_secret"},
+                as_of=synced_at,
+            ),
+        )
+    )
+    db_session.commit()
+
+    account_reference = _opaque_account_reference(broker_account.id)
+    selection = ReviewAccountSelectionRequest(
+        mode="selected_account",
+        account_reference=account_reference,
+    )
+    resolved = _resolve_portfolio_context(
+        PortfolioContextSelectionRequest(),
+        generated_at=NOW,
+        review_account_selection=selection,
+        db=db_session,
+        current_user_id=user.id,
+    )
+
+    assert resolved.summary is not None
+    assert resolved.summary.context_source == "account_snapshot"
+    assert resolved.summary.context_reference.startswith("ctx_")
+    assert str(broker_account.id) not in resolved.summary.context_reference
+    assert resolved.summary.label == "Growth Demo Account"
+    assert resolved.broker_snapshot.freshness_status == "stale"
+    context_payload = asdict(resolved.context)
+    assert not find_forbidden_keys(context_payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+    rendered_context = repr(context_payload).lower()
+    assert "provider_account_id_snapshot_secret" not in rendered_context
+    assert "provider_connection_id_snapshot_secret" not in rendered_context
+    assert "provider_stock_snapshot_secret" not in rendered_context
+    assert "quantity" not in rendered_context
+    assert "buying_power" not in rendered_context
+
+    captured_sections: list[SavedEvidenceSectionRead] = []
+    stock_read = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="stock_buy",
+            symbol="XYZ",
+            quantity=Decimal("3"),
+            price_assumption=Decimal("50"),
+            review_account_selection=selection,
+        ),
+        generated_at=NOW,
+        db=db_session,
+        current_user_id=user.id,
+        derived_exposure_sections_callback=captured_sections.extend,
+    )
+    csp_read = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="cash_secured_put",
+            option_leg=_option_leg(option_type="put", leg_action="sell_to_open"),
+            review_account_selection=selection,
+        ),
+        generated_at=NOW,
+        db=db_session,
+        current_user_id=user.id,
+    )
+
+    assert stock_read.portfolio_context is not None
+    assert stock_read.portfolio_context.context_source == "account_snapshot"
+    assert stock_read.portfolio_context.label == "Growth Demo Account"
+    assert stock_read.scope_metadata is not None
+    scope = stock_read.scope_metadata.portfolio_context_scope
+    assert scope.scope_mode == "single_account"
+    assert scope.display_label == "Growth Demo Account"
+    assert scope.included_account_labels == ("Growth Demo Account",)
+    assert "review_account_scope_membership_unknown" not in scope.caveat_codes
+    assert stock_read.scope_metadata.review_account is not None
+    assert stock_read.scope_metadata.review_account.is_included_in_portfolio_scope is True
+    assert stock_read.scope_metadata.account_level_feasibility_evaluated is False
+    assert any("position_market_value_unavailable" in section.caveat_codes for section in captured_sections)
+    assert "position_market_value_unavailable" in {caveat.code for caveat in stock_read.caveats}
+    assert csp_read.portfolio_context is not None
+    assert csp_read.portfolio_context.context_source == "account_snapshot"
+    assert "cash_secured_put_collateral_generic" in {caveat.code for caveat in csp_read.caveats}
+    rendered_workspace = repr(stock_read.model_dump(mode="python")).lower()
+    assert "provider_account_id_snapshot_secret" not in rendered_workspace
+    assert "provider_connection_id_snapshot_secret" not in rendered_workspace
+    assert "provider_stock_snapshot_secret" not in rendered_workspace
+    assert "1234" not in rendered_workspace
+    assert not find_forbidden_keys(
+        stock_read.model_dump(mode="python"),
+        forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS,
+    )
+
+
+def test_selected_account_without_synced_snapshot_returns_unavailable_context(
+    db_session,
+) -> None:
+    user = User(display_name="Fallback User", email="fallback-user@example.com")
+    db_session.add(user)
+    db_session.flush()
+    connection = BrokerConnection(
+        user_id=user.id,
+        provider="snaptrade",
+        broker_name="Provider brokerage name should not render",
+        provider_connection_id="provider_connection_id_fallback_secret",
+        connection_status="connected",
+        sync_status="idle",
+        data_freshness_status="fresh",
+    )
+    db_session.add(connection)
+    db_session.flush()
+    account = Account(
+        user_id=user.id,
+        broker_name="Synthetic Broker",
+        account_type="taxable_individual",
+        display_name="Internal fallback account should not render",
+        is_manual=False,
+    )
+    db_session.add(account)
+    db_session.flush()
+    broker_account = BrokerAccount(
+        broker_connection_id=connection.id,
+        account_id=account.id,
+        provider_account_id="provider_account_id_fallback_secret",
+        display_name="Provider account should not render",
+        user_nickname="Fallback Demo Account",
+        account_type="taxable_individual",
+        sync_status="idle",
+        data_freshness_status="fresh",
+    )
+    db_session.add(broker_account)
+    db_session.commit()
+
+    resolved = _resolve_portfolio_context(
+        PortfolioContextSelectionRequest(),
+        generated_at=NOW,
+        review_account_selection=ReviewAccountSelectionRequest(
+            mode="selected_account",
+            account_reference=_opaque_account_reference(broker_account.id),
+        ),
+        db=db_session,
+        current_user_id=user.id,
+    )
+
+    assert resolved.summary is not None
+    assert resolved.account_snapshot_unavailable is True
+    assert resolved.summary.context_reference != "ctx_demo_latest"
+    assert resolved.summary.context_source == "account_snapshot"
+    assert resolved.summary.label == "Account snapshot unavailable"
+    assert resolved.summary.cash_state == "unavailable"
 
 
 def test_dashboard_account_summary_contract_uses_hidden_display_labels_only() -> None:

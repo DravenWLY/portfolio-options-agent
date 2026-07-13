@@ -39,6 +39,8 @@ pytestmark = [pytest.mark.api, pytest.mark.unit]
         ("cash_collateral_not_fully_modeled", "liquidity_model_unverified"),
         ("csp_collateral_unverified", "account_feasibility_not_evaluated"),
         ("covered_call_coverage_unverified", "account_feasibility_not_evaluated"),
+        ("funding_shortfall_detected", "funding_shortfall_detected"),
+        ("account_snapshot_unavailable", "account_snapshot_unavailable"),
     ),
 )
 def test_saved_review_source_caveat_codes_sanitize_private_liquidity_tokens(

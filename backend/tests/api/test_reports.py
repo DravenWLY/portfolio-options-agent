@@ -20,6 +20,13 @@ from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_for
 from app.services.reports import agent_team_report as agent_team_report_service
 from app.services.reports import crud as report_service
 from app.services.reports.public_evidence import EdgarCompanyProfileSourcePolicy
+from app.services.reports.source_snapshots import (
+    FmpFundamentalsSourcePolicy,
+    FredMacroSeriesSourcePolicy,
+    fmp_fundamentals_execution_context_for_client,
+    fred_macro_series_execution_context_for_client,
+)
+from app.services.trade_review import exposure_adapter as exposure_adapter_service
 
 
 pytestmark = [pytest.mark.api, pytest.mark.db]
@@ -525,6 +532,11 @@ def test_db_backed_golden_path_preview_save_generate_readback_and_regenerate(
     assert saved_source.scope_metadata_json["scope_summary_label"] == preview["scope_metadata"]["scope_summary_label"]
     assert saved_source.deterministic_summary_json["supported_flow"] == expected_flow
     assert saved_source.deterministic_summary_json["symbol_or_underlying"] == expected_symbol
+    derived_sections = saved_source.deterministic_summary_json.get("derived_exposure_sections") or []
+    assert [section["section_key"] for section in derived_sections] == [
+        "before_after_portfolio_impact",
+        "concentration_risk_drift",
+    ]
 
     save_response = client.post(
         f"/users/{user_id}/reports/from-trade-review",
@@ -557,6 +569,21 @@ def test_db_backed_golden_path_preview_save_generate_readback_and_regenerate(
     assert evidence.trade_intent_summary.supported_flow == expected_flow
     assert evidence.trade_intent_summary.symbol_or_underlying == expected_symbol
     assert evidence.scope_state.account_level_feasibility_evaluated is False
+    if expected_flow == "stock_buy":
+        assert evidence.before_after_portfolio_impact.availability in {"available", "limited"}
+        assert evidence.before_after_portfolio_impact.detail_labels
+        assert evidence.concentration_risk_drift.availability in {"available", "limited"}
+    else:
+        assert evidence.before_after_portfolio_impact.availability == "not_available"
+        assert evidence.concentration_risk_drift.availability == "not_available"
+    monkeypatch.setattr(
+        exposure_adapter_service,
+        "build_trade_exposure_impact",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("readback must not recompute exposure impact")),
+    )
+    reread_evidence = SavedEvidencePackageRead.from_saved_review_artifact(SavedReviewArtifactRead.model_validate(saved))
+    assert reread_evidence.before_after_portfolio_impact == evidence.before_after_portfolio_impact
+    assert reread_evidence.concentration_risk_drift == evidence.concentration_risk_drift
     evidence_rendered = repr(evidence.model_dump(mode="python")).lower()
     for forbidden in (
         account_reference.lower(),
@@ -787,6 +814,92 @@ def test_generate_agent_team_report_with_injected_edgar_profile_persists_and_reu
     assert refreshed_artifact.public_evidence == artifact.public_evidence
     assert refreshed_artifact.agent_summary is not None
     assert refreshed_artifact.agent_summary.report_generated_at == second_generated_at
+
+
+def test_generate_agent_team_report_freezes_fmp_and_fred_snapshots_without_regeneration_refetch(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_response = client.post(
+        "/users", json={"display_name": "Source Snapshot User", "email": "source-snapshot@example.com"}
+    )
+    user_id = user_response.json()["id"]
+    source_payload = SavedReviewArtifactCreateRequest(
+        source_kind="trade_review_workspace",
+        source_reference="workspace_sourcesnapshot1",
+        title="Saved normalized-source review",
+        report_type="trade_review",
+        scope_metadata=_scope_metadata_payload("Synthetic review account"),
+        deterministic_summary=_deterministic_summary_payload(),
+    )
+    assert report_service.record_saved_review_source(db_session, UUID(user_id), source_payload) is not None
+    saved = client.post(
+        f"/users/{user_id}/reports/from-trade-review",
+        json={
+            "source_kind": "trade_review_workspace",
+            "source_reference": "workspace_sourcesnapshot1",
+            "title": "Saved normalized-source review",
+            "report_type": "trade_review",
+        },
+    )
+    assert saved.status_code == 201
+    thread_id = client.get(f"/users/{user_id}/reports").json()[0]["id"]
+    fmp_client = _CountingFmpFundamentalsClient()
+    fred_client = _CountingFredMacroSeriesClient()
+    fmp_context = fmp_fundamentals_execution_context_for_client(
+        fmp_client,
+        collected_at=datetime(2026, 7, 12, 12, tzinfo=UTC),
+    )
+    fred_context = fred_macro_series_execution_context_for_client(
+        fred_client,
+        collected_at=datetime(2026, 7, 12, 12, tzinfo=UTC),
+    )
+
+    summary = agent_team_report_service.generate_agent_team_report_for_thread(
+        db_session,
+        UUID(user_id),
+        UUID(thread_id),
+        fmp_fundamentals_policy=FmpFundamentalsSourcePolicy(enabled=True),
+        fmp_fundamentals_context=fmp_context,
+        fred_macro_series_policy=FredMacroSeriesSourcePolicy(enabled=True),
+        fred_macro_series_context=fred_context,
+    )
+
+    assert summary is not None
+    assert fmp_client.calls == ("income", "balance", "cash_flow")
+    assert fred_client.calls == 6
+    report_thread = report_service.get_report_thread(db_session, UUID(user_id), UUID(thread_id))
+    assert report_thread is not None
+    artifact = report_service.saved_review_artifact_for_thread(report_thread)
+    assert artifact.public_evidence is not None
+    assert artifact.public_evidence.public_fundamentals_snapshot.availability == "available"
+    assert artifact.public_evidence.fred_macro_series_snapshot is not None
+    assert artifact.public_evidence.fred_macro_series_snapshot.availability == "available"
+    frozen_payload = artifact.public_evidence.model_dump(mode="python")
+    assert not find_forbidden_keys(frozen_payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+    for forbidden in ("raw_payload", "https://", "api_key", "prompt", "trace", "provider_account_id"):
+        assert forbidden not in repr(frozen_payload).lower()
+
+    regenerated = agent_team_report_service.generate_agent_team_report_for_thread(
+        db_session,
+        UUID(user_id),
+        UUID(thread_id),
+        fmp_fundamentals_policy=FmpFundamentalsSourcePolicy(enabled=True),
+        fmp_fundamentals_context=fmp_fundamentals_execution_context_for_client(
+            _CountingFmpFundamentalsClient(raise_on_call=True)
+        ),
+        fred_macro_series_policy=FredMacroSeriesSourcePolicy(enabled=True),
+        fred_macro_series_context=fred_macro_series_execution_context_for_client(
+            _CountingFredMacroSeriesClient(raise_on_call=True)
+        ),
+    )
+
+    assert regenerated is not None
+    refreshed_thread = report_service.get_report_thread(db_session, UUID(user_id), UUID(thread_id))
+    assert refreshed_thread is not None
+    refreshed_artifact = report_service.saved_review_artifact_for_thread(refreshed_thread)
+    assert refreshed_artifact.public_evidence == artifact.public_evidence
 
 
 def test_generate_agent_team_report_with_unavailable_edgar_degrades_safely(
@@ -1368,4 +1481,81 @@ class _CountingEdgarProfileClient:
             "industry": "Brokerage",
             "subindustry": "Retail Brokerage",
             "peer_group": "Trading Apps",
+        }
+
+
+class _CountingFmpFundamentalsClient:
+    def __init__(self, *, raise_on_call: bool = False) -> None:
+        self.raise_on_call = raise_on_call
+        self._calls: list[str] = []
+
+    @property
+    def calls(self) -> tuple[str, ...]:
+        return tuple(self._calls)
+
+    def fetch_income_statement(self, *, symbol: str) -> list[dict]:
+        self._calls.append("income")
+        self._raise_if_needed()
+        return [
+            {
+                "fiscal_period": "Q1 2026",
+                "report_date": "2026-05-01",
+                "currency": "USD",
+                "revenue": "1200",
+                "grossProfit": "600",
+                "operatingIncome": "210",
+                "netIncome": "160",
+                "eps": "1.25",
+            }
+        ]
+
+    def fetch_balance_sheet(self, *, symbol: str) -> list[dict]:
+        self._calls.append("balance")
+        self._raise_if_needed()
+        return [
+            {
+                "fiscal_period": "Q1 2026",
+                "report_date": "2026-05-01",
+                "currency": "USD",
+                "totalAssets": "5000",
+                "totalLiabilities": "1900",
+                "totalDebt": "800",
+                "totalCurrentAssets": "1800",
+                "totalCurrentLiabilities": "900",
+            }
+        ]
+
+    def fetch_cash_flow(self, *, symbol: str) -> list[dict]:
+        self._calls.append("cash_flow")
+        self._raise_if_needed()
+        return [
+            {
+                "fiscal_period": "Q1 2026",
+                "report_date": "2026-05-01",
+                "currency": "USD",
+                "operatingCashFlow": "310",
+                "capitalExpenditure": "-75",
+                "freeCashFlow": "235",
+            }
+        ]
+
+    def _raise_if_needed(self) -> None:
+        if self.raise_on_call:
+            raise AssertionError("frozen public evidence must not re-fetch FMP statement facts")
+
+
+class _CountingFredMacroSeriesClient:
+    def __init__(self, *, raise_on_call: bool = False) -> None:
+        self.raise_on_call = raise_on_call
+        self.calls = 0
+
+    def fetch_series_observation(self, *, series_id: str) -> dict:
+        self.calls += 1
+        if self.raise_on_call:
+            raise AssertionError("frozen public evidence must not re-fetch FRED series")
+        return {
+            "observation_date": "2026-06-01",
+            "value": "3.2",
+            "unit": "Percent",
+            "frequency": "Monthly",
         }

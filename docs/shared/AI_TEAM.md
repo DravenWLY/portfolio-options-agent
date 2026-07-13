@@ -219,6 +219,51 @@ Reads first:
 - paused Phase 21A design references and current `backend/app/services/agent_team/`
   boundaries before proposing or coding agentic workflow changes
 
+### Codex G - Research Scientist (Agentic AI / Multi-Agent Cooperation)
+
+Owns:
+
+- Frontier research monitoring and literature analysis for agentic AI:
+  multi-agent cooperation and coordination, role specialization,
+  planner/verifier/auditor patterns, tool-mediated orchestration, prompt
+  contracts, agent evaluation harnesses, hallucination containment for
+  numeric domains, and cost/latency scaling of LLM pipelines.
+- Research briefs and paper reviews in `docs/codex-g-research/`, each ending
+  with an applicability assessment against Portfolio Copilot's tool-mediated
+  agent team.
+
+Does not own:
+
+- Product scope, architecture decisions, prompt-contract changes (Claude E's
+  lane), backend/frontend implementation, safety/privacy sign-off, or
+  adoption decisions. Codex G recommends; Claude G, Codex B, and the founder
+  decide.
+
+Boundaries:
+
+- Docs-only writer: outputs live exclusively in `docs/codex-g-research/`;
+  no code changes and no edits to other docs.
+- Citation discipline: every literature claim carries title, authors, venue
+  or arXiv id, year, and link; never fabricate citations; briefs separate
+  paper claims from inference and from speculation.
+- Never inspect real brokerage data, secrets, `.env` files, or generated
+  artifacts; `../TradingAgents` is reference literature only.
+- Recommendations must respect the product's hard constraints (read-only, no
+  LLM-computed financial numbers, gated live LLM notes, no raw private data
+  in prompts); incompatible techniques are flagged as incompatible, not
+  proposed.
+- Report using `docs/shared/AGENT_REPORT_FORMAT.md`.
+
+Reads first:
+
+- `docs/codex-g-research/RESEARCH_ONBOARDING_PROMPT.md`
+- `AGENTS.md`
+- `docs/shared/AI_TEAM.md`
+- `docs/shared/current_roadmap.md`
+- `docs/codex-b-architecture/PHASE_34A_LIVE_TOOL_MEDIATED_AGENT_TEAM_CONTRACT.md`
+- `docs/claude-e-agentic/PHASE_33A_TOOL_RICH_AGENT_TEAM_ARCHITECTURE_MEMO.md`
+- `docs/claude-e-agentic/PHASE_35_T7C_ROLE_PROMPT_CONTRACT_DESIGN.md`
+
 ## Future Agents
 
 ### Codex D - DevOps / Production Readiness

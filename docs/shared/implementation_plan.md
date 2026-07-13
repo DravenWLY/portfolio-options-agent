@@ -528,6 +528,644 @@ Detailed verification history is archived in:
     live LLM/provider use, Agent Console active runs, LangGraph, MCP, and
     browser smoke remain outside Phase 33A.
 
+### Phase 35 - Real-Account Trade-Impact Working Prototype (ACTIVE)
+
+- Architecture reference:
+  `docs/codex-b-architecture/PHASE_35_REAL_ACCOUNT_TRADE_IMPACT_PROTOTYPE_CONTRACT.md`.
+- Opened 2026-07-08 by Claude G after the founder rejected the P34A-T18
+  structured report as not working. Founder's working-report definition:
+  trade-centered, account-aware (real Fidelity account by nickname
+  `Fidelity Individual`, buy-NVDA test trade), zero internal tokens in user
+  prose, well-formatted markdown with titles/paragraphs/tables. Founder
+  decisions D1-D6 recorded in the contract, including: derived percentages
+  AND dollar values allowed in internal-prototype reports (identifiers/raw
+  payloads still banned; real-derived-value artifacts stay local and
+  gitignored); Claude G may view reports + derived values, never raw
+  payloads; **all frontend work (incl. P34A-T14) is gated on founder
+  acceptance of the backend prototype**; v1 exposure is sector-level (FMP
+  constituent endpoints are 402 on the current tier - v2 look-through is
+  founder decision P35-T7).
+- `P35-T1` - Trade-impact methodology memo. Owner: Claude H. Reviewer:
+  Claude G. Status: done 2026-07-08; review PASS as amended (blocker B1: SMH
+  mislabeled "broad-market" in three narrative examples; wording fixed in
+  place per the review spec). Decisions recorded: D-R1 (§2.4 categorical
+  caveat = backend-rendered fixed text, never LLM-authored) and D-R2 (§5
+  narrative = deterministic backend-rendered prose, outside the live-gate
+  $/% ban; LLM-authored narrative is a separate v4 decision). Memo at
+  `docs/claude-h-knowledge/P35_T1_TRADE_IMPACT_METHODOLOGY.md`; Codex C
+  (P35-T3) and Claude E (P35-T4) build on it.
+- `P35-T2` - Human-readable rendering + display-token ban. Owner: Codex C.
+  Reviewer: Claude G. Status: done 2026-07-08; review PASS. Backend-owned
+  display-label service with enumerated-vocabulary asserts and safe
+  unknown-token fallback; all deterministic and frozen prose label-rendered;
+  fail-closed `display_token_blocked` validator on user-visible prose via
+  the existing fallback path; additive `display_label` in prompt fact rows;
+  exporter founder-readable. Verification: 532 focused / 1344 full passed;
+  diff-check clean. Deferred polish folded into T3: freshness "manual"
+  label should read "manually entered"; FreshnessStatus completeness assert
+  (eod_only/delayed/error/unavailable labels); shorter inline unknown-token
+  phrase.
+- `P35-T3` - Deterministic exposure engine v1 (sector-level, before/after,
+  dollars + percentages, thresholds, narrative statements). Owner: Codex C.
+  Reviewer: Claude G. Status: done 2026-07-08; review PASS after blocker
+  P35-T3-F1 (narrative hardcoded SMH/VTI fund names, emitting false holdings
+  statements for any non-golden portfolio; fixed to derive held ETF/fund
+  symbols from reviewed positions). Golden worked example byte-identical;
+  non-golden SOXX/IWM/MSFT+AMD regression proves no false SMH/VTI mentions.
+  Pure Python; injected/default-off FMP company-profile classification
+  (POA_MARKET_CONTEXT_MODE, 30-req budget, sanitized errors); ETF theme map
+  + broad-market exclusion + coverage metric; funding regimes; reference-point
+  thresholds; §7 ban patterns preserving descriptive "would add". Verification:
+  engine 8, focused 496, full offline 1371 passed; diff-check clean. NOT yet
+  wired into saved-report persistence — that is P35-T3a (privacy-reviewed
+  positions->snapshot adapter + evidence freeze).
+- `P35-T3a` - Exposure adapter + call seam. Owner: Codex C. Reviewer:
+  Claude G (privacy). Status: done 2026-07-08; review PASS. PortfolioReviewContext
+  + stock/ETF buy intent -> exposure-engine inputs -> display-only
+  SavedEvidenceSectionRead sections; options bucketed as one asset-class line;
+  missing market values -> caveats; buy-only guard; price basis genericized;
+  fail-closed. Preview call seam computes but does not yet store (stopped
+  before the freeze field per instruction). Privacy confirmed empirically:
+  no account/user UUID, quantities, or source leak into the sections; only
+  D2-approved derived dollars/percentages. Verification: focused 658, full
+  offline 1376 passed; diff-check clean.
+- `P35-T3b` - Freeze derived exposure sections into the saved artifact +
+  readback wiring. Owner: Codex C. Reviewer: Claude G (privacy). Status: done
+  2026-07-08; review PASS. Additive constrained derived_exposure_sections on
+  SavedDeterministicReviewSummaryRead (only before_after_portfolio_impact /
+  concentration_risk_drift, max one each, validated); route captures adapter
+  output via a type-filtered callback and freezes it; from_saved_review_artifact
+  uses frozen sections with fail-closed per-section re-validation (forbidden
+  keys / secrets / internal tokens -> stub) and no recompute-on-readback
+  (proven by a monkeypatch-to-raise test). Backward compatible (empty default
+  -> legacy stubs). Verification: schema 110, focused 554, full offline 1382
+  passed; diff-check clean. **The real-account backend path is now complete
+  end-to-end: preview -> adapter -> engine -> frozen display sections ->
+  readback.**
+- `P35-T4` - Report contract v4: trade-centered markdown document. Owner:
+  Claude E (design), Codex C (P35-T5 impl). Reviewer: Claude G. Status:
+  design PASS as amended 2026-07-08. Decisions D1-D6 recorded: deterministic
+  document composer (PM synthesis repurposed); live roles may not reference
+  engine-derived portfolio values in any form (new portfolio-claim gate,
+  digit+word) - D2 AMENDED to add comparative-magnitude vocabulary
+  (double/triple/halve/most/majority/bulk/dominant/concentrat*) so the
+  word-form channel is fully closed; numeric allowed-set unchanged;
+  fundamentals/news live notes dropped; §7 ban list over all prose with the
+  instruction-vs-description matcher; §2.4 overlap = T1-preferred backend
+  fixed text (D-R1). Load-bearing gate facts verified in code (live gates
+  run only on live_report_markdown; NUMBER_RE digit-only; token regex spares
+  tickers). Important riders for the T5 prompt: engine must expose
+  section-keyed narrative statements (not positional slicing); the §2
+  risk-note example's "should" must not be encoded as acceptable.
+- `P35-T5` - Report contract v4 implementation (document composer + gate
+  extensions). Owner: Codex C. Reviewer: Claude G. Status: done 2026-07-09
+  (PASS after P35-T5-F1 nickname fix). Structurally-frozen narrative groups,
+  portfolio-claim + display-token gates, live-note v4 contract, honest-
+  unavailable rendering; account nickname threaded fail-closed into
+  scope_state. Verification: 652 passed, diff-check clean.
+- `P35-T6` - Real-account gated run and founder acceptance read. Owner:
+  Claude G with per-run founder authorization. Status: RUN 1 DONE 2026-07-09
+  (mock mode, founder-authorized) - pipeline works end-to-end, NOT accepted.
+  Blockers found: (A) `_resolve_portfolio_context` only serves synthetic demo
+  contexts, so real synced positions never reach the exposure engine
+  (criterion 2 fails); (B) assumed-external funding regime mixes two funding
+  models (engine `portfolio_after = before + shortfall` vs `cash_after`
+  unchanged) so After % column summed to 152.6% and two portfolio totals were
+  quoted. Polish: doubled freshness labels, "1 are exchange-traded funds"
+  grammar, bare not-reviewed list lines. Founder directives from the readout:
+  per-role prompts are too thin (shared template + one sentence, 2 roles
+  only); report verification runs must use live Gemini going forward (3.5
+  Flash candidate); insufficient-cash detection should surface as a
+  proceed-anyway warning (frontend banner later).
+- `P35-T7a` - Funding-regime fix + shortfall warning + report polish. Owner:
+  Codex C. Reviewer: Claude G. Status: done 2026-07-10 (PASS) - assumed-external
+  funding unified on the full-purchase denominator with per-sentence basis
+  naming + external-regime reconciliation test; funding_shortfall_detected
+  caveat and honest shortfall warning; freshness-label, plural-grammar, and
+  list-formatting polish.
+- `P35-T7b` - Real-account portfolio context provider (selected review
+  account, symbol+market-value-only seam). Owner: Codex C. Reviewer:
+  Claude G. Status: done 2026-07-10 (PASS after T7b-F1) - lossy privacy seam,
+  nickname-only single-account scope, sync-derived freshness; requested-but-
+  failed resolution yields honest-unavailable exposure + account_snapshot_
+  unavailable caveat with no membership claim (all three failure triggers
+  tested offline). Verified 683 passed. Frontend PortfolioContextSource
+  mirror ("account_snapshot") remains a queued frontend task.
+- `P35-T7c` - Per-agent prompt contract p35-role-note-v2. Owner: Claude E
+  (design) / Codex C (impl). Reviewer: Claude G. Status: done 2026-07-10
+  (design PASS: D1-D5 ruled; impl PASS: verbatim shared core + four role
+  blocks, exact-string static system-prompt registry validated at import,
+  fail-closed unmapped-role raise, dormant fundamentals/news blocks,
+  finish_reason truncation guard with nothing frozen; D3 wrong-direction-echo
+  residual documented as eval tripwire). Do not amend the verbatim prompts.
+- `P35-T7b-F2` - Selected-account freshness vocabulary fix. Owner: Codex C.
+  Reviewer: Claude G. Status: done 2026-07-10 (PASS) - the T7b resolver path
+  now validates sync freshness against the canonical broker_import
+  DATA_FRESHNESS_STATUSES via preserve_canonical_sync_freshness (only that
+  call site); cached/delayed flow to actionability as non-blocking
+  manual_confirmation_required / analysis_only; unknown-with-successful-sync
+  rescue and junk fail-closed kept; Account Details display path deliberately
+  unchanged (its ReadinessSnapshotStatus read schema has no cached/delayed -
+  extending it + frontend mirror queued with the PortfolioContextSource task).
+- `P35-T6` RUN 2/3 - Real account + live Gemini runs. Status: RUN 2 2026-07-10
+  blocked before any Gemini call (sync freshness vocabulary mismatch ->
+  blocked_unknown_freshness; fixed by P35-T7b-F2). RUN 3 DONE 2026-07-10
+  (founder-authorized): first full live end-to-end pass - real selected
+  account snapshot reached the engine, funding-shortfall warning surfaced on
+  real cash, semiconductor SMH+NVDA overlap surfaced, two live Gemini role
+  notes generated and gated (gemini-3.5-flash attempted, rejected by API,
+  fell back to gemini-2.5-flash), full_agent_report returned. NOT accepted
+  yet - report defect list for P35-T9: (1) false "already above the 30.0%
+  industry reference point before this trade" clause appended unconditionally
+  in the engine's semiconductor-overlap statement (exposure_engine.py ~:852);
+  (2) raw fact key atr14_usd rendered in the market-context table
+  (FACT_DISPLAY_LABELS missing entry; unmapped keys should fail closed);
+  (3) composer doubling "reviews stock buy review" (runner ~:1351);
+  (4) lowercase sentence start after a period in the coverage sentence;
+  (5) repetitive top-three fund note wording; (6) live note echoed a composed
+  display label ("Market quote freshness: manual") because the envelope feeds
+  the labeled string instead of the bare category; (7) near-duplicate
+  freshness/as-of rows in the market-context table. Data finding for
+  founder/Claude H: cash balance and the SPAXX money-market position appear
+  as equal-value separate rows both counted in the portfolio total (likely
+  the same swept dollars counted twice), which also understates available
+  cash in the shortfall warning - needs a domain ruling on core-position
+  dedup before the next run.
+- `P35-T9` - Report defect fixes from T6 run 3 (list above), plus two agent-
+  section items found on founder readout: (8) render each live role note with
+  visible owner attribution and honest dropped/dormant text; (9) resolve the
+  output-side token-scan collision - the auditor's private-leak scan includes
+  bare "cash"/"holdings"/"positions", which the risk role's own prompt block
+  guarantees it will say, so its live note is always generated then dropped
+  (run-3 artifact confirms live_report_markdown empty + private_leak_blocked).
+  Owner: Codex C. Reviewer: Claude G (token-scan ruling by Claude G).
+  Status: done 2026-07-10 (PASS) - all ten items fixed and tested offline:
+  fail-closed display labels, value-consistent threshold clauses,
+  wording/table polish, bare envelope freshness categories, per-persona
+  note attribution with honest absence lines, note-prose-only
+  topic-vocabulary exemption with key-value disclosure guard, and
+  SPAXX-class core positions treated as cash (founder ruling 2026-07-10;
+  Fidelity documents uninvested cash is held in the core position) with
+  three-branch mirror dedup, caveat, and reconciled totals. 596 passed /
+  2 DB-gated skips.
+- `P35-T6` RUN 4 - DONE 2026-07-10 (founder-authorized). First fully clean
+  live run: every run-3 defect verified fixed in the generated report; both
+  live role notes survived the gates and rendered with visible Technical
+  Analyst / Risk Manager attribution; SPAXX deduped into cash with the
+  honest core-cash note and reconciled totals; no raw keys, no false
+  threshold claims; two live Gemini calls (gemini-3.5-flash still rejected
+  by the API, fell back to gemini-2.5-flash). Only remaining warning:
+  public_evidence_partial_coverage (expected - dormant news/fundamentals).
+  Report delivered to founder for the four-criteria acceptance judgment.
+  Deferred polish noted: summary headline bolded the core-cash note instead
+  of the new-position statement; live notes quote copied numbers in single
+  quotes. FOUNDER VERDICT 2026-07-10: NOT ACCEPTED. The acceptance bar for
+  a working version requires ALL agent roles working - live gated notes,
+  not dormant roles and not deterministic-only sections. No further live
+  acceptance runs until Phase 36 activation completes; the next live run is
+  P36-T5 with four live role notes.
+- `P35-R1` - Research brief: output-side safety gating and auditor false
+  positives in multi-agent LLM pipelines. Owner: Codex G (onboarded
+  2026-07-10; charter at docs/codex-g-research/RESEARCH_ONBOARDING_PROMPT.md).
+  Reviewer: Claude G. Status: done 2026-07-10 (review PASS). Brief at
+  docs/codex-g-research/RESEARCH_OUTPUT_SAFETY_GATING_2026-07-10.md.
+  Ruling: ranks 1-3 adopted as the durable post-T9 direction - typed
+  privacy-match taxonomy with three outcomes (data-bearing hard block /
+  vocabulary-only not leak evidence / ambiguous fail-closed drop) plus a
+  synthetic minimal-pair + canary eval matrix scored at complete-report
+  level; the P35-T9 bare-word exemption is the tactical first increment and
+  is superseded by, not layered under, the typed taxonomy. Bounded re-pass
+  deferred until the eval matrix measures base gate error rates. No learned
+  component may ever be the sole layer between a note and display. The
+  brief's incompatible list is binding for future gate design docs.
+- `P35-T8` - Constituent look-through source decision. Owner: founder.
+
+### Phase 36 - Working Version: All Five Agents Live
+
+Working-version definition (founder, 2026-07-10, revised same day): all
+five agent-team roles working as live gated agents - not deterministic-only
+and not dormant. That is four analyst live notes PLUS a real live Portfolio
+Manager role. Founder explicitly reopened the P34A PM boundary: the PM
+becomes a gated live synthesis over the other roles' outputs and the
+deterministic findings. Safety adaptation on record: PM live output is a
+typed no-advice synthesis (evidence weighting, verification priorities,
+trust assessment) - no ratings, no targets, no sizing, no horizons; every
+number envelope-copied; deterministic composer keeps document authorship
+and is the fail-closed fallback for the synthesis section. Deterministic
+financial math and the no-advice rule are unchanged.
+
+Reference model (founder-directed): ../TradingAgents role implementations,
+studied read-only. Adoption analysis:
+docs/shared/PHASE_36_TRADINGAGENTS_REFERENCE_ADOPTION_NOTES.md
+(adopt/adapt/reject verdicts per role + source-rights delta table).
+
+Founder autonomy directive (2026-07-10, governs all Phase 36 design):
+TradingAgents is the golden standard for agent capability and autonomy.
+Product agents get maximum permission, freedom, and resources inside hard
+safety boundaries (read-only, privacy, source licensing, deterministic
+math in code as invocable tools, no advice framing); in-depth analysis and
+truthfulness verification are the agents' responsibility, with the auditor
+as backstop. Prior micro-constraints (2-4 sentence notes, copy-only
+numbers, blanket interpretation bans) are reclassified as adjustable
+posture - see the REVISION section of the adoption notes doc. Team members
+exercise their own judgment within this frame.
+
+- `P36-T1` - TradingAgents reference study + adoption notes. Owner:
+  Claude G. Status: done 2026-07-10 (doc above).
+- `P36-T2` - Five-role domain design: per-role analysis charter, per-role
+  evidence fact-groups and tool allowlists, per-role prompts (v3 prompt
+  contract superseding p35-role-note-v2), and the PM live-synthesis
+  design. Owner: Claude H (founder-assigned). Reviewers: Claude E
+  (prompt/gate compatibility) + Claude G (architecture/safety), then
+  founder. Status: design delivered 2026-07-10 (revised under the
+  autonomy directive; docs/claude-h-domain/PHASE_36_FIVE_ROLE_DOMAIN_DESIGN.md).
+  Claude G rulings 2026-07-10: Q-R1/A-1 CONFIRMED - D-R1
+  identifier-privacy boundary stands (reviewed symbol + envelope-/
+  calc-sourced portfolio values allowed in LLM surfaces, nickname only,
+  identifiers/payloads never) with two conditions: (1) the replacement
+  gates (F-5 provenance + F-6 identifier scan) must land in the SAME
+  implementation slice that opens any magnitude-bearing surface - no
+  interleaving; (2) internal-prototype posture only - any external or
+  multi-user deployment reopens the decision (record in P36-T3).
+  Q-R4 CONFIRMED - D-R5 budgets adopted as Tier 1 config (typical ~10
+  LLM calls / ~20 tool requests, hard caps 19/40, wall-clock + token
+  ceilings); PM keeps full calc-catalog access (narrowing it would
+  recreate starvation; bounded by its 2/6 budget, allowlist validation,
+  frozen-package-only reads, whole-block fail-closed), with pending-lane
+  tools failing closed identically for the PM. Q-R7 CONFIRMED - C7-C9
+  derived public-price statistics stay inside the existing FMP EOD
+  approval (same class as the SMA/RSI/MACD/ATR indicators computed since
+  P34A; own tested code over already-frozen licensed data; method/window/
+  as-of labels required); P36-T3 records a confirmation line, no new
+  source review. Claude E review done 2026-07-10: PASS
+  (docs/claude-e-agentic/PHASE_36_GATE_PROMPT_COMPATIBILITY_REVIEW.md);
+  decisions: Q-R5 sequential analyst loops for the working version
+  (parallelism re-proposable only after P36-T6 measured quota headroom +
+  chain-provider concurrency-safety review); Q-R6 one shared
+  advice-boundary banned-class set (role dimension via per-role eval
+  probes); gap flags F-12 (legacy scanner reconciliation, keep/retire
+  disposition table) and F-13 (version-keyed freeze/readback - v2-frozen
+  reports re-validate under v2 gates, v3 under v3, never mixed) added as
+  binding gate work. Claude G arbitration 2026-07-10: FND-1 resolved as
+  (a) - C15/C14 emit backend-computed humanized recency value labels
+  ("93 days (one quarter) old"); uniform across lanes (absorbs Claude E
+  deferred-polish 2); Claude H updates the charter excerpt in closeout.
+  FND-2 CONFIRMED - bullish/bearish banned outright on all five surfaces
+  even attributed (irreducibly forward-direction-encoding; descriptive
+  saved-history terms like "downtrend" pass); deterministic word-class
+  ban is also the only mechanically checkable form. FND-3 CONFIRMED -
+  direction-inversion residual stays verification-over-prohibition with
+  materiality now quantified: any inversion in a founder-facing
+  acceptance-run report, or >=2% slip in the D3 eval family, triggers
+  the pre-agreed promotion of a direction-adjacency check into F-5.
+  Slice boundary (section 14) and F-12/F-13 ownership confirmed binding
+  on Codex C slice planning. Next: founder read of design + review, then
+  P36-T3 (Codex B).
+- `P36-T3` - Activation contract + source-rights delta: FMP fundamentals
+  lane (founder-approved, free tier), FRED data-series lane
+  (founder-approved, free tier), PM live boundary amendment to the P34A
+  contract, EDGAR operational constraints, free-tier budget/caching
+  rules, plus the five P36-BIZ acceptance additions (standalone
+  deterministic read contract; overall-verdict vocabulary in F-4;
+  verdict-incapable PM fields as contract acceptance; backend-only
+  future policy store; options mechanics fail closed to
+  unable-to-verify). C4/C5 classified beachhead-critical for slice
+  ordering; P36-T6 gains a covered-call acceptance scenario with honest
+  not-fully-modelled states. Owner: Codex B. Status: contract drafted
+  2026-07-11 at
+  `docs/codex-b-architecture/PHASE_36_FIVE_AGENT_ACTIVATION_CONTRACT.md`.
+  Claude G architecture review 2026-07-11: PASS with one binding
+  clarification. Binding: §2's PM amendment supersedes a paraphrased
+  "Phase 34A statement that the PM is never a live synthesis agent" that
+  does not exist in that form - the deterministic-only-PM decision lives
+  in PHASE_34A_T2 (Codex B Q2: "PM stays deterministic in M1") and
+  PHASE_35_T7C §3e ("Portfolio Manager: stays deterministic - no PM live
+  prose"; final_synthesis_authored_by: deterministic_template), and
+  P34A-T0:221 already permits LLM "synthesis"; §2 must cite and explicitly
+  retire those two decisions for v3 so the live PM leaves no dangling
+  deterministic-PM contradiction (T7C §3e otherwise stays on the books and
+  collides with P36-T5B). Verified faithful otherwise: all P34A/T6 hard
+  boundaries intact; PM typed/verdict-incapable/whole-block fail-closed
+  with deterministic composer authorship; FMP+FRED normalized-fields-only
+  + freeze-once-per-package + free-tier honest-unavailable; EDGAR
+  metadata-only + User-Agent/1rps; F-5/F-6/F-12 same-slice and F-13 with
+  first v3 freeze (T4A); C4/C5 in the first calc slice (T4A); five-role
+  T6 across stock-buy + covered-call with honest unable-to-verify; all
+  five P36-BIZ acceptance additions present; Q-R7 confirmation line
+  present; commercial news blocked; P37 policy backend-only; no Tier 1
+  weakening. Deferred polish (3): (1) state whether the profile lane
+  shares the FMP daily budget and whether the WITHOUT variant survives FMP
+  exhaustion (Codex C smoke); (2) no per-day LLM budget constant exists
+  (only per-run 19) - honest 429 fallback covers the working version, note
+  it as a conscious choice; (3) confirm T4A lands atomically and any
+  sub-split never opens a value-bearing surface before the F-5/F-6/F-12
+  gate set. Codex B landed the §2 citation fix 2026-07-12: P36 explicitly
+  retires the actual deterministic-PM decisions in P34A-T2 Q2 and P35-T7C
+  §3e for v3 only, while v2 remains deterministic under F-13. The contract
+  also resolves all three deferred operational notes: profile-only WITHOUT
+  survives FMP exhaustion without an FMP call; no daily LLM cap is a conscious
+  Phase 36 choice; and T4A is atomic at the value-bearing boundary. Next:
+  issue the P36-T4A prompt to Codex C.
+- `P36-T4A` - V3 calculation and safety foundation: C1-C5 (including
+  beachhead-critical C4/C5), F-5 numeric provenance, F-6 identifier privacy,
+  F-12 scanner reconciliation, F-13 version-keyed freeze/readback, and the
+  deterministic standalone summary/check read contract. Owner: Codex C.
+  Status: done 2026-07-12 (review PASS). C1-C5 use frozen saved evidence
+  only; C4/C5 return unable-to-verify when broker coverage, collateral, or
+  pending-order semantics are absent. F-5/F-6/F-12/F-13 ship atomically.
+  Narrow F-5 re-review PASS: explicit identifier forms and five-plus-digit
+  ambiguous spans defer to F-6; unmatched sub-five-digit numerals remain
+  blocked by F-5. Atomic at the value-bearing boundary.
+- `P36-T4B` - Free-tier source snapshot boundaries. Owner: Codex C.
+  Status: done 2026-07-12 (review PASS). Added default-off, replay/injected
+  FMP reported-statement and six-series FRED normalized snapshot lanes with
+  approved-fact allowlists, labeled period/as-of metadata, daily budgets,
+  named unavailable behavior, and package-frozen no-refetch readback.
+  EDGAR now enforces the configured descriptive User-Agent, daily budget, and
+  one-request-per-second operational limits. The FMP snapshot is intentionally
+  excluded from role projection until T4C enables deterministic floors.
+- `P36-T4C` - Deterministic Company + Events/Macro floors from frozen
+  FMP/FRED/EDGAR; add C6-C15 wrappers where frozen inputs exist, incl.
+  FND-1 backend-computed humanized recency value labels. Owner: Codex C.
+  Status: in progress (Codex C started after T4B PASS). Claude G review +
+  guardrails 2026-07-12 - progression verified in code (T4A gate
+  foundation + C1-C5 real and faithful; C6-C15 + their display labels do
+  not exist yet, so the gate-before-value-bearing-surface precondition
+  holds). Guardrails that must be explicit before completion: (1)
+  deterministic-only - tests assert zero provider run and no
+  p36-role-analysis-v1 prompt emission during floor render (registering
+  C6-C15 is not invoking them; live invocation is T5A); (2) every rendered
+  C6-C15 fact_key is added to the approved display-label map
+  (display_labels.py) - _render_values (deterministic_standalone.py:143)
+  falls back to a generic reviewed label for unapproved keys, so no raw
+  storage key becomes user-visible prose; (3) correct evidence_tier on each
+  wrapper (C6-C10 and C11-C15 public, C1-C5 stay agent_safe), C11-C13 fail
+  closed to source_rights_not_approved without a frozen lane, C7-C9 keep
+  the existing FMP EOD approval with method/window/as-of labels, and C15
+  filters its inventory to the requesting role's visible sections (built +
+  tested in T4C though live invocation is T5A). Acceptance: honest-
+  unavailable per lane incl. the profile-only WITHOUT variant when the FMP
+  snapshot is absent (never blank, never fabricated); a forced-fallback
+  test shows the standalone summary/check complete with all live blocks
+  omitted; C6-C15 freeze additively under p36_tool_run_freeze_v1 and
+  readback re-validates under the v3 set with zero source calls.
+  Status: done - Claude G review PASS 2026-07-12. All three guardrails and
+  the acceptance bar verified in code + tests: tiering structurally
+  enforced (envelopes.py:435 blocks agent_safe->public allowlisting;
+  :545 validates calc tier), C1-C5 agent_safe / C6-C10 + C11-C15 public;
+  display-label allowlist complete with safe fallback; deterministic-only
+  proven by test (provider_runs == (), no p36-role-analysis-v1/pm-synthesis
+  strings, _live_provider_request monkeypatched to raise); C14 signs
+  future events ("N days after the saved snapshot"); C15 role-filtered to
+  public-only for every role (no before_after_*/scope_state refs); v2/v3
+  freeze separation + no-rerun readback tested. FINDING (non-blocking for
+  T4C, BINDING before T5A): 7 of 15 calc tools ship dark because the
+  frozen evidence they need was never owned by a slice - C6-C10 (all
+  Technical) are hardwired to frozen_eod_history_not_available (no frozen
+  EOD OHLCV window; eod_history.py is groundwork only), and C12
+  (period-change) + C13 (macro-series-change) have no available-path (FMP
+  freezes one period, FRED one observation per series). T4C correctly
+  renders these honest-unavailable, but at T5A the Technical analyst is
+  substantially hollowed and the Fundamentals period-change / News macro-
+  change (the founder-approved FRED lane's whole point) are dark. Resolve
+  via T4D before analyst activation.
+- `P36-T4D` - Comparison-window freezes (unblocks the dark calcs). Extend
+  the frozen evidence so C6-C10, C12, C13 can compute: freeze an EOD OHLCV
+  window (wire C6-C10 to read it), and extend the FMP statement freeze to
+  >=2 fiscal periods (C12) and the FRED series freeze to >=2 observations
+  per series (C13). All within already-approved lanes - EOD is inside the
+  existing FMP EOD approval (Q-R7); multi-period FMP and multi-observation
+  FRED are the same lanes with more rows per response, so no new
+  source-rights review and no extra request budget (one request returns
+  the window). Owner: Codex C. Reviewers: Codex B (light confirm: freeze
+  shape within lane + budget) then Claude G. Status: done - Claude G
+  hard-gate review PASS 2026-07-12. All 8 gate items verified in code +
+  tests: (1) EOD OHLCV in the existing fmp_eod_history lane, default-off
+  (mode="off"), injected client, per-run budget (max 2), package-build
+  history cache never used at readback, raw payload normalized-away/errors
+  sanitized; (2) FMP freezes top-2 fiscal periods from ONE response per
+  statement (FMP_STATEMENT_FREEZE_PERIOD_COUNT=2; 3 calls, no retry loop);
+  (3) FRED freezes top-2 observations per the 6 approved series from ONE
+  request each (no new lane/substitution/fallback); (4) C6-C10/C12/C13
+  read frozen sections only, compose+readback zero provider calls (test
+  asserts frozen-before-composition + readback); (5) short/missing windows
+  -> honest unable_to_verify with named caveats, no invented values;
+  (6) _clean_text strips http/paths/>48c, unit/frequency/currency
+  allowlisted, value labels are public OHLCV/statement/observation numerics
+  only, no identifiers/payloads/URLs; (7) no live-role prompt/loop/PM
+  emission added (grep clean; deterministic_standalone freezes
+  provider_runs=()); (8) available-path tests cover C6-C10, C12
+  (statement_percent_change), C13 (macro_absolute_change/direction). All
+  new calc value-label fact_keys are in display_labels.py.
+  Deferred polish (2): eod_ohlcv_bar has no display label (harmless today -
+  public_market_context is consumed by calcs, never prose-rendered, and the
+  read-contract summary is token-clean with the 260-bar section present;
+  add a label or a render-skip assertion as defense-in-depth);
+  _statement_records/_fred_observations can raise NameError on a
+  non-Mapping/non-Sequence payload from a malformed live client - init
+  rows=() so it degrades to a clean unavailable section (live-only, fails
+  closed by crashing, no leak).
+- `P36-T5A` - V3 analyst activation. APPROVED TO START 2026-07-12 (Claude
+  G). Split into a proving slice then a fan-out, since this is the first
+  live-LLM-prose surface and the repo rule is smallest-reviewable-first:
+  - `P36-T5A-1` - Bounded live-analyst loop + full v3 gate stack proven on
+    ONE analyst: the Risk Manager (always runs; carries portfolio
+    magnitudes via C1-C5, so it exercises F-5 provenance + F-6 identifier
+    privacy hardest - the highest-stakes surface to prove fail-closed
+    first). Activate p36-role-analysis-v1 for risk; bounded mediated
+    plan-then-write loop (max 3 iter, iter-3 force-final, two-refusal early
+    stop); apply F-4 (five advice classes) + F-7 + F-8 + F-9 + F-10 + F-11
+    to the live section (F-5/F-6/F-12/F-13 already landed in T4A, now
+    applied to the new prose surface); whole-section fail-closed to the
+    T4A-T4D deterministic floor; per-role slice of the 19/40 Tier 1 caps;
+    truncation guard; sequential execution (no concurrency;
+    ChainedLLMProvider stays single-threaded). Role-block wording finalized
+    WITH Claude E (design section 10); attribution-marker constant shared
+    prompt<->gate. Evals (synthetic, complete-report scoring): provenance
+    seeded-error, advice-boundary minimal pairs, What-was-verified
+    boilerplate canaries, budget/loop families. Owner: Codex C. Reviewers:
+    Claude E (agentic/loop/prompt) + Claude G (architecture/safety).
+    Status: prompt issued 2026-07-12. Claude G attribution-constant ruling
+    2026-07-12 (item 7 of Claude E's arbitration relay): the one-shared-
+    constant coupling (P36_ATTRIBUTION_MARKERS imported by both prompt
+    assembly and the F-4.6 gate + tests) is CONFIRMED and orthogonal to
+    FND-2 (no conflict). BUT the pinned 7-member set is narrower than
+    Claude E's own section 6.2.6 illustrative list and than "lenient by
+    design" warrants, and misses two charter-instructed attribution forms:
+    "per the <tool> calculation" (design section 5 Risk excerpt "Per the
+    exposure calculation, ...") is NOT substring-matched by "per the
+    calculation"; and "the saved <noun> show" (design section 6 "the saved
+    statements show ... margin compression"; "the saved series/prices") is
+    NOT matched by "the saved evidence". Because F-4.6 is fail-closed
+    (missing marker on a trigger sentence drops the whole section) and the
+    attribution check never excuses banned content (classes 1-5 + F-5 bind
+    independently), the correct bias is broad/lenient. BINDING before
+    T5A-1 wires F-4.6 (owner Claude E): widen "per the calculation" ->
+    "calculation" and "the saved evidence" -> "the saved" (or restore the
+    broader "per the" / "the saved" forms). One-line change in the single
+    shared constant; Claude G verifies in the T5A-1 review.
+    Claude G prompt-contract-collision ruling 2026-07-12 (T5A-1 blocker):
+    verbatim CORE-B names the advice vocabulary it forbids ("no buy, sell,
+    hold ... price targets, time horizons"), tripping the prohibited-phrase
+    scan in register_static_system_prompts() and validate_llm_provider_
+    payload(). RULING = Option A, a narrow exact-static-system-prompt
+    exemption: exempt the prohibited-phrase scan ONLY for a segment that is
+    (a) an exact full-string match to a reviewed entry in the static prompt
+    registry AND (b) in the system-message role; retain forbidden-key,
+    private-token, and secret-like scans on that segment; leave ALL output
+    scans and ALL dynamic (user/assistant/envelope) segment scans unchanged
+    - the payload validator must scan SEGMENT-WISE and exempt only the exact
+    static system segment; no role-based bypass, no substring/prefix/
+    whitespace-normalized match. Rationale: the prohibited-phrase scan is an
+    output/dynamic-content control over-applied to reviewed static
+    instruction text; A fixes the false positive while F-4 (output
+    advice-boundary) and the output prohibited-phrase scan remain the
+    primary, unchanged enforcement. B rejected (paraphrasing CORE-B weakens
+    steering + is perpetually fragile). The exempt allowlist IS the reviewed
+    v3 static-prompt registry; adding an entry requires Claude E + Claude G
+    prompt review, never an ops knob. Owner: Claude E implements + 6-case
+    test matrix (exact CORE-B registers; same vocab in OUTPUT still blocks;
+    same vocab in a DYNAMIC segment still blocks; near-match/substring/
+    prefix static prompt NOT exempt; forbidden-key/secret-like scans still
+    fire on the static prompt; a non-registry system message with the vocab
+    NOT exempt). Codex B records the narrow amendment to the static-registry
+    contract. Generalizes to all reviewed v3 static system prompts (Risk
+    now; analysts at T5A-2; PM at T5B). Claude E adopted 2026-07-12 as the
+    single recorded spec (PHASE_36_T5A1_RISK_ROLE_BLOCK.md section 4);
+    exemption + 6 tests specified, NOT yet implemented (Codex C's slice) -
+    Claude E confirms all green at the T5A-1 review, not before.
+    Refinements: (i) the exempt unit is each FULL ASSEMBLED (role,
+    prompt_version) system prompt, not the shared CORE-B fragment - so each
+    role's assembled prompt is its own reviewed exempt entry, and the same
+    path covers p36-pm-synthesis-v1 unchanged; (ii) Claude G DECLINES the
+    optional registration-time CORE-B-strip as a 7th test - the human
+    prompt-review gate on the exempt allowlist is the correct guarantee that
+    an exempt string is a genuine prohibition instruction, a mechanical
+    negation/strip heuristic would risk re-introducing the very false
+    collision we are removing, and output + dynamic scans + F-4 remain
+    primary regardless of instruction phrasing; keep exactly one mechanism.
+    Revisit only if the exempt allowlist ever grows beyond a small
+    hand-reviewed set or becomes programmatically generated. Final
+    ratification at the T5A-1 review.
+    Status: done - Claude G review PASS 2026-07-12. All five areas pass
+    (prompt/gate mechanics, bounded-loop safety, numeric/identifier
+    provenance, deterministic fallback, frozen-readback). Verified in code +
+    tests: attribution constant widened per the item-7 ruling ("per the
+    calculation"->"calculation", "the saved evidence"->"the saved"); Option
+    A exemption is narrow and correct - register_static_system_prompts()
+    runs the secret + private-token scans even AT registration, only a
+    structured ReviewedStaticSystemPrompt earns the phrase exemption,
+    exact full-string + system-role only, and ignored_plain_tokens is a
+    4-token allowlist (cash/holdings/positions/threshold) that still blocks
+    every compound/private/secret token (find_forbidden_string_values
+    iterates the full list minus the 4). Subagent-caught overbroad
+    private-token bypass CONFIRMED fixed. My six-case exemption matrix is
+    green (test_p36_static_registry_* + test_p36_reviewed_static_system_
+    prompt_registers). Loop: max 3 provider calls (min with global 19),
+    C1-C5/C15 allowlist, opaque calc IDs / no free numeric args, tool/token/
+    90s wall-clock caps, two-refusal early stop, iter-3 force-final,
+    whole-section _live_provider_fallback on every failure path; F-4
+    suitability-vs-descriptive minimal pair + whole-section provenance/
+    privacy/structure/grounding drop tests green; freeze/readback re-run
+    nothing. WATCH-ITEM (non-blocking, for P37): "threshold" is the one
+    ignored plain token with a user-policy dimension - today it is generic
+    deterministic reference-point vocabulary and forbidden-KEY
+    (account_specific_threshold) + dynamic scans still catch user thresholds,
+    but re-examine before P37 so no user threshold value can ride a static
+    prompt; consider rewording to drop it from the ignored set.
+    Claude E cross-review 2026-07-12 also PASS (five dimensions, code-read);
+    surfaced F1, a real spec-vs-impl divergence my review under-inspected:
+    F-6's ambiguous-identifier branch (_identifier_privacy_flag /
+    _ambiguous_identifier_context, v3_value_gates.py:340-359) drops ANY
+    >=5-digit number near identifier vocab INCLUDING F-5-provenance-matched
+    values, but Claude E's review section 5 intended only NON-matched runs
+    to drop. Fail-closed/safe, but over-drops legitimate Risk sections that
+    state a >=5-digit cash/exposure figure near a word like "account" - it
+    will bite the founder's six-figure account at T6. Claude G ruling: fix
+    as a discrete change (T5A-1b) that lands + is reviewed BEFORE the T5A-2
+    fan-out (not pre-T6 = Claude E's lean b, not folded into T5A-2 = c),
+    because it is a divergence in the SHARED reusable gate the proving slice
+    exists to validate, it most affects T5A-1's own Risk surface, and
+    fixing-before-fan-out propagates a correct gate + regression probe to
+    all four analysts instead of re-baselining their evals later. T5A-1
+    itself remains PASS (safety-correct); this is the one condition on it.
+  - `P36-T5A-1b` - F1 fix: thread the F-5 allowed-set into the F-6
+    ambiguous branch and skip provenance-matched tokens; the explicit/
+    masked/UUID/provider/compound/secret hard-blocks (v3_value_gates.py:
+    349-356) stay UNCHANGED (a provenance match never excuses an explicit
+    identifier form, so no identifier hole opens) + regression eval
+    (matched >=5-digit-near-vocab kept; unmatched dropped; "account number:
+    N" hard-blocked regardless of provenance). Also fold Claude E's F2
+    (heading word pollutes the attribution check) and F3 (execution-phrase
+    graceful-drop vs whole-report fallback consistency). Owner: Codex C.
+    Reviewers: Claude E + Claude G. Status: DONE - Claude G architecture/
+    safety re-review PASS 2026-07-13 (verified in code + ran the affected
+    gate tests, not on reported counts): F-6 residual now defers to F-5 via
+    `and not _numeric_allowed(...)` at v3_value_gates.py:360 (matched
+    survives, unmatched fails closed); the explicit hard-blocks at 349-356
+    remain unconditional and ordered BEFORE the residual, so a provenance-
+    matched value inside an explicit "account number: N" form still hard-
+    blocks (test_p36_f6_ambiguous_identifier_residual_defers_to_f5_provenance
+    case 3 - provenance cannot launder an identifier); F2 heading exclusion
+    at 372-374 (test uses a heading containing a real interpretation
+    trigger); F3 execution phrases handled once at provider-output
+    validation with whole-section fallback, F-4 carries no execution-phrase
+    list and the test asserts live_advice_boundary_dropped is ABSENT. No
+    prompt/role/source/loop/schema/frontend/live-provider change. NOTE:
+    could not isolate the diff via git (whole Phase 36 arc still uncommitted;
+    v3_value_gates.py is untracked) - scope confirmed by function inspection.
+  - `P36-T5A-2` - Fan-out to the three public analysts (Technical C6-C10,
+    Fundamentals C11-C12, News C13-C14) on the proven machinery; adds the
+    C13 series-misattribution eval probe (C13 returns all six series'
+    values in one result under generic fact_keys
+    macro_current_value/macro_series_label, so F-5 numeric match alone does
+    not bind a cited value to the right series - the eval must catch a role
+    citing CPI's number against the yield-curve label). Owner: Codex C.
+    Status: CLEARED TO START 2026-07-13 (T5A-1b PASS unfroze it). Then:
+    each new role's assembled prompt becomes its own
+    ReviewedStaticSystemPrompt exempt entry requiring a Claude E + Claude G
+    prompt review; the C13 series-misattribution eval is required; and
+    strengthen F-11 grounding for the public analysts (Claude E's F4 -
+    grounding matters more for news/fundamentals than for Risk). Reviewers:
+    Claude E + Claude G. T6 stays frozen.
+- `P36-T5B` - Live PM synthesis: typed PmSynthesis (four verdict-incapable
+  fields), whole-block fail-closed, composer rendering, PM calc
+  verification access. Owner: Codex C. Status: queued after T5A PASS.
+- `P36-T6` - Live acceptance run (five live roles) under per-run founder
+  authorization; founder judges the working version. Status: queued. No
+  live acceptance runs before this per founder direction.
+- `P35-R2` (parallel research) - Role-specialization incremental value.
+  Owner: Codex G. Status: done 2026-07-10 (review PASS; ranks 1-4 adopted
+  as the eval package, parameterized to the v3 section contract).
+- `P36-BIZ` - Business case + Pre-Trade Check direction. Owner: Codex A.
+  Reviewer: Claude G. Status: Codex A memo delivered
+  (docs/codex-a-product/BUSINESS_CASE_2026H2.md - conditional GO for
+  validation, Pre-Trade Check frame, check-level decisiveness, 12-15
+  synthetic-stimulus interviews by 2026-08-15, alpha gate 2026-09-30).
+  Claude G challenge review 2026-07-10: PASS on direction with five
+  required revisions (recruiting channels named; policy-vs-mechanics
+  check-state taxonomy split; all-green "misread as approval" mitigation
+  as acceptance criterion; ICP options-cadence sharpened to monthly for
+  the options cohort + multi-account weighting; T6 acceptance run gains a
+  covered-call scenario with honest not-fully-modelled states). Key
+  finding: the beachhead (CC/CSP) is the least-built engine area -
+  covered_call/cash_secured_put flows exist but coverage is
+  "not_fully_modelled"; C4/C5 calc tools are beachhead-critical. P35-T8
+  (look-through source) must be decided before public alpha. Pre-Trade
+  Check layer = separate P37 slice consuming deterministic outputs; no
+  scope creep into P36-T4/T5.
+  FOUNDER DECISION 2026-07-10: no startup attempt for now - the goal is
+  to polish the product. The interview/validation plan is SHELVED (memo
+  retained as reference; the five revisions moot until commercialization
+  reopens). The Pre-Trade Check frame, check-state taxonomy split,
+  all-green microcopy rule, and summary-first hierarchy are RETAINED as
+  the product-voice direction for the post-T6 polish phase (P37).
+  Q-R2/Q-R3 RESOLVED by founder: FMP fundamentals lane and FRED series
+  lane both approved, FREE TIER ONLY - all external APIs run on free
+  tiers; contracts and implementation must design for free-tier rate
+  limits (freeze-once-per-report, caching, honest unavailable on
+  rate-limit, WITHOUT-variant fallback).
+
 ### Phase 34A - Live Tool-Mediated Agent Team Prototype
 
 - `P34A-T0` - Live prototype contract.
@@ -815,28 +1453,204 @@ Detailed verification history is archived in:
     report + eval tests 85 passed; report schema unit tests 104 passed;
     `git diff --check` clean.
 
-- `P34A-T10` - Route-backed live smoke after T9A/T9B.
-  - Owner: Codex B. Reviewer: founder/Codex A for live-smoke usefulness.
-  - Status: next. Run the existing opt-in route-backed live Gemini smoke on
-    synthetic/disposable saved evidence to verify the post-T9B no-subtraction
-    behavior through the real report-generation route: deterministic findings
-    remain verbatim, live connective findings are additive only, provider-run
-    metadata freezes, saved report readback reruns neither tools nor provider,
-    and no private data or unsafe action wording appears. Do not inspect `.env`
-    or print secrets; use only explicit temporary credential authorization.
+- `P34A-T10` - Route-backed live smoke after T9A/T9B; live model-selection design.
+  - Owner: Codex B (smoke); Claude E (model-selection design). Reviewer: Codex B.
+  - Design reference:
+    `docs/claude-e-agentic/PHASE_34A_T10_LIVE_MODEL_SELECTION_QUOTA_DESIGN.md`.
+  - Status: done 2026-07-04. The T10 id ended up covering two related slices,
+    both complete: (a) the opt-in route-backed live Gemini smoke ran on
+    synthetic evidence against disposable Postgres and verified the post-T9B
+    no-subtraction behavior through the real report-generation route (frozen
+    provider runs, additive-only live findings, rerun-free readback, no private
+    data or unsafe wording); (b) the live Gemini model-selection/quota-avoidance
+    design was review PASS and produced the T10A implementation slice below.
 
-- `P34A-T11` - Integrated Trade Review Agent Console direction.
+- `P34A-T10A` - Ordered Gemini model-candidate fallback (chain).
+  - Owner: Codex C. Reviewer: Codex B.
+  - Status: done 2026-07-04; review PASS. `POA_LLM_MODEL_CANDIDATES` (max 4,
+    single provider, the configured list IS the chain) resolves a
+    `ChainedLLMProvider` with a sticky forward-only candidate index; the chain
+    advances only on quota_exceeded / rate_limited / provider_unavailable /
+    provider_timeout / invalid_response, auth errors abort, and safety failures
+    never advance. Additive frozen `provider_runs` metadata:
+    `model_chain_position` + `attempted_models` (model ids only).
+    `DEFAULT_LIVE_MODEL` refreshed to `gemini-2.5-flash-lite`. A real live
+    chain advance was proven through the route-backed smoke; results:
+    `reports/agent-team-test-results/20260704-p34a-t10a-model-chain-live-smoke.md`.
+
+- `P34A-T11` - Agent Team package structure reorganization (T11A-T11F).
+  - Owner: Claude E design; Codex C slices. Reviewer: Codex B (each slice PASS).
+  - Design references:
+    `docs/claude-e-agentic/PHASE_34A_T11_AGENT_TEAM_STRUCTURE_REVIEW.md`,
+    `docs/claude-e-agentic/PHASE_34A_T11_FINAL_STRUCTURE.md`.
+  - Status: done 2026-07-06; checkpointed at `e4675ae`. Behavior-preserving
+    reorganization of `backend/app/services/agent_team/` into `llm_clients/`,
+    `agents/`, `tools/`, `auditing/`, `orchestration/`, `safety/`, and
+    quarantined `legacy_console/`, with retained `tools` /
+    `tool_mediated_report` facades and no-flat-shim guard tests. No runtime
+    behavior or validator change. Note: this plan previously used the T11 id
+    for the integrated Trade Review Agent Console direction; that still-open
+    direction is re-numbered to `P34A-T14` below to resolve the collision with
+    the shipped T11 structure docs.
+
+- `P34A-T12` - Readable saved-report export for the route-backed smoke.
+  - Owner: Codex C. Reviewer: Claude G.
+  - Status: done 2026-07-07; Claude G review PASS. The opt-in route-backed live
+    smoke now writes a founder-readable Markdown + selected-JSON artifact pair
+    to `reports/agent-team-test-results/`, rendered only from the frozen
+    report-detail readback (saved summary + `tool_run_artifact`), with
+    secret/forbidden-key/prohibited-phrase sweeps that raise before writing.
+    Offline unit tests cover section presence, poison-field exclusion, and
+    fail-closed unsafe content with nothing written. No schema, runner, prompt,
+    validator, env, or frontend changes.
+
+- `P34A-T13` - Forced-model live Agent Team report runs and usefulness read.
+  - Owner: Claude G with explicit founder live-call authorization. Reviewer:
+    founder for usefulness; Claude E consulted on the quality fork.
+  - Status: runs complete 2026-07-07 by Claude G; founder usefulness acceptance
+    pending. Both forced-model route-backed live runs passed against disposable
+    Postgres (`poa_t13_test`, torn down): `gemini-3.1-flash-lite` (2.45s, both
+    eligible live roles ok) and `gemini-3-flash-preview` (53.5s; technical role
+    ok, risk role degraded honestly to `provider_unavailable` with the
+    deterministic floor preserved — correct fail-safe, no fallback by design).
+    Readable exports (model ids/statuses only, sweeps clean):
+    `reports/agent-team-test-results/20260707T191812Z-*` (3.1-flash-lite) and
+    `20260707T191918Z-*` (3-flash-preview). Claude G quality read: the
+    deterministic T9A layer carries all real signal; both models' single live
+    connective findings restate deterministic caveats or garble them (both
+    asserted a "manual" freshness category the frozen evidence categorizes as
+    "fresh"), so the pre-agreed "too generic" fork is triggered — recommend a
+    Claude E role-behavior/prompt design task plus an accuracy gate checking
+    live prose against envelope categories, and a richer synthetic evidence
+    package so more than two roles exercise live. Blocker root cause resolved
+    during the run: a stale inherited `GOOGLE_API_KEY` (leftover launchctl
+    bridge) shadowed the root `.env` value because the loader fills missing
+    keys only; runs use `env -u GOOGLE_API_KEY` until the founder clears the
+    stale variable.
+  - Key-sourcing policy (2026-07-07, founder decision): live smokes obtain named
+    LLM API keys (`GOOGLE_API_KEY`/`OPENAI_API_KEY`) only through
+    `backend/tests/live_llm_config.py` — root project `.env` named-key retrieval
+    under explicit `RUN_LIVE_LLM_TESTS=true`, or a narrowly-scoped
+    `POA_LIVE_LLM_TEST_CONFIG` file. The former
+    `backend/config.local.live-llm.env` / `backend/secrets/live-llm.env` bridge
+    files are retired and must not be reintroduced. Default pytest requires no
+    keys, no `.env`, and no network; secrets stay backend-only and unprinted.
+
+- `P34A-T15` - Market-data agent-tool source-rights gate.
+  - Owner: Claude G. Decisions: founder.
+  - Architecture reference:
+    `docs/codex-b-architecture/PHASE_34A_T15_MARKET_DATA_AGENT_TOOL_SOURCE_RIGHTS_GATE.md`.
+  - Status: done 2026-07-07. Founder-decided: FMP end-of-day historical OHLCV
+    for the reviewed symbol only (existing key, injected-client pattern), all
+    indicators computed by deterministic backend Python, values approved for
+    LLM prompts (sanitized envelopes) and saved-report persistence, internal
+    prototype only. Production/public display NOT approved (paid-license
+    review required first). FMP news/fundamentals/intraday, Alpaca, and
+    yfinance declined for this slice. Motivated by the P34A-T13 quality read:
+    live prose is unusable because envelopes are metadata-starved and role
+    output is capped at one sentence; this gate + T16/T17 are the working-
+    version path (TradingAgents structured-report analysis, reference only).
+
+- `P34A-T16` - Deterministic market-context tool pack.
+  - Owner: Codex C. Reviewer: Claude G.
+  - Status: done 2026-07-07 by Codex C; Claude G review PASS. FMP EOD boundary
+    + deterministic indicator snapshots (golden-value tested, Decimal math, no
+    new deps) behind default-off `POA_MARKET_CONTEXT_MODE`; symbol resolved
+    only from frozen saved evidence; budget-capped (2 requests/run) injected
+    client with sanitized errors; values freeze into `tool_run_artifact`;
+    deterministic technical/risk/PM findings cite `public_market_context`;
+    LLM prompts still receive metadata only (value exposure deferred to T17
+    together with the numeric-consistency gate). Verification: focused suites
+    413 passed; report schema 104; full offline 1318 passed; diff-check clean.
+    Deferred polish: unused builders-dict entry; freshness-vocabulary
+    alignment; `.env.example` placeholder for the new mode knob.
+
+- `P34A-T17` - Role report contract v3 and numeric/category/structure gates.
+  - Owner: Claude E (design), Codex C (implementation as T17A). Reviewer:
+    Claude G.
+  - Design reference:
+    `docs/claude-e-agentic/PHASE_34A_T17_ROLE_REPORT_CONTRACT_V3_DESIGN.md`.
+  - Status: design PASS as amended 2026-07-07 by Claude G (initial BLOCKED on
+    two §3 gate-logic defects; amendments applied in place: honest-gap
+    vocabulary excluded from the bare-enum trip set, and envelope string-value
+    numerals added to the numeric allowed-set; regression eval cases C4/N8
+    mandatory). Decisions D1-D5 recorded: fact-label prompt projection (no raw
+    summary_payload); retiring the live-prose digit ban for v3 sections in
+    favor of per-token envelope matching confirmed as an upgrade with all
+    other validators byte-identical; additive schema fields/flag vocabulary
+    approved; envelope values technical-role-only in v3; PM synthesis stays
+    deterministic (live PM synthesis deferred to a future T17B design).
+
+- `P34A-T17A` - Role report contract v3 implementation.
+  - Owner: Codex C. Reviewer: Claude G.
+  - Status: done 2026-07-07 by Codex C; Claude G review PASS after one
+    category-gate blocker fix (P34A-T17A-F1: assertion-regex over-capture
+    dropped correct natural prose; fixed with compound connectors, two-word
+    progressive normalization, and membership-mechanism regression tests).
+    Prompt v3 with structure contract and per-role budgets, additive
+    live_report_markdown storage + deterministic PM embedding of audited
+    surviving sections, fail-closed structure/numeric/category gates (never
+    re-passed), symbol-free fact-label prompt projection (no raw
+    summary_payload), LIVE_CONNECTIVE_DIGIT_RE retired for v3 sections only,
+    exporter live-section rendering, amendment cases C4/N8 green.
+    Verification: agent suites 417 passed; full offline 1329 passed;
+    diff-check clean.
+
+- `P34A-T18` - Forced-model live rerun over rich evidence and founder read.
+  - Owner: Claude G with founder live-call authorization.
+  - Status: first live run 2026-07-08 (gemini-3.1-flash-lite, prompt v3,
+    POA_MARKET_CONTEXT_MODE=live, disposable DB, torn down). Proven live: the
+    technical role produced a structured multi-section report with summary
+    table that survived the gates, froze, embedded into PM synthesis, and
+    exported; the risk role's live section was correctly dropped in
+    production by the category gate (live_category_mismatch_dropped) with the
+    deterministic floor intact. Two blockers to a value-carrying rerun found
+    and diagnosed: (1) FMP legacy-endpoint 403 - the account requires the
+    /stable/historical-price-eod/full endpoint, not /api/v3/ (key itself
+    valid; the FMP economic-calendar lane likely shares this and should be
+    checked separately) -> fix task T18-F1; (2) colon-form category
+    assertions bypass the assertion regex ("Market quote freshness: manual"
+    survived into the live table, contradicting the deterministic floor's
+    "fresh") -> fix task T17A-F2. Rerun after both fixes.
+  - Status update: pipeline milestone 2026-07-08 — the founder subsequently
+    rejected this report as NOT the working version (not trade-centered, not
+    account-aware, internal tokens in prose, weak formatting); see Phase 35
+    for the accepted working-report definition. After T18-F1
+    (FMP stable endpoint, Codex C, Claude G review PASS) and a Claude G-
+    implemented field-fix series (T17A-F2 colon-form assertions; T17A-F3
+    freshness vocabulary imported from the canonical FreshnessStatus enum;
+    deterministic `_freshness_category` truthful manual/eod/delayed mapping
+    delegated to a shared gate helper; SEC path regex letter-initial
+    extension fix so decimals are not "filenames"; bare trip set reduced to
+    {fresh, stale} with unknown joining the always-allowed ignorance
+    vocabulary; token-class haystack selection; colon-form non-vocabulary
+    captures treated as item labels; label-derived categories admitted to
+    the allowed set; default-off POA_LIVE_GATE_DEBUG single-token
+    diagnostic; POA_ROUTE_SMOKE_SYMBOL override), the route-backed live run
+    (gemini-3.1-flash-lite, POA_MARKET_CONTEXT_MODE=live, symbol AAPL,
+    disposable DB, torn down) produced BOTH live role reports surviving all
+    gates with real frozen market values (close/SMA/EMA/RSI/MACD/Bollinger/
+    ATR/52w range), structured headings + summary tables, honest gaps, no
+    advice/verdict wording, rerun-free readback. Artifact:
+    `reports/agent-team-test-results/20260708T133910Z-*`. Full offline suite
+    1341 passed; every field fix carries a regression test. Founder
+    usefulness read pending. Note: the Claude G-implemented fixes were
+    self-reviewed under founder direction; an independent Codex B-style
+    review of `live_report_gates.py` remains available as a hardening pass.
+
+- `P34A-T14` - Integrated Trade Review Agent Console direction (re-numbered from T11).
   - Owner: Codex B. Reviewers: Claude E for agentic behavior; Claude A/Claude B
     for later frontend/product UX.
-  - Status: opened 2026-07-03 by Codex B/founder. Agent Console is no longer a
-    parked separate surface. The intended product direction is a single Trade
-    Review workspace where the user enters a potential trade, runs the Agent Team
-    review, sees each agent's findings in-place, and then saves/freezes the final
-    Agent Team report as the historical report artifact. The composer/chat
-    remains out of scope for now; this slice is about an integrated read-only
-    run surface, role findings, progress/state, provenance, and the frozen saved
-    report handoff. No order/execution behavior, frontend financial computation,
-    raw private data exposure, LangGraph dependency, or new source expansion.
+  - Status: open direction (2026-07-03), gated on the P34A-T13 usefulness read.
+    Agent Console is no longer a parked separate surface. The intended product
+    direction is a single Trade Review workspace where the user enters a
+    potential trade, runs the Agent Team review, sees each agent's findings
+    in-place, and then saves/freezes the final Agent Team report as the
+    historical report artifact. The composer/chat remains out of scope for now;
+    this slice is about an integrated read-only run surface, role findings,
+    progress/state, provenance, and the frozen saved report handoff. No
+    order/execution behavior, frontend financial computation, raw private data
+    exposure, LangGraph dependency, or new source expansion.
 
 ### Closed Context - Phase 30B Golden Path Prototype Hardening And Demo Readiness
 

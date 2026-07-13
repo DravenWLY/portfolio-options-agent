@@ -2,7 +2,7 @@
 
 Status: docs index
 Owner: shared
-Last updated: 2026-06-30
+Last updated: 2026-07-10
 
 The docs folder is organized by agent ownership plus a shared source-of-truth area. Prefer the smallest relevant file before loading large architecture or history documents.
 
@@ -34,6 +34,7 @@ Unless a task gives a narrower read list:
 | `docs/claude-c-competitor/` | Claude C Competitor Intel | Competitor analysis and product intelligence for PM synthesis. |
 | `docs/codex-d-devops/` | Codex D DevOps | Deployment, CI/CD, observability, and production-readiness drafts. |
 | `docs/claude-d-security/` | Claude D Security | Security, compliance, privacy, broker-data handling, and disclaimer drafts. |
+| `docs/codex-g-research/` | Codex G Research | Frontier agentic-AI / multi-agent cooperation literature briefs with applicability analyses. |
 
 ## Current Architecture / Agentic Design Trail
 

@@ -1,5 +1,153 @@
 # Changelog
 
+- 2026-07-08: P35-T3b froze the derived exposure sections into the saved
+  artifact (Codex C; Claude G privacy review PASS), completing the real-account
+  backend path end-to-end: preview -> adapter -> engine -> frozen display
+  sections -> readback. A constrained additive field on the deterministic
+  summary stores only the two approved before/after and concentration display
+  sections; readback re-validates each fail-closed (forbidden keys, secrets, or
+  internal tokens fall back to stubs) and never recomputes exposure (proven by
+  a monkeypatch-to-raise test). Next and last build slice before the T6
+  real-account acceptance run: P35-T5 trade-centered document composer.
+- 2026-07-08: P35-T3a exposure adapter + call seam landed (Codex C; Claude G
+  privacy review PASS). The reviewed trade-review context and a stock/ETF buy
+  intent now map into the exposure engine, producing display-only before/after
+  and concentration evidence sections (dollars/percentages/tickers only);
+  empirically confirmed no account IDs, quantities, or provider sources leak.
+  Storage was deliberately deferred: P35-T3b adds a constrained additive
+  derived_exposure_sections field frozen into the saved artifact with
+  fail-closed readback re-validation and no recompute-on-readback, the last
+  backend piece before the T6 real-account acceptance run.
+- 2026-07-08: P35-T3 deterministic exposure engine landed (Codex C; Claude G
+  review PASS after the T3-F1 fund-name fix). The backend now computes, from a
+  reviewed account snapshot and a proposed equity trade, before/after exposure
+  tables (asset-class, single-name, sector, industry), funding regimes,
+  classified-coverage, reference-point threshold findings, and the T1 §5
+  trade-impact narrative - all deterministic, dollars+percentages, fund names
+  derived from actual holdings (no hardcoded tickers). Classification uses an
+  injected/default-off FMP company-profile boundary plus a reviewed ETF theme
+  map and broad-market exclusion. P35-T4 report-contract-v4 design accepted
+  PASS-as-amended: a deterministic trade-centered markdown document replaces
+  the v3 role-findings dump, live roles shrink to one gated symbol-free note
+  each (fundamentals/news dropped), a new portfolio-claim gate blocks digit
+  and word-form portfolio magnitude claims, and a whole-document display-token
+  gate guarantees no internal tokens ship. Next: P35-T3a engine wiring
+  (privacy-reviewed) and P35-T5 document composer, both gating the T6
+  real-account acceptance run.
+- 2026-07-08: P35-T1 trade-impact methodology memo accepted (Claude H;
+  Claude G review PASS as amended - one truthfulness fix: SMH is a
+  semiconductor theme ETF, not a broad-market fund, in three narrative
+  examples). P35-T2 human-readable rendering landed (Codex C; Claude G
+  review PASS): every user-visible report sentence now renders reviewed
+  plain-language labels instead of internal snake_case tokens, with a
+  fail-closed display_token_blocked validator and a founder-readable
+  exporter. Active handoffs: P35-T3 deterministic exposure engine (Codex C)
+  and P35-T4 trade-centered report contract v4 (Claude E), in parallel.
+- 2026-07-08: Phase 35 opened - Real-Account Trade-Impact Working Prototype.
+  The founder reviewed the P34A-T18 structured report and rejected it as not
+  working: it analyzed only symbol prices/indicators, ignored the proposed
+  trade and the real portfolio, leaked internal tokens into user prose, and
+  lacked report formatting. New working definition (contract D1-D6):
+  trade-centered, account-aware analysis of the real Fidelity account
+  (nickname selection only) with the buy-NVDA double-exposure example as the
+  acceptance test; derived percentages and dollar values allowed in
+  internal-prototype reports (identifiers/raw payloads still banned; real
+  artifacts local-only); sector-level exposure v1 (FMP constituent
+  endpoints are tier-restricted); human-readable rendering with a
+  display-token ban; markdown report format. All frontend work is gated on
+  founder acceptance of the backend prototype. Claude H methodology consult
+  and the Codex C rendering slice are the active handoffs.
+- 2026-07-08: **P34A-T18 pipeline milestone.** The route-backed live
+  Agent Team run (gemini-3.1-flash-lite, prompt v3, FMP market context live,
+  symbol AAPL, disposable DB) produced structured technical and risk live
+  reports that survived all fail-closed gates with real frozen market values
+  (close, SMA50/200, EMA10, RSI14, MACD, Bollinger, ATR14, 52-week range),
+  mandatory summary tables, honest gap naming, truthful "manual" quote
+  freshness, and rerun-free readback. Landed on the way: T18-F1 FMP stable
+  endpoint migration (legacy 403 fix, Codex C); a Claude G field-fix series
+  on the category gate (colon-form assertions, canonical freshness
+  vocabulary import with label-derived categories, token-class membership,
+  bare trip set reduced to fresh/stale, shared floor/gate freshness helper),
+  the SEC path-regex letter-initial-extension fix so decimal values are not
+  treated as filenames, a default-off single-token gate diagnostic, and a
+  smoke symbol override. Full offline suite 1341 passed with regression
+  tests for every fix. Founder usefulness read is the next gate.
+- 2026-07-07: P34A-T17A role report contract v3 landed (Codex C; Claude G
+  review PASS after the narrow T17A-F1 category-gate regex fix). Live roles
+  now produce structured multi-section markdown reports with a mandatory
+  no-verdict summary table instead of one connective sentence, stored as
+  additive live_report_markdown beside the deterministic floor and embedded
+  verbatim into deterministic PM synthesis only after surviving fail-closed
+  structure, numeric (per-token frozen-envelope match), and category
+  consistency gates. Prompts receive reviewed symbol-free fact-label pairs,
+  never raw payloads. Next: P34A-T18 authorized live run for the first
+  structured real-data report.
+- 2026-07-07: P34A-T16 deterministic market-context tool pack landed (Codex C;
+  Claude G review PASS): FMP EOD history behind default-off
+  `POA_MARKET_CONTEXT_MODE` with budget-capped injected client, golden-value
+  tested Decimal indicator snapshots, frozen value-carrying envelopes, and
+  metadata-only LLM prompts pending T17. P34A-T17 role report contract v3
+  design accepted PASS-as-amended by Claude G the same day: structured
+  multi-section live role reports with mandatory summary table replace the
+  one-sentence connective overlay, guarded by fail-closed structure, numeric
+  (per-token envelope match, superseding the blanket live-digit ban as a
+  strict upgrade), and category consistency gates; two review amendments fix
+  honest-gap vocabulary and string-value numerals; PM synthesis stays
+  deterministic. T17A implementation is the active Codex C handoff.
+- 2026-07-07: P34A-T15 market-data agent-tool source-rights gate accepted
+  (founder decisions D1/D2). FMP end-of-day historical OHLCV is conditionally
+  approved for the reviewed symbol only, with all indicators computed by
+  deterministic backend Python; values may enter LLM prompts via sanitized
+  envelopes and freeze into saved reports, internal prototype only.
+  Production display/redistribution is NOT approved pending a licensing
+  review. Follow-ups opened: T16 deterministic market-context tool pack
+  (Codex C), T17 role report contract v3 + numeric-consistency auditor gate
+  (Claude E design), T18 forced-model live rerun (Claude G). Motivated by the
+  T13 quality read and a reference-only analysis of TradingAgents structured
+  report generation (verified-snapshot grounding adopted as a fail-closed
+  validator; BUY/HOLD/SELL verdict framing stays rejected).
+- 2026-07-07: First founder-readable live Agent Team reports generated
+  (P34A-T13). Forced single-model route-backed runs passed with
+  `gemini-3.1-flash-lite` and `gemini-3-flash-preview` on synthetic evidence
+  against a disposable DB, producing readable Markdown/JSON exports in
+  `reports/agent-team-test-results/` (model ids/statuses only). Fail-safes
+  held: the preview model's risk-role call degraded honestly to
+  `provider_unavailable` with the deterministic floor preserved. Claude G
+  quality read: deterministic findings carry the signal; live connective
+  prose is generic-to-inaccurate in both models, triggering the pre-agreed
+  Claude E role-behavior design fork. Founder usefulness acceptance pending.
+- 2026-07-07: Live LLM key-sourcing policy aligned (founder decision): the
+  optional `backend/config.local.live-llm.env` / `backend/secrets/live-llm.env`
+  bridge files are retired from the test loader and all live-smoke guidance.
+  Live smokes retrieve only named `GOOGLE_API_KEY`/`OPENAI_API_KEY` values from
+  the root project `.env` via `backend/tests/live_llm_config.py` under explicit
+  `RUN_LIVE_LLM_TESTS=true`, or from a narrowly-scoped
+  `POA_LIVE_LLM_TEST_CONFIG` file (generic `.env` paths stay rejected). Secrets
+  remain backend-only and unprinted; default pytest still requires no keys, no
+  `.env`, and no network; live tests stay explicit external/slow opt-ins.
+- 2026-07-07: P34A-T12 readable saved-report export landed (Claude G review
+  PASS): the opt-in route-backed live smoke now writes founder-readable
+  Markdown/JSON artifacts rendered only from the frozen saved-report readback,
+  with fail-closed secret/forbidden-key/prohibited-phrase sweeps before
+  writing. Implementation plan Phase 34A reconciled by Claude G: T10/T10A
+  (route-backed live smoke + ordered Gemini model chain) and T11 (agent_team
+  package restructure) recorded as done, the integrated Trade Review Agent
+  Console direction re-numbered to P34A-T14, and P34A-T13 forced-model live
+  report runs opened as the active task.
+- 2026-07-06: P34A live Agent Team milestone checkpointed at `e4675ae`
+  (recorded retroactively). Since 2026-06-29 the phase landed: tool-mediated
+  saved-report route wiring behind backend-only
+  `POA_AGENT_TEAM_REPORT_GENERATION_MODE` (T7B), disposable-DB route
+  verification (T7C), the opt-in route-backed live Gemini smoke harness with
+  frozen provider-run metadata and rerun-free readback (T7D, passed live),
+  deterministic specificity + additive live connective overlay quality layers
+  (T9/T9A/T9B), the ordered Gemini model-candidate chain
+  `POA_LLM_MODEL_CANDIDATES` with sticky forward-only fallback and frozen
+  chain metadata proven live (T10/T10A), and the behavior-preserving
+  agent_team package reorganization into llm_clients/agents/tools/auditing/
+  orchestration/safety with a quarantined legacy console (T11). Live runs
+  remain opt-in, mock/offline stays the default, and saved readback never
+  reruns tools or providers.
 - 2026-06-29: Implemented P33A-T3/T4 backend tool-mediated Agent Team
   foundation. P33A-T3 now builds a deterministic planner -> backend-executed
   tools -> role findings -> Evidence Auditor -> Portfolio Manager synthesis

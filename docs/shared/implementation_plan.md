@@ -1242,6 +1242,347 @@ exercise their own judgment within this frame.
       (REPORT_PROSE_KEYS), fail-OPEN for any future prose key. Add the one-line
       guard test asserting it covers USER_VISIBLE_PROSE_KEYS. Owner: Codex C,
       next touch (does not wait for FMP/FRED).
+- `P36-T5B` IMPLEMENTATION (commit aa146a2, LOCAL/unpushed) - Claude G
+  architecture/safety review 2026-07-13: **PASS**. Verified in code + ran the
+  PM/scope subset offline (60 passed), not on reported counts. BOTH open
+  conditions landed: (1) design condition - _pm_advice_boundary_flag implements
+  a REAL subject-noun boundary (_PM_TRADE_SUBJECT_FRAME_RE: trade|position|
+  setup|entry|idea|purchase|sale|order + evaluative verb) plus directional
+  leans, entry verdicts, tension-resolution, freeform trade-directives; evals
+  parametrize exactly the soft verdicts I demanded ("the trade holds up well",
+  "the setup looks solid", "the evidence points the right way") and assert
+  ADVICE_BOUNDARY_FLAG in BOTH freeform fields; end-to-end pipeline test proves
+  a soft verdict -> deterministic_template + pm_synthesis None (no partial
+  render). (2) RULING-T5B-2 - P36_F6_VOCABULARY_ONLY_TOKENS is consumed ONLY by
+  contracts.py; F-6 (_identifier_privacy_flag/_ambiguous_identifier_context/
+  _IDENTIFIER_CONTEXT_RE/_ACCOUNT_NUMBER_RE) is UNTOUCHED = behavior-preserving;
+  exemption gated on content_kind="p36_pm_accepted_sections" and REJECTED
+  elsewhere ("restricted to the PM synthesis request"); exact-7 membership
+  guard test present; non-vocabulary scans retained in the PM payload.
+  VERIFY-NOT-RECOMPUTE structurally enforced: pm_calculation_matches_surfaced_
+  values admits a PM calc only if EVERY value it returns was already surfaced,
+  and the runner filters PM calc results through it BEFORE validation - a
+  divergent re-run is never admitted, so the PM cannot originate a figure.
+  Founder focus list all verified: static registration; sequential PM-LAST
+  (call order asserted, 4-role and 5-role); no public access to C1-C5 (C1-C5 =
+  agent_safe + role_allowlist=portfolio_roles, untouched); PM payload privacy;
+  frozen artifact/readback NO-RERUN (provider call count unchanged across
+  readback; missing PM run -> ValueError); additive schema; deterministic
+  fallback (both gate-drop and unavailable lines). Doc-parity RESOLVED (commit
+  includes both T5A2 + T5B design memos).
+  FINDING-1 (non-blocking, doc-truth): registry grants the PM C6-C10 (technical
+  calcs) in addition to C1-C5, but design §5 documented only C1-C5. SAFE - every
+  PM calc passes the match-filter, so the wider surface cannot originate figures
+  - but code and reviewed design disagree. Record the PM's actual calc surface
+  in §5 (or narrow the grant if C6-C10 verification was unintended).
+  FINDING-2 (carried from T5A-2): the REPORT_PROSE_KEYS allowlist guard test is
+  still missing. PM prose IS covered (final_synthesis_markdown is in the set, so
+  the P35 document scan reaches it), but the set stays fail-open for a FUTURE
+  prose key. Still a one-liner; more valuable each slice.
+  Next: Claude E gate/eval lane, then push the checkpoint (aa146a2 is local),
+  then T6 - the five-live-role acceptance run, FROZEN pending founder per-run
+  authorization.
+  **F-B1 (Claude E, acceptance pass) - Claude G CONCURS: BLOCKED, not
+  deferred.** Verified by probe: "the filing is not material" / "the release is
+  already priced in" / "the tone was hawkish" / "the rate cut is dovish" all
+  PASS the PM gate but DROP on news_analyst - _F4_NEWS_INTERPRETATION_RE binds
+  only when role_name=="news_analyst" and _pm_advice_boundary_flag never passes
+  it. The same vocabulary is banned on the surface that REPORTS the record and
+  permitted on the surface that SYNTHESIZES it; News cannot emit these, so the
+  PM would have to ORIGINATE them. Nothing else catches it (not an F-4.6
+  interpretation trigger; no F-11 citation/number; absent from the P35 doc
+  scan). Blocking, not deferring, because T6 is the founder's real-account run
+  and shipping a known verdict-vocabulary gap into the run he personally judges
+  is backwards; the patch is small. Scope gap in Claude E's design §4 ("five
+  shared classes"), faithfully implemented - not a Codex deviation; Claude G's
+  design review missed it too.
+  **STRUCTURAL FIX (Claude G, generalizes the patch):** the PM advice gate must
+  inherit the UNION of every role's advice vocabulary - shared five classes PLUS
+  every role-specific pattern - not just the shared five. The PM synthesizes
+  over all five roles, so any verdict vocabulary banned on ANY analyst must be
+  banned on the PM. Wire it as a union so future role-specific patterns
+  auto-inherit; the news-class pattern is the instance, the union is the
+  invariant. This is the 2nd PM advice-surface gap (after the subject-noun
+  condition) - the invariant closes the class.
+  **"material" over-block discriminator (Claude G, answering Claude E ask 2):**
+  anchor the news-verdict ban to the SUBJECT, exactly as the trade-verdict ban
+  is anchored (§4a principle, reused). priced-in/dovish/hawkish/rate-cut/
+  rate-hike have NO legitimate evidence-weighting sense -> unconditional (agree
+  with Claude E). material/materiality/immaterial is the ONLY one with a
+  legitimate on-charter sense and it is a core one: the PM's actual job includes
+  saying which evidence matters. So: BAN when the subject is a public-record
+  noun (filing/release/event/announcement/disclosure/headline/report-as-record)
+  -> "the filing is not material" = a news verdict, off-charter. PERMIT when the
+  subject is an evidence noun (evidence/section/input/finding) -> "the company
+  section is not material to this reading" = evidence-weighting, ON-charter
+  (literally field 1). Leave attributive/nominal uses alone ("source material",
+  "the material inputs"). Do NOT ban bare \bmaterial\b. Rationale: an
+  over-blocking pattern would systematically drop the PM's legitimate
+  evidence-weighting sentences to the deterministic floor and push the model to
+  vaguer phrasing to evade the gate - a gate that fires on the role's core job
+  is not fail-closed, it is mis-aimed.
+  Eval must lock BOTH directions: news-verdict FAIL canaries AND
+  evidence-weighting "material" PASS canaries. Close-out: Codex C patches ->
+  Claude E re-verifies -> Claude G re-runs the probe (incl. the 3 legit-use
+  cases) and signs off -> T5B accepted. T6 frozen.
+
+  **F-B1 PATCH RE-REVIEW (Claude G, 2026-07-14, working tree on aa146a2):
+  BLOCKED.** What LANDED CORRECTLY: (a) the union invariant is exactly right -
+  `_F4_ROLE_SPECIFIC_PATTERNS` registry + `include_all_role_specific=True` on
+  the PM; behaviorally verified both news patterns now DROP on the PM, and
+  future role-specific patterns auto-inherit. (b) F-B1 itself is closed on the
+  PM: all 4 FAIL canaries DROP (were `pass` at aa146a2), all 3 legit "material"
+  uses still `pass`. (c) The test diff is purely additive - 11 new tests, the
+  exact 1551->1562 delta, no existing canary edited or deleted.
+  **G-FB1-1 (BLOCKING - live-surface regression, out of scope for F-B1).** The
+  patch deleted bare `material(?:ity)?` from `_F4_NEWS_INTERPRETATION_RE` and
+  replaced it with a subject-anchored frame for ALL roles, not just the PM. A/B
+  probe (aa146a2 vs working tree) shows 13 behavior drifts, **all on
+  news_analyst, all in the loosening direction, zero on any other role**. News
+  is LIVE and accepted since 9cc4899, and is one of the five roles in the T6
+  real-account run. Newly permitted on News: "The impact is material." / "The
+  news is material." / "The 8-K is material." / "The guidance update is
+  material." / "It is material." / "The 8-K was filed on 2026-02-02. This is
+  material." - every one of these DROPPED at aa146a2. The green 1562 run does
+  NOT cover this: there has never been a News-side bare-`material` canary
+  (grep: the 11 new PM tests are the only `material` assertions in the whole
+  agent-team tree), which is exactly why deleting the token broke nothing.
+  ROOT CAUSE IS CLAUDE G's RELAY, not a Codex deviation: my ruling text said
+  "Do NOT ban bare \bmaterial\b" without scoping it to the PM. Codex C
+  implemented it faithfully and globally. My error, my correction.
+  **G-FB1-2 (BLOCKING - the new pattern is defeated by trivial phrasings, on
+  BOTH surfaces).** `_F4_PUBLIC_RECORD_MATERIALITY_RE` requires a copula
+  immediately followed by the adjective and an enumerated record noun as the
+  subject. It therefore misses: pronoun/anaphoric subjects ("This is material."
+  after naming the 8-K), record nouns outside the enumeration (news, 8-K,
+  guidance update, earnings print, impact), and **adverb insertion - "The filing
+  is highly material." / "is clearly material." passes even though the subject
+  IS an enumerated noun.** Denylisting a subject class is an arms race against
+  an open set of nouns; it cannot be won by enumeration.
+  **CLAUDE E's PARALLEL REVIEW (PASS) - one finding is INVERTED.** Claude E's
+  closing note reads: "the materiality pattern now ALSO fires on the
+  news_analyst surface ... a TIGHTENING consistent with the news charter - an
+  improvement, not a regression." This is backwards. Claude E saw
+  `_F4_PUBLIC_RECORD_MATERIALITY_RE` being ADDED to the news_analyst tuple and
+  missed that bare `material(?:ity)?` was DELETED from
+  `_F4_NEWS_INTERPRETATION_RE` in the same hunk:
+    aa146a2 : \b(?:priced in|dovish|hawkish|rate cut|rate hike|material(?:ity)?)\b
+    patch   : \b(?:priced in|dovish|hawkish|rate cut|rate hike)\b
+  The new record-noun frame is a strict SUBSET of the bare ban it replaced.
+  Measured over a 20-string corpus on news_analyst: 13 LOOSENINGS, **0
+  TIGHTENINGS**. Their finding 4 ("no F-4 regression - CONFIRMED") rests on a
+  green suite that structurally CANNOT see this, because no News-side
+  bare-`material` canary has ever existed. Lesson for both reviewers: a pattern
+  ADDED to a role's tuple does not imply that role got stricter - only an A/B
+  against the base commit shows the direction. Claude G's PASS-with-conditions
+  reviews now require an A/B diff whenever a gate pattern is edited rather than
+  purely appended.
+  **REQUIRED FIX v2 (Claude G, supersedes the first draft; incorporates a real
+  catch from Claude E).** Claude E's 12-case trace surfaced two legitimate uses -
+  "a material portion" and "differ materially" - that my FIRST proposed fix
+  (bare ban + sentence-scoped evidence carve-out) would have OVER-BLOCKED. The
+  refined rule keeps the fail-closed allowlist shape (same as F-2's imperative
+  whitelist and F-5's allowed-numbers) and adds a grammatical discriminator:
+  * Ban PREDICATIVE and NOMINAL materiality only:
+    `\b(?:is|was|are|were|remains?|stays?|seems?|appears?|looks?|becomes?|became)\s+(?:<intensifier>\s+)*(?:im)?material\b`
+    plus `\bmateriality\b`, where <intensifier> covers not/very/quite/highly/
+    clearly/rather/... and any `\w+ly`. The intensifier repetition is what closes
+    the "is HIGHLY material" / "is CLEARLY material" adverb hole.
+  * ATTRIBUTIVE material (`material` modifying a noun: "source material", "the
+    material inputs", "a material portion") is NOT matched at all -> Claude E's
+    legitimate uses survive. "materially" never matches `material\b` -> "differ
+    materially" survives.
+  * PM ONLY: a predicative/nominal hit DROPS unless that same SENTENCE also
+    contains a closed-set evidence noun (section/sections/evidence/input/inputs/
+    finding/findings/snapshot/snapshots/reading). The evidence vocabulary is
+    enumerable because WE define it - it is the PM's own contract vocabulary;
+    "things in the world that could be material" is an open set and cannot be
+    enumerated, which is why the record-noun denylist loses.
+  Probe: **21/21** - all 15 verdict/evasion strings DROP (incl. pronoun subjects,
+  unlisted record nouns, adverb insertion, `immaterial`, `materiality of`), all 6
+  legitimate uses pass (the founder's 3 + Claude E's `material portion`, `differ
+  materially`, `findings are not material`).
+  WIRING (closes G-FB1-1 and G-FB1-2 together):
+  * `news_analyst` -> bare ban restored, NO carve-out. News never weighs
+    evidence, so any materiality talk is a significance verdict. Byte-identical
+    to aa146a2; verdict coverage 15/15. G-FB1-1 closed by construction.
+  * `portfolio_manager_agent` -> predicative/nominal ban + evidence carve-out
+    (its field-1 job IS evidence weighting). G-FB1-2 closed with no over-block.
+  * Because News and PM need DIFFERENT materiality rules, materiality must NOT be
+    a flat pattern in the inherited union. KEEP the union for patterns
+    (`_F4_ROLE_SPECIFIC_PATTERNS["news_analyst"] = (_F4_NEWS_INTERPRETATION_RE,)`
+    - priced-in/dovish/hawkish/rate-cut/rate-hike, unconditionally inherited by
+    the PM) and add an explicit `_F4_ROLE_ONLY_PATTERNS` registry for the ONE
+    justified non-inheritance (News's bare materiality ban). Default = inherit;
+    non-inheritance must be EXPLICIT, named, and justified by a charter
+    difference. It must NEVER be achieved by silently weakening the stricter
+    role - that is the inversion this patch made.
+  ACCEPTED RESIDUAL (name it, do not chase it): co-locating an evidence noun with
+  a record verdict in one sentence ("The events section shows the filing is
+  material.") still passes. It now requires deliberate construction, and F-4.6
+  attribution + the `_PM_TRADE_SUBJECT_FRAME_RE` family remain as separate nets.
+  NON-BLOCKING OBSERVATION (pre-existing at aa146a2, not a regression; Claude E
+  owns the charter): technical_analyst, fundamentals_analyst, and
+  risk_management_agent all `pass` "The filing is not material." and "The release
+  is already priced in." today. F-B1's logic ("banned on any analyst => banned on
+  the PM") does not imply "banned on one analyst => banned on all" - different
+  charters - but whether Fundamentals should be able to rate a filing's
+  significance is worth one deliberate ruling, not an accident.
+
+  **F-B2 SAFETY REVIEW (Claude G, 2026-07-14, working tree on aa146a2, after
+  Claude E re-verification): PASS with ONE eval-only condition. RULING-T5B-3
+  issued (below).** Fix v2 landed faithfully: `_F4_ROLE_SPECIFIC_PATTERNS`
+  (union, PM-inherited) + `_F4_ROLE_ONLY_PATTERNS` (explicit, commented
+  non-inheritance for News's bare materiality ban) + `_pm_materiality_flag`
+  (predicative/nominal ban, sentence-scoped evidence carve-out, split on
+  `(?<=[.!?])\s+|\n+`). Verified by probe, all offline/synthetic:
+  * News A/B vs aa146a2 over a 22-string corpus: **0 loosenings**; tightenings
+    are EXACTLY the immaterial family (data/filing/charge/immateriality).
+    G-FB1-1 closed. Other three roles + role_name=None: zero drift.
+  * PM verdict/evasion suite 15/15 DROP (pronoun subjects, unlisted record
+    nouns, adverb insertion, `immaterial`, `materiality of`, plus the four
+    F-B1 originals).
+  * All EIGHT approved evidence-weighting phrases pass on the direct flag.
+  * NEWLINE ISOLATION verified: unpunctuated evidence tail + verdict line,
+    colon tail + verdict line, punctuated evidence + nominal line -> all DROP;
+    soft-wrapped legit phrase ("...is not\nmaterial to this reading.") still
+    passes (no over-block).
+  * CROSS-FIELD MERGES through the FULL validator on structure-valid payloads,
+    BOTH directions: evidence-noun unpunctuated tail -> verdict head (H1, H2)
+    and verdict-only unpunctuated tail -> evidence-noun head (H3c, H4) all
+    return advice_boundary_blocked; clean baseline None. `_pm_field_text`
+    joins all four fields (incl. verification_priorities) with "\n", so the
+    `\n+` split is load-bearing on exactly these seams - confirmed in code.
+  * Focused suites: test_p36_calculation_foundation.py + test_llm_provider.py
+    = 172 passed, no live calls.
+  **RULING-T5B-3 - News immateriality tightening: RATIFIED, STAYS.** "The data
+  is immaterial." now DROPS on news_analyst; at aa146a2 it passed because
+  `\bmaterial(?:ity)?\b` cannot match inside "immaterial" (no word boundary).
+  Grounds: (1) "immaterial" is the fused negative of an already-banned verdict -
+  aa146a2 dropped "The filing is not material." while passing "The filing is
+  immaterial.", a one-word-rewrite evasion of an accepted ban; that asymmetry
+  was an unreviewed hole, not a considered permission, and reverting would
+  knowingly re-open it. (2) No legitimate News use exists: News never weighs
+  evidence, and quoting a company's "described as immaterial" launders a
+  significance verdict - the "material" equivalent already dropped at aa146a2.
+  (3) Failure direction: over-tightening costs a News section falling to its
+  deterministic floor (fail-closed, product cost only); reverting risks a
+  significance verdict reaching the founder's real-account report across a
+  legal no-advice boundary. (4) Lattice consistency: the PM predicate ban
+  covers `(?:im)?material`; reverting News would permit on the reporting
+  surface what the synthesis surface bans - F-B1's inconsistency, mirrored.
+  Process note: this boundary change arrived exactly right - surfaced in the
+  relay, pinned by an honestly-named test
+  (test_p36_news_immateriality_tightening_is_pending_claude_g_ratification)
+  rather than slipped in silently. Scope note: News is therefore aa146a2 PLUS
+  the immaterial family; my earlier "byte-identical to aa146a2" phrasing is
+  superseded - the (?:im)? was in the regex I specified, so the divergence is
+  mine, and it is now ratified rather than accidental.
+  **CONDITION (eval-only, required before the T5B checkpoint commit):**
+  approved phrases #7 and #8 ("The section shows the filing is material." /
+  "The evidence confirms the 8-K is material.") are instances of the NAMED
+  CO-LOCATION RESIDUAL, not approved evidence-weighting. Keeping them pinned is
+  right (regression detection); keeping them inside
+  test_p36_pm_allows_material_language_when_it_weights_evidence is wrong - a
+  PASS canary is a specification, and a future fix that closes the residual
+  would be pressured to preserve the leak. Move both into a separate
+  explicitly-labeled residual-documentation test (comment: tolerated gap, not
+  approved output; may tighten later without breaking contract). Also rename
+  the pending-ratification test to its ratified name and add the four
+  immaterial-family strings to the News FAIL canary family. Zero gate-code
+  changes.
+  **RESIDUALS (verified, named, tolerated - no action):** (a) co-location in
+  one sentence, incl. the natural-sounding "The company section and the events
+  section disagree on dates, and the filing is highly material." (H5 - passes
+  the full validator; third instance of the class alongside #7/#8); (b) copula
+  or intensifier split across lines ("The filing is\nmaterial.") - requires a
+  deliberate mid-clause hard wrap, unnatural for model output, and the \n
+  split that admits it is the same mechanism that closes the far-likelier
+  unpunctuated-merge laundering, so the trade is correct; (c) comma
+  parenthetical ("The filing is, on balance, material."). All three fail
+  toward PASS, all require constructed phrasing, and F-4.6 attribution + the
+  PM trade-subject family + the P35 document scan remain as independent nets.
+  Optional hardening (NOT required, record only): a raw-text
+  copula-newline-material check could close (b) at the cost of re-plumbing the
+  carve-out across glued lines; revisit only if an eval canary ever hits it.
+
+  **T5B CLOSE-OUT CONFIRMATION (Claude G, 2026-07-14, commit 7fe736d): T5B is
+  DUAL-PASS and ACCEPTED.** Verified in git, not from reports: (1) tree ==
+  7fe736d for all of backend/ (zero-line diff), so every probe below ran
+  against the committed bytes; (2) scope contained - gates +77 / tests +187 /
+  design-doc Sec. 6 +6, nothing else; (3) the newline-aware splitter
+  `(?<=[.!?])\s+|\n+` exists at exactly ONE site (v3_value_gates.py:777,
+  _pm_materiality_flag) - the three other re.split sites are the pre-existing
+  sentence splitters, untouched; role-only registry consumed at exactly one
+  role-keyed site (:674), never via the union flattening; (4) all three F-B2
+  conditions landed: approved family is exactly SIX phrases; residual-doc test
+  1712 holds #7/#8 plus the third co-location instance with the
+  tolerated-not-approved comment; ratification test renamed to
+  test_p36_news_immateriality_tightening_is_ratified_by_ruling_t5b_3 (1522)
+  and the four immaterial-family strings are News FAIL canaries; (5) bonus
+  bounding canary 1734: wrapped NOMINAL materiality ("The materiality\nof the
+  filing is high") still DROPS, fencing the wrap residual to the predicate
+  form only; (6) re-ran the full probe suite against 7fe736d: News A/B 0
+  loosenings / tightenings exactly the immaterial family, PM 15/15 DROP,
+  8->6+residual phrase families behave, newline + cross-field merges hold,
+  other roles zero drift; focused suites 178 passed, offline.
+  TWO NOTES, neither reopens T5B:
+  * DOC-LABEL COLLISION (docs-only correction, next docs commit): the Sec. 6
+    addition in PHASE_36_T5B_PM_SYNTHESIS_DESIGN.md labels the
+    predicate-severing WRAP residual as "RULING-T5B-3". RULING-T5B-3 is the
+    News immateriality ratification (test 1522 cites it correctly). Two
+    decisions now share one identifier across artifacts; a future reader
+    resolving the cite gets two answers. Fix: relabel the Sec. 6 paragraph
+    "F-B2 REVIEW RECORD (Claude G, 2026-07-14) - tolerated wrap residual" (no
+    ruling number; residuals are review records, not rulings). Claude E owns
+    the artifact.
+  * SEQUENCING NOTE (process, no content risk): 7fe736d was committed AND
+    pushed to origin/main before Claude G's close-out confirmation; the agreed
+    order was dual-PASS then checkpoint. Content matches what both reviewers
+    verified, so nothing to unwind - but the checkpoint-after-dual-PASS order
+    exists so a BLOCKED finding never has to be unwound from the remote.
+    Reaffirm for T6-era work: no push before both seats confirm.
+  Phase 36 status: T5A-1/T5A-1b/T5A-2/T5B all accepted. All five roles plus PM
+  synthesis are live-gated. Remaining: FINDING-1 (PM C6-C10 calc surface
+  doc-truth in design Sec. 5), FINDING-2 (REPORT_PROSE_KEYS guard test),
+  pre-activation checklist items (FMP/FRED dormant lanes), and P36-T6 - the
+  five-live-role real-account acceptance run - FROZEN pending explicit founder
+  per-run authorization.
+
+  **T5B DOCS CLOSE-OUT ACK (Claude G, 2026-07-14): docs diff VERIFIED and
+  ACKNOWLEDGED - clear for the founder to commit.** Verified in the working
+  tree: (1) Sec. 6 now carries the TRUE RULING-T5B-3 (News immateriality
+  ratification, citing the 1522 canary family) and the wrap residual is
+  relabeled "F-B2 REVIEW RECORD ... tolerated wrap residual" with the
+  relabel note - one identifier, one decision; (2) Sec. 5 records the PM calc
+  surface as C1-C15 with the verify-not-recompute dependency stated and a
+  doc-truth footnote.
+  **FINDING-1 RESOLVED - with a correction TO MY OWN FINDING (Claude E is
+  right).** The effective PM calc surface is C1-C15, not "C6-C10 in addition
+  to C1-C5" as I wrote. Verified behaviorally: default_tool_registry() has 15
+  calc entries and ALL FIFTEEN allow portfolio_manager_agent (zero denied);
+  P36_PM_CALC_TOOL_IDS (tool_mediated_runner.py:582) maps exactly C1-C15. My
+  under-read: the C11-C14 grants were in the very registry hunk I quoted for
+  FINDING-1 - I flagged the technical lane (C6-C10) and stopped counting.
+  Same lesson as the News direction check: enumerate, don't sample.
+  SAFETY ASSESSMENT (no delta, three structural reasons, all verified): (a)
+  _validate_p36_pm_calc_request is a closed map - id must be in
+  P36_PM_CALC_TOOL_IDS, entry.allows_role checked, args are string-only with
+  DIGITS BANNED in every value (no number smuggling via requests), and only
+  C1 takes one enum arg; (b) every PM calc result is match-only via
+  pm_calculation_matches_surfaced_values - never an independent F-5 source,
+  C1-C5 and C6-C15 alike; (c) the C1-C5 public barring is intact - probe
+  confirmed none of the three public analysts can reach any agent_safe calc.
+  **NEW PRE-ACTIVATION CHECKLIST ITEM (from this finding):** when the FMP
+  (C11/C12) or FRED (C13) lanes are approved and the WITH-variants wake, the
+  PM's dormant grants to those tools wake SIMULTANEOUSLY. Activation canaries
+  must therefore include PM-lane checks (PM requests C11/C12/C13 and the
+  result is admitted ONLY on match to an analyst-surfaced figure), not just
+  the fundamentals/news analyst lanes.
+  Sequencing honored this time: the docs commit waited for this ack. Open
+  after the docs commit: FINDING-2 guard test (Codex C, next touch) and the
+  pre-activation checklist. T6 FROZEN pending explicit founder per-run
+  authorization.
 - `P36-T5B` - Live PM synthesis: typed PmSynthesis (four verdict-incapable
   fields), whole-block fail-closed, composer rendering, PM calc
   verification access. Owner: Codex C (implementation). Status: DESIGN PHASE
@@ -1252,6 +1593,99 @@ exercise their own judgment within this frame.
   five - the synthesis/verdict surface - so the no-recommendation boundary is
   the review crux. Codex C implementation gated on: (a) T5A-2 checkpoint
   landed, and (b) Claude G design-review PASS. T6 frozen.
+  - `P36-T5B-DESIGN` - Claude E deliverable PHASE_36_T5B_PM_SYNTHESIS_DESIGN.md.
+    Claude G prompt/safety review 2026-07-13: PASS with ONE binding condition.
+    Verified in code: C1-C5 barred from public (_PUBLIC_CALC_TOOL_NAMES = C6-C15
+    only, calculations.py); final_synthesis_authored_by flip enum exists
+    (reports.py:86); p36-pm-synthesis-v1 in _P36_VALUE_BEARING_PROMPT_VERSIONS
+    so PM prose stays document-scanned (F-12). Strong, honest design (§2 refuses
+    to overclaim schema-magic on the two freeform fields). §4 gate map
+    (F-1 typed-parse replaces F-8/F-9; F-11 originates-nothing) CONFIRMED. §5
+    verify-not-recompute (PM calc values admitted to F-5 ONLY by match to an
+    analyst-surfaced figure, never as an independent source) CONFIRMED - correct
+    and elegant; a divergent re-run surfaces only as a verification imperative,
+    cannot emit a new number.
+    RULING-T5B-1 (§6.1) APPROVED: governed PM-only P36_PM_ATTRIBUTION_MARKERS
+    superset (P36_ATTRIBUTION_MARKERS + section-attribution phrases), applied
+    only on the PM surface, analyst set unchanged. Safe: F-4.6 markers gate
+    interpretation-ATTRIBUTION, they do NOT bypass the 5 advice classes or F-11
+    grounding, so this turns F-4.6 into a section-attribution REQUIREMENT that
+    reinforces no-original-interpretation. Condition: §7.7 with/without-marker
+    probe mandatory.
+    BINDING CONDITION (the review crux, before Codex C's T5B is accepted): the
+    freeform-field verdict-incapability in §2 rests on F-4's "subject-noun
+    test", but that test is NOT implemented as described - F-4 has no
+    reduce/cut/lighten/pare/increase and P35 only has add/trim/rebalance/buy/
+    sell/hold/wait/spread, so §7.1/§7.3 mandatory phrasing "reduce the position"
+    would drop in verification_priorities (via F-2 whitelist) but likely SURVIVE
+    in evidence_weighting/trust_assessment. Fix: implement the subject-noun
+    boundary as a real PM-specific F-4 pattern (subject = trade/position/setup/
+    entry/idea + an evaluative/directional predicate -> whole-block drop) rather
+    than vocabulary whack-a-mole, AND treat §7 as a LIVING mandatory set that
+    includes soft/indirect verdicts ("the trade holds up well", "the setup looks
+    solid", "the evidence points the right way", "the trade deserves confidence")
+    not only canonical buy/sell/attractive. Verifiable by the §7.1/§7.3 evals
+    actually dropping from the freeform fields. Reviewers on impl: Claude E
+    (gate/eval) + Claude G (arch/safety). Doc-parity: commit
+    PHASE_36_T5B_PM_SYNTHESIS_DESIGN.md + the still-uncommitted
+    PHASE_36_T5A2_PUBLIC_ROLE_BLOCKS.md with the impl (T5A1 doc precedent).
+  - `RULING-T5B-2` (PM accepted-section input collision) - APPROVED Option A,
+    allowlist CORRECTED to the empirically-verified minimal set. The PM must
+    receive accepted analyst prose (incl. Risk), which legitimately carries
+    bare topic words that the dynamic value-token scan rejects. Verified by
+    synthetic probe (find_forbidden_string_values): ONLY {cash, holdings,
+    positions} actually collide - portfolio/exposure/nickname/account are
+    already allowed (not in LLM_PROVIDER_FORBIDDEN_VALUE_TOKENS), so Codex C's
+    proposed 7-token list is over-specified; exempt exactly {cash, holdings,
+    positions}. Reuse the existing governed _STATIC_SYSTEM_PROMPT_PLAIN_TOPIC_
+    TOKENS (this set is a subset) or a documented PM constant equal to it - do
+    NOT add the four non-colliding words (esp. identifier-adjacent account/
+    nickname). SAFETY BASIS (keeps the prior 'dynamic stays strict' ruling
+    intact): the exemption applies ONLY to the projection of accepted sections
+    that ALREADY passed the full v3 stack incl. F-6 and were frozen - it is
+    re-ingestion of post-gate artifacts, not fresh dynamic input; the coarse
+    bare-word check is redundant there while F-6 already cleared it. Conditions:
+    (1) scoped to the p36-pm-synthesis-v1 accepted-section projection only - NOT
+    other PM dynamic segments, NOT other roles; public-role dynamic messages
+    stay strict; (2) all other scans retained over the projection (forbidden-
+    key, compound-token, identifier, secret, path, raw-payload, phrase) -
+    probe-confirmed compounds still reject under the exemption; (3) INPUT-only:
+    widens what the PM receives, not what it emits - PM output still faces the
+    full F-4..F-13 stack incl. F-6, so no output identifier hole; (4) a test
+    asserts the PM allowlist is EXACTLY {cash, holdings, positions} (guards
+    silent widening, same fail-open concern as T5A-2 FINDING-1). Rejected B:
+    a prose-stripping projection breaks the PM's evidence-weighting job; a
+    prose-preserving one hits the identical collision = A by another name.
+    Required tests (Codex C list + mine): accepted Risk section reaches PM;
+    cash_balance/account_id/identifiers/secrets/paths/raw-payloads still fail
+    closed over the projection; public-role dynamic strict; PM readback reruns
+    neither tools nor provider; allowlist-exactly-three guard.
+    RATIFICATION 2026-07-13 (Claude E sharpened to a 7-token governed SSOT
+    P36_F6_VOCABULARY_ONLY_TOKENS = {account,holdings,cash,positions,portfolio,
+    exposure,nickname}, requesting safety ratification of the RULING-T5A1-1
+    strict-dynamic relaxation): RATIFIED, reconciled. I withdraw the
+    force-to-3: in the contracts value-token scan only {cash,holdings,
+    positions} are non-inert (the other four aren't in
+    LLM_PROVIDER_FORBIDDEN_VALUE_TOKENS), so the 7-token SSOT is behaviorally
+    identical there and consistency has value - accept it. BINDING SAFETY
+    CONDITION on the 'imported by F-6' half: F-6 today has NO bare-word
+    allowlist and already passes all 7 bare words implicitly (probe:
+    bare account/cash/holdings/positions/portfolio/exposure/nickname -> None),
+    while account+5-digit -> identifier_privacy_blocked and cash_balance/
+    account_id -> blocked. 'account' sits in BOTH the proposed constant AND
+    _IDENTIFIER_CONTEXT_RE (the proximity trigger). So the constant must be
+    behavior-PRESERVING in F-6: it may centralize/name what F-6 already passes
+    implicitly, but must NOT become a new allowlist gate, must NOT remove any
+    word from _IDENTIFIER_CONTEXT_RE, and must NOT short-circuit the ambiguous-
+    proximity branch. Mandatory parity canary (baseline captured today): with
+    the constant in place, 'the account 48213 was reviewed' STILL returns
+    identifier_privacy_blocked, and each vocab word + a >=5-digit number still
+    flags. If 'import into F-6' changes any F-6 decision on Risk or the 3
+    public surfaces, that half is REJECTED for T5B (the exemption may still
+    ship on the PM projection alone). Guard test asserts the constant's EXACT
+    7-member set (blocks silent widening). All prior conditions stand
+    (input-only; scoped to p36-pm-synthesis-v1 evidence payload; other scans
+    retained; public/other dynamic strict).
 - `P36-T6` - Live acceptance run (five live roles) under per-run founder
   authorization; founder judges the working version. Status: queued. No
   live acceptance runs before this per founder direction.

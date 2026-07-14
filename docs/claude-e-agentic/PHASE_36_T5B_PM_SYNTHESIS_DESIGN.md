@@ -254,13 +254,19 @@ match). Acceptance test (Claude G): every §7.1/§7.3 canon canary drops from
 ## 5. PM calc-verification access (portfolio_role, verify-not-recompute)
 
 - **The PM is `portfolio_manager_agent`, a portfolio role**, so it may receive
-  agent-safe content and request the C1–C5 portfolio calculations. C1–C5 are
-  `agent_safe` — they are absent from `_PUBLIC_CALC_TOOL_NAMES`
+  agent-safe content, and its implemented calc-request surface is the **full
+  C1–C15 map** (`P36_PM_CALC_TOOL_IDS`, `tool_mediated_runner.py`): the C1–C5
+  portfolio calculations plus the C6–C15 public calculations the analysts used.
+  C1–C5 are `agent_safe` — they are absent from `_PUBLIC_CALC_TOOL_NAMES`
   (`calculations.py:33`, which lists only C6–C15), so `evidence_tier` resolves to
   `agent_safe` for them (`calculations.py:1036`). The T5A-2 public calc validator
   admits no C1–C5 id in any public role's map and re-checks `entry.allows_role()`;
   **that barring is unchanged** — this design adds no path from a public analyst
-  to C1–C5.
+  to C1–C5. The breadth of the PM surface is safe **only** because of the
+  verify-not-recompute rule below: every PM calc result, C1–C5 and C6–C15 alike,
+  is match-only and never an independent numeric source.
+  *(Doc-truth correction per FINDING-1, Claude G: an earlier revision of this
+  bullet described the PM calc surface as C1–C5 only.)*
 - **Verify-not-recompute is a structural F-5 property, not a steering hope.** The
   PM allowed numeric set (§4, F-5) is the analyst-surfaced + deterministic-finding
   values **only**; PM calc results are **not** admitted to F-5 as an independent
@@ -393,11 +399,19 @@ that still passes the required prose. A is the minimal principled relaxation.
 F-6-import binding condition above. Claude E specifies, Claude G ratifies, per
 the established governance for safety-scanner changes.
 
-**RULING-T5B-3 (Claude G, 2026-07-14):** the predicate-severing wrap
-`"The filing is\nmaterial."` is a tolerated, canary-locked residual rather than
-approved output; a future normalize-per-field pass may tighten it without
-changing the accepted-output contract, while wrapped nominal materiality remains
-blocked.
+**RULING-T5B-3 (Claude G, 2026-07-14):** the News immateriality tightening over
+`aa146a2` is RATIFIED — the news-only bare ban is `\b(?:im)?material(?:ity)?\b`,
+so `immaterial`/`immateriality` now fail closed on the News surface where the
+`aa146a2` pattern passed them; fail-closed direction, locked by the
+`test_p36_news_immateriality_tightening_is_ratified_by_ruling_t5b_3` canary
+family.
+
+**F-B2 REVIEW RECORD (Claude G, 2026-07-14) — tolerated wrap residual:** the
+predicate-severing wrap `"The filing is\nmaterial."` is a tolerated,
+canary-locked residual rather than approved output; a future normalize-per-field
+pass may tighten it without changing the accepted-output contract, while wrapped
+nominal materiality remains blocked. *(Relabeled from an erroneous
+"RULING-T5B-3" heading — one ruling identifier resolves to one decision.)*
 
 **Required tests:** accepted Risk section reaches the PM; `cash_balance` /
 `account_id` / other compound tokens, identifiers, secrets, paths, and raw

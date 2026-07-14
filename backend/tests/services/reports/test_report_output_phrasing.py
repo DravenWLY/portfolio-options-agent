@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.agent_team.safety.report_output_safety import validate_agent_team_report_output
+from app.services.agent_team.safety.report_output_safety import _reject_report_phrases, validate_agent_team_report_output
 
 
 pytestmark = [pytest.mark.unit]
@@ -50,3 +50,21 @@ def test_p35_report_output_validator_rejects_wrong_pair_wording(markdown: str) -
 )
 def test_p35_report_output_validator_allows_right_pair_factual_wording(markdown: str) -> None:
     validate_agent_team_report_output(_payload(markdown), label="agent-team saved report")
+
+
+def test_phrase_bans_scan_rendered_prose_not_frozen_calculation_method_labels() -> None:
+    _reject_report_phrases(
+        {
+            "final_synthesis_markdown": "The frozen report remains descriptive.",
+            "tool_run_artifact": {
+                "tool_results": ({"summary_payload": {"method_label": "Frozen end-of-day annualized volatility calculation"}},),
+            },
+        },
+        label="agent-team saved report",
+    )
+
+    with pytest.raises(ValueError):
+        _reject_report_phrases(
+            {"final_synthesis_markdown": "This annualized measure makes the trade attractive."},
+            label="agent-team saved report",
+        )

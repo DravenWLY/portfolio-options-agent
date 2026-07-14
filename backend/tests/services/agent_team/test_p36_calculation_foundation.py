@@ -16,6 +16,7 @@ from app.services.agent_team.auditing.v3_value_gates import (
     WHAT_WAS_VERIFIED_FLAG,
     _advice_boundary_flag,
     frozen_artifact_gate_version,
+    validate_p36_public_analysis_section,
     validate_v3_value_bearing_markdown,
     validate_p36_risk_analysis_section,
 )
@@ -24,11 +25,14 @@ from app.services.agent_team.orchestration.deterministic_standalone import (
     freeze_deterministic_standalone_summary_check,
 )
 from app.services.agent_team.llm_clients.contracts import LLMProviderResponse
+from app.services.agent_team.llm_clients.contracts import registered_static_system_prompts
 from app.services.agent_team.orchestration import tool_mediated_runner as runner
+from app.services.agent_team.orchestration.p36_public_prompts import P36_PUBLIC_SYSTEM_PROMPTS
 from app.services.agent_team.orchestration.tool_mediated_runner import (
     build_tool_mediated_agent_team_summary,
     run_tool_mediated_agent_team,
 )
+from app.services.agent_team.safety.report_output_safety import validate_agent_team_report_output
 from app.services.agent_team.tools import (
     P36_CALC_TOOL_CONTRACT_VERSION,
     ToolRequest,
@@ -1163,3 +1167,318 @@ def test_p36_f6_ambiguous_identifier_residual_defers_to_f5_provenance() -> None:
 
 def test_p36_f4_attribution_does_not_treat_headings_as_interpretation() -> None:
     assert _advice_boundary_flag("#### Concentration and reference points") is None
+
+
+def _p36_public_section(role_name: str, *, macro_heading: bool = False, macro_sentence: str | None = None) -> str:
+    titles = {
+        "technical_analyst": "#### Technical analysis — XYZ",
+        "fundamentals_analyst": "#### Company context — XYZ",
+        "news_analyst": "#### Events and macro context — XYZ",
+    }
+    body = " ".join(
+        (
+            "Computed from the saved evidence, this section describes only the dated record available for this review.",
+            "The frozen inputs keep the observation tied to the saved package rather than a current source.",
+            "The recorded context is descriptive, uncertainty qualified, and limited to the source labels supplied in this run.",
+            "Freshness and coverage remain part of reading the saved record without changing any availability category.",
+            "The section identifies what was present and what was not reviewed without extending the evidence beyond its frozen scope.",
+            "The calculation and source labels below provide the reviewed basis for the narrative.",
+        )
+    )
+    if role_name == "technical_analyst":
+        headings = (
+            "##### Range and trend context",
+            "##### Volatility context",
+            "##### Gaps and caveats",
+        )
+        verified = "Frozen end-of-day range-position calculation and saved price history were cross-checked against 2025-09-17. Current data could not be verified from this saved package."
+    elif role_name == "fundamentals_analyst":
+        headings = ("##### What was reviewed", "##### Recency and coverage")
+        verified = "Saved trade intent summary and the saved company profile were cross-checked against 2026-06-01. Reported statements could not be verified from this saved package."
+    else:
+        headings = ("##### Filing and release record",)
+        if macro_heading:
+            headings = (*headings, "##### Macro backdrop")
+        headings = (*headings, "##### Recency against this review")
+        verified = "Saved trade intent summary and frozen macro-series comparison were cross-checked against 2026-06-01. Unreviewed macro context remains a named gap."
+    sections = [titles[role_name]]
+    for heading in headings:
+        sections.extend((heading, macro_sentence if heading == "##### Macro backdrop" and macro_sentence else body))
+    sections.extend(
+        (
+            "##### What was verified",
+            verified,
+            "| Context item | Value or finding | Source and as-of | Status/caveat |",
+            "| Saved context | Frozen evidence only | Saved package | Reviewed scope |",
+        )
+    )
+    return "\n\n".join(sections)
+
+
+class _P36PublicLoopProvider:
+    provider_name = "p36-public-loop-fake"
+    model = "p36-public-loop-model"
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    def complete(self, request):
+        self.calls.append(request)
+        role_name = request.role_name
+        calls_for_role = sum(item.role_name == role_name for item in self.calls)
+        if calls_for_role == 1:
+            tool_ids = {
+                "technical_analyst": ("C6", "C7", "C8", "C9", "C10", "C15"),
+                "fundamentals_analyst": ("C11", "C12", "C15"),
+                "news_analyst": ("C13", "C14", "C15"),
+            }[role_name]
+            content = json.dumps({"tool_requests": [{"tool_id": tool_id, "args": {}} for tool_id in tool_ids]})
+        else:
+            content = _p36_public_section(role_name)
+        return LLMProviderResponse(
+            request_id=request.request_id,
+            role_name=role_name,
+            status="ok",
+            provider=self.provider_name,
+            model=self.model,
+            prompt_version=request.prompt_version,
+            content_markdown=content,
+            is_mock=True,
+            finish_reason="stop",
+        )
+
+
+def test_p36_public_prompts_are_exact_reviewed_static_entries() -> None:
+    registered = registered_static_system_prompts()
+    assert set(P36_PUBLIC_SYSTEM_PROMPTS) == {"technical_analyst", "fundamentals_analyst", "news_analyst"}
+    assert all(prompt in registered for prompt in P36_PUBLIC_SYSTEM_PROMPTS.values())
+    assert "Your section describes saved history and nothing past it." in P36_PUBLIC_SYSTEM_PROMPTS["technical_analyst"]
+    assert "Your section stops at the reported past and its recency." in P36_PUBLIC_SYSTEM_PROMPTS["fundamentals_analyst"]
+    assert "Your section stops at the dated record and its recency." in P36_PUBLIC_SYSTEM_PROMPTS["news_analyst"]
+
+
+def test_p36_public_loops_are_sequential_and_freeze_without_pending_source_lanes() -> None:
+    provider = _P36PublicLoopProvider()
+    evidence = _public_calculation_evidence(include_eod=True, include_statement_prior=True, include_macro_prior=True)
+    state = run_tool_mediated_agent_team(
+        evidence,
+        registry=default_tool_registry(),
+        llm_provider=provider,
+        p36_public_live_enabled=True,
+    )
+    assert state.provider_runs
+    payload = runner._summary_payload_from_run_state(
+        state,
+        evidence,
+        report_generated_at=datetime(2026, 7, 12, tzinfo=UTC),
+    )
+    validate_agent_team_report_output(payload, label="p36 public loop", evidence_package=evidence)
+    provider = _P36PublicLoopProvider()
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 7, 12, tzinfo=UTC),
+        llm_provider=provider,
+        p36_public_live_enabled=True,
+    )
+    assert summary.report_status == "full_agent_report", summary
+
+    public_roles = {
+        item.role_name: item
+        for item in summary.role_summaries
+        if item.role_name in {"technical_analyst", "fundamentals_analyst", "news_analyst"}
+    }
+    assert public_roles["technical_analyst"].live_report_markdown is not None
+    assert public_roles["fundamentals_analyst"].live_report_markdown is not None
+    assert public_roles["news_analyst"].live_report_markdown is not None
+    assert [request.role_name for request in provider.calls] == [
+        "fundamentals_analyst",
+        "fundamentals_analyst",
+        "news_analyst",
+        "news_analyst",
+        "technical_analyst",
+        "technical_analyst",
+    ]
+    assert summary.tool_run_artifact is not None
+    frozen = summary.tool_run_artifact
+    dormant = {
+        item.tool_name: item
+        for item in frozen.tool_results
+        if item.tool_name in {"calc_financial_ratios", "calc_period_change", "calc_macro_series_change"}
+    }
+    assert dormant["calc_financial_ratios"].availability == "not_available"
+    assert dormant["calc_period_change"].availability == "not_available"
+    assert dormant["calc_macro_series_change"].availability == "not_available"
+    assert all("source_rights_not_approved" in item.caveat_codes for item in dormant.values())
+    calls_before_readback = len(provider.calls)
+    SavedToolMediatedRunArtifactRead.model_validate(frozen.model_dump(mode="json"))
+    assert len(provider.calls) == calls_before_readback
+
+
+def _p36_news_c13_result() -> ToolResult:
+    return ToolResult(
+        tool_name="calc_macro_series_change",
+        role_name="news_analyst",
+        status="ok",
+        evidence_tier="public",
+        data_mode="public",
+        source_key="frozen_saved_evidence_calculations",
+        source_label="Frozen macro-series comparison",
+        availability="available",
+        evidence_refs=("fred_macro_series_snapshot",),
+        summary_payload={
+            "calc_name": "calc_macro_series_change",
+            "inputs_used": ("fred_macro_series_snapshot",),
+            "value_labels": (
+                {"fact_key": "macro_series_label", "value_label": "Consumer Price Index", "unit_label": "label"},
+                {"fact_key": "macro_current_value", "value_label": "3.2 Percent", "unit_label": "Percent"},
+                {"fact_key": "macro_prior_value", "value_label": "3.0 Percent", "unit_label": "Percent"},
+                {"fact_key": "macro_absolute_change", "value_label": "0.2 Percent", "unit_label": "Percent"},
+                {"fact_key": "macro_change_direction", "value_label": "up", "unit_label": "direction"},
+                {"fact_key": "macro_current_observation", "value_label": "2026-06-01", "unit_label": "period"},
+                {"fact_key": "macro_prior_observation", "value_label": "2026-05-01", "unit_label": "period"},
+            ),
+            "method_label": "Frozen macro-series comparison",
+            "as_of_labels": ("2026-06-01", "2026-05-01"),
+            "caveats": (),
+            "outcome": "available",
+        },
+        provenance="frozen_saved_evidence",
+        is_mock=True,
+        contract_version=P36_CALC_TOOL_CONTRACT_VERSION,
+    )
+
+
+def _p36_news_gate_results() -> tuple[ToolResult, ...]:
+    evidence = _public_calculation_evidence(include_eod=True)
+    registry = default_tool_registry()
+    return (
+        execute_tool_request(
+            ToolRequest(tool_name="trade_intent_summary", requesting_role="news_analyst"),
+            evidence=evidence,
+            registry=registry,
+        ),
+        _p36_news_c13_result(),
+    )
+
+
+def test_p36_c13_requires_same_sentence_governed_series_label_for_each_numeric_value() -> None:
+    results = _p36_news_gate_results()
+    correct = _p36_public_section(
+        "news_analyst",
+        macro_heading=True,
+        macro_sentence="Computed from the saved series, Consumer Price Index recorded 3.2 Percent in the frozen comparison.",
+    )
+    assert validate_p36_public_analysis_section(
+        role_name="news_analyst",
+        markdown=correct,
+        role_results=results,
+    ) is None
+
+    swapped = correct.replace("Consumer Price Index recorded 3.2", "Yield-curve spread recorded 3.2")
+    assert validate_p36_public_analysis_section(
+        role_name="news_analyst",
+        markdown=swapped,
+        role_results=results,
+    ) == GROUNDING_FLAG
+
+    split = correct.replace(
+        "Consumer Price Index recorded 3.2 Percent in the frozen comparison.",
+        "Consumer Price Index is included in the frozen comparison. The recorded value was 3.2 Percent.",
+    )
+    assert validate_p36_public_analysis_section(
+        role_name="news_analyst",
+        markdown=split,
+        role_results=results,
+    ) == GROUNDING_FLAG
+
+
+def _p36_public_role_results() -> dict[str, tuple[ToolResult, ...]]:
+    state = run_tool_mediated_agent_team(
+        _public_calculation_evidence(include_eod=True, include_statement_prior=True, include_macro_prior=True),
+        registry=default_tool_registry(),
+        llm_provider=_P36PublicLoopProvider(),
+        p36_public_live_enabled=True,
+    )
+    return {
+        role_name: tuple(result for result in state.tool_results if result.role_name == role_name)
+        for role_name in ("technical_analyst", "fundamentals_analyst", "news_analyst")
+    }
+
+
+def test_p36_public_f8_binds_symbol_and_without_variant_headings() -> None:
+    results = _p36_public_role_results()
+
+    technical = _p36_public_section("technical_analyst")
+    assert validate_p36_public_analysis_section(
+        role_name="technical_analyst",
+        markdown=technical,
+        role_results=results["technical_analyst"],
+    ) is None
+    assert validate_p36_public_analysis_section(
+        role_name="technical_analyst",
+        markdown=technical.replace("Technical analysis — XYZ", "Technical analysis — OTHER"),
+        role_results=results["technical_analyst"],
+    ) == STRUCTURE_CONTRACT_FLAG
+
+    fundamentals = _p36_public_section("fundamentals_analyst")
+    assert validate_p36_public_analysis_section(
+        role_name="fundamentals_analyst",
+        markdown=fundamentals.replace("##### What was reviewed", "##### Reported record"),
+        role_results=results["fundamentals_analyst"],
+    ) == STRUCTURE_CONTRACT_FLAG
+
+    news = _p36_public_section("news_analyst", macro_heading=True)
+    assert validate_p36_public_analysis_section(
+        role_name="news_analyst",
+        markdown=news,
+        role_results=results["news_analyst"],
+    ) == STRUCTURE_CONTRACT_FLAG
+
+
+@pytest.mark.parametrize(
+    ("role_name", "replacement"),
+    (
+        ("technical_analyst", "The saved history will continue beyond the frozen window."),
+        ("fundamentals_analyst", "The reported record makes the company attractive."),
+        ("news_analyst", "The dated record is already priced in."),
+    ),
+)
+def test_p36_public_role_specific_advice_boundary_canaries_drop_sections(
+    role_name: str,
+    replacement: str,
+) -> None:
+    results = _p36_public_role_results()
+    markdown = _p36_public_section(role_name).replace(
+        "The frozen inputs keep the observation tied to the saved package rather than a current source.",
+        replacement,
+    )
+
+    assert validate_p36_public_analysis_section(
+        role_name=role_name,
+        markdown=markdown,
+        role_results=results[role_name],
+    ) == ADVICE_BOUNDARY_FLAG
+
+
+def test_p36_public_f9_and_f11_drop_unanchored_or_filing_content_prose() -> None:
+    results = _p36_public_role_results()
+    technical = _p36_public_section("technical_analyst")
+    boilerplate = technical.replace(
+        "Frozen end-of-day range-position calculation and saved price history were cross-checked against 2025-09-17. Current data could not be verified from this saved package.",
+        "The saved evidence was reviewed for this report.",
+    )
+    assert validate_p36_public_analysis_section(
+        role_name="technical_analyst",
+        markdown=boilerplate,
+        role_results=results["technical_analyst"],
+    ) == WHAT_WAS_VERIFIED_FLAG
+
+    news = _p36_public_section("news_analyst").replace(
+        "The frozen inputs keep the observation tied to the saved package rather than a current source.",
+        "The filing states that its contents changed the reviewed record.",
+    )
+    assert validate_p36_public_analysis_section(
+        role_name="news_analyst",
+        markdown=news,
+        role_results=results["news_analyst"],
+    ) == GROUNDING_FLAG

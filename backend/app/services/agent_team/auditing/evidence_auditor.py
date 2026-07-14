@@ -74,6 +74,8 @@ from app.services.agent_team.auditing.v3_value_gates import (
     NUMERIC_PROVENANCE_FLAG,
     STRUCTURE_CONTRACT_FLAG,
     WHAT_WAS_VERIFIED_FLAG,
+    P36_PUBLIC_ANALYST_ROLES,
+    validate_p36_public_analysis_section,
     validate_p36_risk_analysis_section,
 )
 
@@ -173,6 +175,7 @@ def audit_findings(
     *,
     repass: bool = False,
     p36_risk_mode: bool = False,
+    p36_public_mode: bool = False,
 ) -> tuple[AuditorRecord, tuple[RoleFindingSet, ...]]:
     availability_by_role = _availability_by_role(results_by_role)
     usable = usable_content_by_role()
@@ -187,6 +190,12 @@ def audit_findings(
         if live_report_markdown:
             if p36_risk_mode and finding_set.role_name == "risk_management_agent":
                 live_drop_flag = validate_p36_risk_analysis_section(
+                    markdown=live_report_markdown,
+                    role_results=results_by_role.get(finding_set.role_name, ()),
+                )
+            elif p36_public_mode and finding_set.role_name in P36_PUBLIC_ANALYST_ROLES:
+                live_drop_flag = validate_p36_public_analysis_section(
+                    role_name=finding_set.role_name,
                     markdown=live_report_markdown,
                     role_results=results_by_role.get(finding_set.role_name, ()),
                 )

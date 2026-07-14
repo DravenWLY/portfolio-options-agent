@@ -1128,9 +1128,130 @@ exercise their own judgment within this frame.
     strengthen F-11 grounding for the public analysts (Claude E's F4 -
     grounding matters more for news/fundamentals than for Risk). Reviewers:
     Claude E + Claude G. T6 stays frozen.
+  - `P36-T5A-2-PROMPTS` - Claude E deliverable
+    PHASE_36_T5A2_PUBLIC_ROLE_BLOCKS.md (three verbatim role blocks + SHAPE,
+    p36-role-analysis-v1). Claude G prompt review 2026-07-13: PASS. Verified
+    in code: p36-role-analysis-v1 in _P36_VALUE_BEARING_PROMPT_VERSIONS
+    (contracts.py); every attribution phrase the blocks teach resolves to a
+    P36_ATTRIBUTION_MARKERS substring (no block teaches a phrase F-4.6 drops);
+    blocks steer hard off each role's characteristic advice class + enforce
+    honest-unavailable/no-carryover. F-8 variant/symbol-heading contract
+    (§4.2) and C13 series-binding-as-F-11 (§4.3) CONFIRMED as intended gate
+    mechanics, with two conditions: (a) the C13 series-label alias set is a
+    reviewed constant (Claude E + Claude G governed), not free text; (b)
+    same-sentence label+numeral adjacency is the accepted fail-closed boundary
+    and gets an eval case documenting a correctly-attributed-but-split-across-
+    sentences drop. Deferred-polish watch-item: monitor drop-rate at the 400-
+    word F-8 ceiling (zero headroom above SHAPE target).
+  - `RULING-T5A2-1` (yield document-scan collision, §5.1) - APPROVED: Option
+    1 (narrow reviewed-label scrub). Verified premise in code:
+    report_output_safety.py:207 bans bare `yield|annualized|
+    return on collateral`; _reject_report_phrases (231/238-245) runs over the
+    assembled document with NO value-bearing exemption (that exemption only
+    gates validate_llm_provider_output at 226), so a "yield" in an approved
+    FRED label drops the WHOLE report; source_snapshots.py:284-285 confirms
+    two approved labels ("Ten-year Treasury yield", "Yield-curve spread")
+    carry the token; the scrub mirrors the existing
+    REPORT_ALLOWED_NEGATED_DISCLOSURES loop (240-241). Binding conditions:
+    (1) scrub set = the EXACT reviewed FRED display strings sourced from the
+    FredMacroSeriesDefinition constant (single source of truth - not the
+    doc's paraphrase), append-only, Claude E + Claude G governed like the
+    static-prompt registry; (2) scan-only (never mutates persisted/projected
+    report text); (3) residual bare-`yield` still drops ("dividend yield",
+    "high-yield") - proven by test; (4) tests: WITH-variant naming both yield
+    labels passes, non-label yield drops, scrub rescues no other prohibited
+    pattern adjacent to a label. PRINCIPLE (generalizes the CORE-B/Option-A
+    ruling): carve out ONLY contract-forced verbatim tokens the model must
+    emit to name a series correctly; model-CHOSEN avoidable words
+    ("annualized", "dividend yield") stay banned + steering/eval-caught.
+    ADDITIVE CONDITION (Claude G): before EACH pending lane activates (FMP
+    fundamentals AND FRED macro), audit that lane's FULL forced display-label
+    set against the FULL P35_PROHIBITED_REPORT_PATTERNS - not just the two
+    yield labels - so an analogous FMP-label collision (e.g. an "annualized"
+    growth label or a "return on ..." ratio label) is caught pre-activation,
+    not rediscovered live. Sequencing: this ruling gates the FRED WITH-variant
+    activation, NOT T5A-2 (News ships WITHOUT-variant first).
+  - `P36-T5A-2` IMPLEMENTATION - Claude G architecture/safety review
+    2026-07-13: PASS. Verified in code + ran the affected gate/eval subset
+    offline (not on reported counts). Technical fully live (C6-C10+C15);
+    Fundamentals/News WITHOUT-variant live; C11/C12 fail closed
+    (source_rights_not_approved / required_statement_facts_not_available),
+    C13 fails closed (macro_series_history_not_available). Both my prior
+    conditions landed: (a) FRED_MACRO_SERIES_DISPLAY_ALIASES is derived from
+    the FRED_MACRO_SERIES constant ("no free-text alias can authorize a macro
+    number"); (b) the split-across-sentences drop is an explicit eval
+    (test_p36_c13_requires_same_sentence_governed_series_label...). C13
+    _macro_series_grounding_flag: swap -> GROUNDING_FLAG, correct pairing ->
+    None. F-8 binds the title to the frozen symbol; word floors 125/90/90 per
+    §4.2d. F-12 phrase-ban fix VERIFIED SOUND: REPORT_PROSE_KEYS =
+    {claim_text, final_synthesis_markdown, live_report_markdown,
+    section_markdown, summary_markdown} is a superset of USER_VISIBLE_PROSE_
+    KEYS (empty gap), so every model-generated prose field stays scanned;
+    only frozen structured metadata is excluded; test proves generated prose
+    still fails while a frozen method_label passes; content_markdown is a
+    separate thread-message subsystem, not in this payload.
+    FINDING-1 (recommended, tiny, non-blocking): the F-12 change inverts the
+    phrase scan from denylist-by-default (repr of whole payload) to allowlist
+    (REPORT_PROSE_KEYS). Currently complete, but fail-OPEN for any FUTURE
+    prose key not added to the set. Add a guard test asserting
+    REPORT_PROSE_KEYS covers USER_VISIBLE_PROSE_KEYS so a later omission
+    can't silently drop a field from the ban. Owner: Codex C, next touch.
+    FINDING-2 + FINDING-3 -> FRED-activation checklist (dormant WITH-variant
+    only, NOT T5A-2 blockers): (2) _macro_series_grounding_flag scans the
+    closing evidence table, but rows aren't sentence-delimited so the whole
+    table is one segment where all labels are present, diluting the
+    same-sentence binding for table cells (F-5 still constrains values);
+    split table rows per-segment or add a mislabeled-row eval when the FRED
+    lane activates. (3) confirm the bound fact_key set {macro_current_value,
+    macro_prior_value, macro_absolute_change} covers ALL value-bearing macro
+    fact_keys C13 emits (e.g. any percent-change field), else a misattributed
+    change value is unbound (still F-5-constrained). Claude E (gate owner)
+    adjudicates 2 + 3 at FRED activation, with RULING-T5A2-1 + the label audit.
+  - `P36-T5A-2` DUAL-PASS ACCEPTED 2026-07-13 - Claude E (gate/eval) PASS +
+    Claude G (architecture/safety) PASS. Verification complementarity: Claude
+    E code-read only and relied on the reported 776/1496 counts; Claude G
+    re-executed the affected gate/eval subset (10 passed offline) - so the
+    affected tests are confirmed green AND the logic confirmed by two readers.
+    CONSOLIDATED PRE-ACTIVATION CHECKLIST (merges both reviewers; all gate the
+    FMP/FRED activations under RULING-T5A2-1, none block T5A-2):
+    * [pre-FMP] Claude E F1 (Claude G confirmed in code, v3_value_gates.py:
+      513-516): Fundamentals 2nd heading keys on calc_financial_ratios (C11)
+      availability ALONE, so once FMP is live a statements-reviewed /
+      C11-unavailable / C12-available section renders "Reported record" but the
+      gate expects "What was reviewed" -> false drop. Fix: key on the statement
+      SNAPSHOT presence (the semantic source: "reported record" = statements
+      were in evidence), not on any single calc's availability. Dormant now
+      (both C11/C12 fail closed pre-FMP).
+    * [pre-FRED] Claude E F2 + Claude G FINDING-3 (same function
+      _macro_series_labels_by_value): label->value pairing is POSITIONAL
+      (assumes the C13 envelope orders the label row before its value rows per
+      series) AND binds only {macro_current_value, macro_prior_value,
+      macro_absolute_change}. Pin the envelope row-grouping contract (or bind
+      per explicit series structure) and confirm the bound fact_key set covers
+      ALL value-bearing macro fact_keys before FRED. Decimal-keyed shared value
+      (two series same number -> either label satisfies) = minor, agreed.
+    * [pre-FRED] Claude G FINDING-2 vs Claude E F3 are COMPLEMENTARY, both on
+      the C13 binding, both dormant: FINDING-2 = UNDER-enforcement (the
+      non-sentence-delimited closing table collapses to one segment, all labels
+      present, so a mislabeled table cell passes); F3 = OVER-enforcement (a
+      coincidental numeral equal to a macro value is forced to carry a label ->
+      minor fail-closed over-drop, = the drop-rate watch-item). Adjudicate both
+      when splitting table rows per-segment at FRED activation.
+    * [T5A-2-adjacent, NOT a WITH-variant item] Claude G FINDING-1 (unique to
+      the architecture lane): the F-12 phrase scan is now an allowlist
+      (REPORT_PROSE_KEYS), fail-OPEN for any future prose key. Add the one-line
+      guard test asserting it covers USER_VISIBLE_PROSE_KEYS. Owner: Codex C,
+      next touch (does not wait for FMP/FRED).
 - `P36-T5B` - Live PM synthesis: typed PmSynthesis (four verdict-incapable
   fields), whole-block fail-closed, composer rendering, PM calc
-  verification access. Owner: Codex C. Status: queued after T5A PASS.
+  verification access. Owner: Codex C (implementation). Status: DESIGN PHASE
+  started 2026-07-13 (T5A-2 dual-PASS accepted). Claude E produces the
+  PM-synthesis role block + typed PmSynthesis contract + gate mechanics
+  (mirroring PHASE_36_T5A2_PUBLIC_ROLE_BLOCKS.md); Claude G prompt/safety
+  review BEFORE Codex C implements. This is the highest-stakes prompt of the
+  five - the synthesis/verdict surface - so the no-recommendation boundary is
+  the review crux. Codex C implementation gated on: (a) T5A-2 checkpoint
+  landed, and (b) Claude G design-review PASS. T6 frozen.
 - `P36-T6` - Live acceptance run (five live roles) under per-run founder
   authorization; founder judges the working version. Status: queued. No
   live acceptance runs before this per founder direction.

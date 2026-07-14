@@ -47,6 +47,7 @@ from app.services.agent_team.tools import (
     TOOL_FORBIDDEN_KEYS,
     TOOL_GENERATED_METRIC_PATTERNS,
     TOOL_PROHIBITED_PHRASES,
+    P36_CALC_TOOL_CONTRACT_VERSION,
     SEC_RAW_PATH_OR_FILE_RE,
 )
 from app.services.agent_team.tools import (
@@ -88,6 +89,7 @@ from app.services.agent_team.auditing.v3_value_gates import (
     P36_ROLE_PROMPT_VERSION,
 )
 from app.services.agent_team.orchestration.p36_risk_prompt import P36_RISK_SYSTEM_PROMPT
+from app.services.agent_team.orchestration.p36_public_prompts import P36_PUBLIC_SYSTEM_PROMPTS
 
 LIVE_ROLE_SYSTEM_PROMPT_TEMPLATE = (
     "You are {role_display_name} on a read-only portfolio review team. A\n"
@@ -292,6 +294,7 @@ def run_tool_mediated_agent_team(
     llm_provider: LLMProvider | None = None,
     live_provider_enabled: bool = False,
     p36_risk_live_enabled: bool = False,
+    p36_public_live_enabled: bool = False,
     market_context: MarketContextExecutionContext | None = None,
 ) -> ToolMediatedRunState:
     catalog = build_evidence_catalog(evidence, registry)
@@ -338,29 +341,56 @@ def run_tool_mediated_agent_team(
             tool_results.append(result)
         by_role["risk_management_agent"] = tuple(risk_results)
 
+    if p36_public_live_enabled:
+        for role_name, tool_names in P36_PUBLIC_BASELINE_TOOLS.items():
+            role_results = list(by_role.get(role_name, ()))
+            present_tools = {result.tool_name for result in role_results}
+            for tool_name in tool_names:
+                if tool_name in present_tools:
+                    continue
+                result = execute_tool_request(
+                    ToolRequest(tool_name=tool_name, requesting_role=role_name),
+                    evidence=evidence,
+                    registry=registry,
+                    market_context=active_market_context,
+                )
+                role_results.append(result)
+                tool_results.append(result)
+            by_role[role_name] = tuple(role_results)
+
     raw_findings = tuple(
         build_role_findings(role, by_role.get(role, ()), evidence) for role in AGENT_TEAM_ROLES if role != "portfolio_manager_agent"
     )
     provider_mode = PROVIDER_MODE
     provider_runs: list[ProviderRunMeta] = []
-    if p36_risk_live_enabled and llm_provider is not None:
+    if (p36_risk_live_enabled or p36_public_live_enabled) and llm_provider is not None:
         provider_mode = LIVE_PROVIDER_MODE
         p36_findings: list[RoleFindingSet] = []
         for finding in raw_findings:
-            if finding.role_name != "risk_management_agent":
+            if finding.role_name == "risk_management_agent" and p36_risk_live_enabled:
+                live_finding, loop_results, loop_runs = _run_p36_risk_loop(
+                    finding,
+                    by_role.get("risk_management_agent", ()),
+                    evidence=evidence,
+                    registry=registry,
+                    provider=llm_provider,
+                    market_context=active_market_context,
+                )
+            elif finding.role_name in P36_PUBLIC_ROLE_CALC_TOOL_IDS and p36_public_live_enabled:
+                live_finding, loop_results, loop_runs = _run_p36_public_role_loop(
+                    finding,
+                    by_role.get(finding.role_name, ()),
+                    evidence=evidence,
+                    registry=registry,
+                    provider=llm_provider,
+                    market_context=active_market_context,
+                )
+            else:
                 p36_findings.append(finding)
                 continue
-            live_finding, loop_results, loop_runs = _run_p36_risk_loop(
-                finding,
-                by_role.get("risk_management_agent", ()),
-                evidence=evidence,
-                registry=registry,
-                provider=llm_provider,
-                market_context=active_market_context,
-            )
             p36_findings.append(live_finding)
             if loop_results:
-                by_role["risk_management_agent"] = (*by_role.get("risk_management_agent", ()), *loop_results)
+                by_role[finding.role_name] = (*by_role.get(finding.role_name, ()), *loop_results)
                 tool_results.extend(loop_results)
             provider_runs.extend(loop_runs)
         raw_findings = tuple(p36_findings)
@@ -387,7 +417,13 @@ def run_tool_mediated_agent_team(
     if role_finding_override is not None:
         raw_findings = tuple(role_finding_override(finding.role_name, finding) for finding in raw_findings)
     received = _received_refs_by_role(by_role)
-    audit = audit_findings(raw_findings, by_role, received, p36_risk_mode=p36_risk_live_enabled)
+    audit = audit_findings(
+        raw_findings,
+        by_role,
+        received,
+        p36_risk_mode=p36_risk_live_enabled,
+        p36_public_mode=p36_public_live_enabled,
+    )
     audited_findings = audit[1]
     auditor = audit[0]
     open_questions = _open_questions_from_contradictions(auditor.contradictions)
@@ -400,6 +436,7 @@ def run_tool_mediated_agent_team(
             received,
             repass=True,
             p36_risk_mode=p36_risk_live_enabled,
+            p36_public_mode=p36_public_live_enabled,
         )
         auditor = AuditorRecord(
             audit_version=AUDIT_VERSION,
@@ -471,6 +508,41 @@ P36_RISK_BASELINE_TOOLS = (
 # These aliases make the Risk-only loop readable while keeping the Tier 1
 # configuration in orchestration.models for the later multi-role run.
 P36_RISK_MAX_ITERATIONS = P36_RISK_MAX_PROVIDER_CALLS
+
+P36_PUBLIC_ROLE_CALC_TOOL_IDS: dict[str, dict[str, str]] = {
+    "technical_analyst": {
+        "C6": "calc_price_range_position",
+        "C7": "calc_return_windows",
+        "C8": "calc_drawdown_stats",
+        "C9": "calc_volatility_stats",
+        "C10": "calc_ma_relationships",
+        "C15": "calc_freshness_inventory",
+    },
+    "fundamentals_analyst": {
+        "C11": "calc_financial_ratios",
+        "C12": "calc_period_change",
+        "C15": "calc_freshness_inventory",
+    },
+    "news_analyst": {
+        "C13": "calc_macro_series_change",
+        "C14": "calc_event_window",
+        "C15": "calc_freshness_inventory",
+    },
+}
+P36_PUBLIC_BASELINE_TOOLS: dict[str, tuple[str, ...]] = {
+    "technical_analyst": ("trade_intent_summary", "market_quote_freshness", "market_context_snapshot"),
+    "fundamentals_analyst": ("trade_intent_summary", "public_company_profile"),
+    "news_analyst": ("trade_intent_summary", "economic_awareness_context", "sec_recent_filings_metadata"),
+}
+P36_PUBLIC_DORMANT_CALC_CAVEATS = {
+    "calc_financial_ratios": "source_rights_not_approved",
+    "calc_period_change": "source_rights_not_approved",
+    "calc_macro_series_change": "source_rights_not_approved",
+}
+P36_PUBLIC_MAX_PROVIDER_CALLS = 3
+P36_PUBLIC_MAX_TOOL_REQUESTS = 8
+P36_PUBLIC_WALL_CLOCK_SECONDS = 90
+P36_PUBLIC_TOKEN_CEILING = P36_PUBLIC_MAX_PROVIDER_CALLS * P36_ANALYST_MAX_TOKENS_PER_ITERATION
 
 
 def _run_p36_risk_loop(
@@ -680,6 +752,241 @@ def _validate_p36_risk_calc_request(
         return ToolRequest(tool_name=tool_name, requesting_role="risk_management_agent", args=dict(args))
     except ValueError:
         return None
+
+
+def _run_p36_public_role_loop(
+    deterministic: RoleFindingSet,
+    initial_results: tuple[ToolResult, ...],
+    *,
+    evidence: SavedEvidencePackageRead,
+    registry: dict[str, ToolRegistryEntry],
+    provider: LLMProvider,
+    market_context: MarketContextExecutionContext,
+) -> tuple[RoleFindingSet, tuple[ToolResult, ...], tuple[ProviderRunMeta, ...]]:
+    """Run one sequential, bounded public-analyst loop over frozen evidence."""
+
+    role_name = deterministic.role_name
+    if role_name not in P36_PUBLIC_ROLE_CALC_TOOL_IDS or deterministic.role_status == "skipped" or not deterministic.findings:
+        return deterministic, (), ()
+    evidence_refs = _ordered_refs(_union_refs(deterministic.findings))
+    if not evidence_refs:
+        return deterministic, (), ()
+
+    loop_results: list[ToolResult] = []
+    provider_runs: list[ProviderRunMeta] = []
+    consecutive_refusals = 0
+    reserved_tokens = 0
+    started_at = monotonic()
+    for iteration in range(1, P36_PUBLIC_MAX_PROVIDER_CALLS + 1):
+        if monotonic() - started_at > P36_PUBLIC_WALL_CLOCK_SECONDS:
+            return _live_provider_fallback(deterministic, "unavailable"), tuple(loop_results), tuple(provider_runs)
+        role_results = (*initial_results, *loop_results)
+        request: LLMProviderRequest | None = None
+        try:
+            request = _p36_public_provider_request(
+                role_name,
+                role_results,
+                evidence_refs=evidence_refs,
+                provider=provider,
+                iteration=iteration,
+            )
+            reserved_tokens += request.max_tokens
+            if reserved_tokens > P36_PUBLIC_TOKEN_CEILING:
+                return _live_provider_fallback(deterministic, "safety_fallback"), tuple(loop_results), tuple(provider_runs)
+            response_payload = _provider_response_payload(provider.complete(request))
+            provider_runs.append(_provider_run_meta(response_payload, fallback_request=request))
+            if str(response_payload.get("status") or "failed") != "ok" or response_payload.get("finish_reason") == "length":
+                return _live_provider_fallback(deterministic, "unavailable"), tuple(loop_results), tuple(provider_runs)
+            parsed = _parse_p36_public_response(role_name, str(response_payload.get("content_markdown") or "").strip())
+            if parsed is None:
+                loop_results.append(blocked_tool_result(tool_name="calc_request_refused", role_name=role_name, evidence_tier="public"))
+                consecutive_refusals += 1
+                if consecutive_refusals >= 2:
+                    return _live_provider_fallback(
+                        deterministic,
+                        "safety_fallback",
+                        eval_flag="live_provider_validation_failed",
+                    ), tuple(loop_results), tuple(provider_runs)
+                continue
+            tool_requests, section_markdown = parsed
+            if section_markdown is not None:
+                return (
+                    RoleFindingSet(
+                        role_name=role_name,
+                        role_status="completed",
+                        findings=deterministic.findings,
+                        warning_codes=tuple(dict.fromkeys((*deterministic.warning_codes, "live_provider_reasoning_used"))),
+                        live_report_markdown=section_markdown,
+                    ),
+                    tuple(loop_results),
+                    tuple(provider_runs),
+                )
+            if iteration == P36_PUBLIC_MAX_PROVIDER_CALLS:
+                return _live_provider_fallback(deterministic, "safety_fallback"), tuple(loop_results), tuple(provider_runs)
+            executed = 0
+            for raw_request in tool_requests:
+                if len(loop_results) >= P36_PUBLIC_MAX_TOOL_REQUESTS:
+                    return _live_provider_fallback(deterministic, "safety_fallback"), tuple(loop_results), tuple(provider_runs)
+                validated = _validate_p36_public_calc_request(raw_request, role_name=role_name, registry=registry)
+                if validated is None:
+                    loop_results.append(blocked_tool_result(tool_name="calc_request_refused", role_name=role_name, evidence_tier="public"))
+                    continue
+                if validated.tool_name in P36_PUBLIC_DORMANT_CALC_CAVEATS:
+                    loop_results.append(
+                        _p36_dormant_public_calculation_result(
+                            tool_name=validated.tool_name,
+                            role_name=role_name,
+                            caveat_code=P36_PUBLIC_DORMANT_CALC_CAVEATS[validated.tool_name],
+                        )
+                    )
+                else:
+                    loop_results.append(
+                        execute_tool_request(
+                            validated,
+                            evidence=evidence,
+                            registry=registry,
+                            market_context=market_context,
+                        )
+                    )
+                executed += 1
+            consecutive_refusals = consecutive_refusals + 1 if executed == 0 else 0
+            if consecutive_refusals >= 2:
+                return _live_provider_fallback(deterministic, "safety_fallback"), tuple(loop_results), tuple(provider_runs)
+        except TimeoutError:
+            return _live_provider_fallback(deterministic, "provider_timeout"), tuple(loop_results), tuple(provider_runs)
+        except (TypeError, ValueError, AttributeError, json.JSONDecodeError):
+            return _live_provider_fallback(
+                deterministic,
+                "safety_fallback",
+                eval_flag="live_provider_validation_failed",
+            ), tuple(loop_results), tuple(provider_runs)
+    return _live_provider_fallback(deterministic, "safety_fallback"), tuple(loop_results), tuple(provider_runs)
+
+
+def _p36_public_provider_request(
+    role_name: str,
+    role_results: tuple[ToolResult, ...],
+    *,
+    evidence_refs: tuple[str, ...],
+    provider: LLMProvider,
+    iteration: int,
+) -> LLMProviderRequest:
+    try:
+        system_prompt = P36_PUBLIC_SYSTEM_PROMPTS[role_name]
+        calculation_ids = tuple(P36_PUBLIC_ROLE_CALC_TOOL_IDS[role_name])
+    except KeyError as exc:
+        raise ValueError(f"unmapped p36 public role: {role_name}") from exc
+    envelopes = tuple(_prompt_tool_result_envelope(result) for result in role_results)
+    messages = (
+        LLMProviderMessage(role="system", content=system_prompt),
+        LLMProviderMessage(
+            role="user",
+            content=repr(
+                {
+                    "iteration": iteration,
+                    "allowed_evidence_refs": evidence_refs,
+                    "tool_result_envelopes": envelopes,
+                    "available_calculation_ids": calculation_ids,
+                    "response_contract": (
+                        "Return either JSON object {'tool_requests': [{'tool_id': <approved calculation ID>, "
+                        "'args': {}}]} or the final markdown analysis section. Tool arguments must be empty."
+                    ),
+                }
+            ),
+        ),
+    )
+    return LLMProviderRequest(
+        request_id=f"p36_{role_name}_iteration_{iteration}",
+        role_name=role_name,  # type: ignore[arg-type]
+        messages=messages,
+        provider=provider.provider_name,
+        model=provider.model,
+        prompt_version=P36_ROLE_PROMPT_VERSION,
+        max_tokens=P36_ANALYST_MAX_TOKENS_PER_ITERATION,
+        timeout_seconds=30,
+        temperature=0.0,
+        metadata={"runner_mode": LIVE_PROVIDER_MODE},
+    )
+
+
+def _parse_p36_public_response(
+    role_name: str,
+    content: str,
+) -> tuple[tuple[dict[str, object], ...], str | None] | None:
+    if not content:
+        return None
+    title_prefixes = {
+        "technical_analyst": "#### Technical analysis — ",
+        "fundamentals_analyst": "#### Company context — ",
+        "news_analyst": "#### Events and macro context — ",
+    }
+    if content.startswith(title_prefixes.get(role_name, "")):
+        return (), content
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict) or set(parsed) != {"tool_requests"}:
+        return None
+    requests = parsed.get("tool_requests")
+    if not isinstance(requests, list) or not requests or not all(isinstance(item, dict) for item in requests):
+        return None
+    return tuple(requests), None
+
+
+def _validate_p36_public_calc_request(
+    raw_request: dict[str, object],
+    *,
+    role_name: str,
+    registry: dict[str, ToolRegistryEntry],
+) -> ToolRequest | None:
+    if set(raw_request) != {"tool_id", "args"}:
+        return None
+    tool_id = raw_request.get("tool_id")
+    args = raw_request.get("args")
+    if not isinstance(tool_id, str) or not isinstance(args, dict) or args:
+        return None
+    tool_name = P36_PUBLIC_ROLE_CALC_TOOL_IDS.get(role_name, {}).get(tool_id)
+    entry = registry.get(tool_name) if tool_name is not None else None
+    if entry is None or not entry.allows_role(role_name):
+        return None
+    try:
+        return ToolRequest(tool_name=tool_name, requesting_role=role_name, args={})  # type: ignore[arg-type]
+    except ValueError:
+        return None
+
+
+def _p36_dormant_public_calculation_result(
+    *,
+    tool_name: str,
+    role_name: str,
+    caveat_code: str,
+) -> ToolResult:
+    evidence_ref = "public_fundamentals_snapshot" if tool_name in {"calc_financial_ratios", "calc_period_change"} else "fred_macro_series_snapshot"
+    return ToolResult(
+        tool_name=tool_name,
+        role_name=role_name,  # type: ignore[arg-type]
+        status="unavailable",
+        evidence_tier="public",
+        data_mode="public",
+        source_key="frozen_saved_evidence_calculations",
+        source_label="Frozen saved-evidence calculations",
+        availability="not_available",
+        caveat_codes=(caveat_code,),
+        evidence_refs=(evidence_ref,),
+        summary_payload={
+            "calc_name": tool_name,
+            "inputs_used": (evidence_ref,),
+            "value_labels": (),
+            "method_label": "Frozen saved-evidence calculation",
+            "as_of_labels": ("saved review time",),
+            "caveats": (caveat_code,),
+            "outcome": "unable_to_verify",
+        },
+        provenance="frozen_saved_evidence",
+        is_mock=True,
+        contract_version=P36_CALC_TOOL_CONTRACT_VERSION,
+    )
 
 
 def _live_provider_role_findings(
@@ -1005,6 +1312,7 @@ def build_tool_mediated_agent_team_summary(
     llm_provider: LLMProvider | None = None,
     live_provider_enabled: bool = False,
     p36_risk_live_enabled: bool = False,
+    p36_public_live_enabled: bool = False,
     market_context: MarketContextExecutionContext | None = None,
 ) -> SavedAgentTeamSummaryRead:
     generated_at = report_generated_at or _now_utc()
@@ -1019,6 +1327,7 @@ def build_tool_mediated_agent_team_summary(
             llm_provider=llm_provider,
             live_provider_enabled=live_provider_enabled,
             p36_risk_live_enabled=p36_risk_live_enabled,
+            p36_public_live_enabled=p36_public_live_enabled,
             market_context=market_context,
         )
         payload = _summary_payload_from_run_state(run_state, evidence, report_generated_at=generated_at)
@@ -1038,6 +1347,7 @@ def build_tool_mediated_agent_team_summary_from_provider_resolution(
     report_generated_at: datetime | None = None,
     registry: dict[str, ToolRegistryEntry] | None = None,
     p36_risk_live_enabled: bool = False,
+    p36_public_live_enabled: bool = False,
     market_context: MarketContextExecutionContext | None = None,
 ) -> SavedAgentTeamSummaryRead:
     """Build a tool-mediated summary using the reviewed provider-factory seam.
@@ -1057,6 +1367,7 @@ def build_tool_mediated_agent_team_summary_from_provider_resolution(
         llm_provider=provider,
         live_provider_enabled=live_enabled,
         p36_risk_live_enabled=p36_risk_live_enabled and live_enabled,
+        p36_public_live_enabled=p36_public_live_enabled and live_enabled,
         market_context=market_context,
     )
 

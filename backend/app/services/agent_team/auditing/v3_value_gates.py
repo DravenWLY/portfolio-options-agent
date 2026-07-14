@@ -22,6 +22,7 @@ from app.services.agent_team.auditing.p36_constants import P36_ATTRIBUTION_MARKE
 from app.services.agent_team.llm_clients.contracts import find_secret_like_values
 from app.services.agent_team.safety.report_output_safety import SOURCE_LEAK_PATTERNS
 from app.services.agent_team.tools import P36_CALC_TOOL_CONTRACT_VERSION, SEC_RAW_PATH_OR_FILE_RE
+from app.services.reports.source_snapshots import FRED_MACRO_SERIES
 
 
 P36_ROLE_PROMPT_VERSION = "p36-role-analysis-v1"
@@ -46,6 +47,37 @@ P36_RISK_HEADINGS = (
     "##### What was verified",
 )
 P36_RISK_TABLE_HEADER = "| Context item | Value or finding | Source and as-of | Status/caveat |"
+P36_PUBLIC_ANALYST_ROLES = frozenset({"technical_analyst", "fundamentals_analyst", "news_analyst"})
+P36_PUBLIC_TITLE_PREFIXES = {
+    "technical_analyst": "#### Technical analysis — ",
+    "fundamentals_analyst": "#### Company context — ",
+    "news_analyst": "#### Events and macro context — ",
+}
+P36_PUBLIC_HEADING_TAILS = {
+    "technical_analyst": (
+        "##### Range and trend context",
+        "##### Volatility context",
+        "##### Gaps and caveats",
+        "##### What was verified",
+    ),
+    "fundamentals_analyst": (
+        "##### Recency and coverage",
+        "##### What was verified",
+    ),
+    "news_analyst": (
+        "##### Filing and release record",
+        "##### Recency against this review",
+        "##### What was verified",
+    ),
+}
+P36_PUBLIC_WORD_BOUNDS = {
+    "technical_analyst": (125, 400),
+    "fundamentals_analyst": (90, 400),
+    "news_analyst": (90, 400),
+}
+# The source snapshot defines every governed display label. No free-text alias
+# can authorize a macro number in News prose.
+FRED_MACRO_SERIES_DISPLAY_ALIASES = frozenset(item.label.lower() for item in FRED_MACRO_SERIES)
 
 _LONG_DATE_RE = re.compile(r"\b([A-Z][a-z]+)\s+(\d{1,2})(?:,\s*(\d{4}))?\b")
 _SPELLED_MAGNITUDE_RE = re.compile(
@@ -130,6 +162,10 @@ _F4_SIZING_HORIZON_RE = re.compile(
     r"\b(?:long|short|medium)[- ](?:term|horizon)\b(?!\s+(?:averages?|moving|trend))",
     re.IGNORECASE,
 )
+_F4_NEWS_INTERPRETATION_RE = re.compile(
+    r"\b(?:priced in|dovish|hawkish|rate cut|rate hike|material(?:ity)?)\b",
+    re.IGNORECASE,
+)
 _F4_INTERPRETATION_RE = re.compile(
     r"\b(?:downtrend|uptrend|overbought|oversold|compression|easing|elevated|low leverage|high leverage|concentrates?|concentration|drawdown|trend|conventional)\b",
     re.IGNORECASE,
@@ -180,6 +216,35 @@ def validate_p36_risk_analysis_section(*, markdown: str, role_results: tuple[_To
     return None
 
 
+def validate_p36_public_analysis_section(
+    *,
+    role_name: str,
+    markdown: str,
+    role_results: tuple[_ToolResultLike, ...],
+) -> str | None:
+    """Apply F-4 through F-11 to one P36 public analyst surface."""
+
+    if role_name not in P36_PUBLIC_ANALYST_ROLES:
+        return STRUCTURE_CONTRACT_FLAG
+    value_flag = validate_v3_value_bearing_markdown(markdown=markdown, role_results=role_results)
+    if value_flag is not None:
+        return value_flag
+    advice_flag = _advice_boundary_flag(markdown, role_name=role_name)
+    if advice_flag is not None:
+        return advice_flag
+    structure_flag = _public_structure_flag(role_name=role_name, markdown=markdown, role_results=role_results)
+    if structure_flag is not None:
+        return structure_flag
+    verified_flag = _what_was_verified_flag(markdown=markdown, role_results=role_results)
+    if verified_flag is not None:
+        return verified_flag
+    if _F11_UNGROUNDED_RE.search(markdown):
+        return GROUNDING_FLAG
+    if role_name == "news_analyst":
+        return _macro_series_grounding_flag(markdown=markdown, role_results=role_results)
+    return None
+
+
 def frozen_artifact_gate_version(artifact: object) -> str:
     """Derive one gate family from frozen prompt/calc versions; never mix them."""
 
@@ -224,9 +289,16 @@ def validate_frozen_artifact_gate_set(artifact: object) -> None:
                 for result in all_tool_results
                 if getattr(result, "role_name", None) == getattr(finding_set, "role_name", None)
             )
+            role_name = getattr(finding_set, "role_name", None)
             flag = (
                 validate_p36_risk_analysis_section(markdown=markdown, role_results=role_results)
-                if has_p36_risk_live_run and getattr(finding_set, "role_name", None) == "risk_management_agent"
+                if has_p36_risk_live_run and role_name == "risk_management_agent"
+                else validate_p36_public_analysis_section(
+                    role_name=role_name,
+                    markdown=markdown,
+                    role_results=role_results,
+                )
+                if role_name in P36_PUBLIC_ANALYST_ROLES
                 else validate_v3_value_bearing_markdown(markdown=markdown, role_results=role_results)
             )
         else:
@@ -363,11 +435,14 @@ def _identifier_privacy_flag(markdown: str, *, allowed: _AllowedNumbers) -> str 
     return None
 
 
-def _advice_boundary_flag(markdown: str) -> str | None:
+def _advice_boundary_flag(markdown: str, *, role_name: str | None = None) -> str | None:
     # Execution phrases are rejected by the provider output contract before
     # this gate runs. The runner then drops the entire live Risk section to its
     # deterministic floor, so F-4 deliberately does not double-handle them.
-    if any(pattern.search(markdown) for pattern in (_F4_FORECAST_RE, _F4_RATING_RE, _F4_SUITABILITY_RE, _F4_ACTION_RE, _F4_SIZING_HORIZON_RE)):
+    patterns = (_F4_FORECAST_RE, _F4_RATING_RE, _F4_SUITABILITY_RE, _F4_ACTION_RE, _F4_SIZING_HORIZON_RE)
+    if role_name == "news_analyst":
+        patterns = (*patterns, _F4_NEWS_INTERPRETATION_RE)
+    if any(pattern.search(markdown) for pattern in patterns):
         return ADVICE_BOUNDARY_FLAG
     prose_without_headings = "\n".join(
         line for line in markdown.splitlines() if not line.strip().startswith("#")
@@ -398,6 +473,115 @@ def _risk_structure_flag(markdown: str) -> str | None:
     )
     word_count = len(re.findall(r"\b[\w'-]+\b", prose))
     return None if 125 <= word_count <= 450 else STRUCTURE_CONTRACT_FLAG
+
+
+def _public_structure_flag(
+    *,
+    role_name: str,
+    markdown: str,
+    role_results: tuple[_ToolResultLike, ...],
+) -> str | None:
+    symbol = _frozen_symbol(role_results)
+    title_prefix = P36_PUBLIC_TITLE_PREFIXES[role_name]
+    if symbol is None or not markdown.startswith(f"{title_prefix}{symbol}"):
+        return STRUCTURE_CONTRACT_FLAG
+    title = f"{title_prefix}{symbol}"
+    headings = [line.strip() for line in markdown.splitlines() if line.strip().startswith("#")]
+    expected = _public_expected_headings(role_name=role_name, role_results=role_results, title=title)
+    if headings != list(expected):
+        return STRUCTURE_CONTRACT_FLAG
+    if markdown.count(P36_RISK_TABLE_HEADER) != 1 or markdown.find(P36_RISK_TABLE_HEADER) < markdown.find("##### What was verified"):
+        return STRUCTURE_CONTRACT_FLAG
+    table_rows = [line for line in markdown.splitlines() if line.strip().startswith("|")]
+    nonempty_lines = [line.strip() for line in markdown.splitlines() if line.strip()]
+    if not table_rows or table_rows[0].strip() != P36_RISK_TABLE_HEADER or not nonempty_lines[-1].startswith("|"):
+        return STRUCTURE_CONTRACT_FLAG
+    prose = " ".join(line for line in markdown.splitlines() if not line.strip().startswith(("#", "|")))
+    lower, upper = P36_PUBLIC_WORD_BOUNDS[role_name]
+    word_count = len(re.findall(r"\b[\w'-]+\b", prose))
+    return None if lower <= word_count <= upper else STRUCTURE_CONTRACT_FLAG
+
+
+def _public_expected_headings(
+    *,
+    role_name: str,
+    role_results: tuple[_ToolResultLike, ...],
+    title: str,
+) -> tuple[str, ...]:
+    if role_name == "technical_analyst":
+        return (title, *P36_PUBLIC_HEADING_TAILS[role_name])
+    if role_name == "fundamentals_analyst":
+        statement_available = _result_is_available(role_results, "calc_financial_ratios")
+        second = "##### Reported record" if statement_available else "##### What was reviewed"
+        return (title, second, *P36_PUBLIC_HEADING_TAILS[role_name])
+    macro_available = _result_is_available(role_results, "calc_macro_series_change")
+    macro = ("##### Macro backdrop",) if macro_available else ()
+    return (title, P36_PUBLIC_HEADING_TAILS[role_name][0], *macro, *P36_PUBLIC_HEADING_TAILS[role_name][1:])
+
+
+def _result_is_available(role_results: tuple[_ToolResultLike, ...], tool_name: str) -> bool:
+    return any(
+        result.tool_name == tool_name and result.availability in {"available", "limited"}
+        for result in role_results
+    )
+
+
+def _frozen_symbol(role_results: tuple[_ToolResultLike, ...]) -> str | None:
+    for result in role_results:
+        if result.tool_name != "trade_intent_summary":
+            continue
+        payload = result.summary_payload
+        if isinstance(payload, dict):
+            symbol = payload.get("symbol_or_underlying")
+            if isinstance(symbol, str) and re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,14}", symbol.strip().upper()):
+                return symbol.strip().upper()
+    return None
+
+
+def _macro_series_grounding_flag(*, markdown: str, role_results: tuple[_ToolResultLike, ...]) -> str | None:
+    labels_by_value = _macro_series_labels_by_value(role_results)
+    if not labels_by_value:
+        return None
+    for sentence in re.split(r"(?<=[.!?])\s+", markdown):
+        lowered = sentence.lower()
+        for match in NUMBER_RE.finditer(sentence):
+            number = _decimal(match.group(0))
+            if number is None:
+                continue
+            labels = labels_by_value.get(number, frozenset())
+            if labels and not any(label in lowered for label in labels):
+                return GROUNDING_FLAG
+    return None
+
+
+def _macro_series_labels_by_value(role_results: tuple[_ToolResultLike, ...]) -> dict[Decimal, frozenset[str]]:
+    labels: dict[Decimal, set[str]] = {}
+    for result in role_results:
+        if result.tool_name != "calc_macro_series_change":
+            continue
+        payload = result.summary_payload
+        rows = payload.get("value_labels") if isinstance(payload, dict) else None
+        if not isinstance(rows, (tuple, list)):
+            continue
+        current_label: str | None = None
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            key = row.get("fact_key")
+            value = row.get("value_label")
+            if key == "macro_series_label" and isinstance(value, str):
+                candidate = value.lower()
+                current_label = candidate if candidate in FRED_MACRO_SERIES_DISPLAY_ALIASES else None
+                continue
+            if current_label is None or key not in {"macro_current_value", "macro_prior_value", "macro_absolute_change"}:
+                continue
+            if not isinstance(value, str):
+                continue
+            for token in NUMBER_RE.findall(value):
+                decimal = _decimal(token)
+                if decimal is not None:
+                    labels.setdefault(decimal, set()).add(current_label)
+    return {value: frozenset(items) for value, items in labels.items()}
 
 
 def _what_was_verified_flag(*, markdown: str, role_results: tuple[_ToolResultLike, ...]) -> str | None:

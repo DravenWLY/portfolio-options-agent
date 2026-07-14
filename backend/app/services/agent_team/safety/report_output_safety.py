@@ -190,6 +190,7 @@ BACKEND_PROSE_METRIC_RE = re.compile(
     re.IGNORECASE,
 )
 BACKEND_METRIC_PROSE_KEYS = frozenset({"claim_text", "final_synthesis_markdown", "summary_markdown", "section_markdown"})
+REPORT_PROSE_KEYS = BACKEND_METRIC_PROSE_KEYS | frozenset({"live_report_markdown"})
 P35_PROHIBITED_REPORT_PATTERNS = (
     re.compile(r"\b(?:overweight|underweight)\b", re.IGNORECASE),
     re.compile(r"\b(?:comfortable|healthy|prudent|excessive)\b", re.IGNORECASE),
@@ -236,13 +237,33 @@ def validate_agent_team_report_output(
 
 
 def _reject_report_phrases(value: object, *, label: str) -> None:
-    rendered = repr(value).lower()
+    # P35 phrase bans govern rendered report prose. Frozen tool envelopes may
+    # carry reviewed method labels (for example, an annualized-volatility
+    # calculation) that are never displayed as prose; those remain protected
+    # by the envelope, privacy, and v3 gate validators instead of tripping a
+    # substring scan meant for generated language.
+    rendered = repr(_report_prose_payload(value)).lower()
     for disclosure in REPORT_ALLOWED_NEGATED_DISCLOSURES:
         rendered = rendered.replace(disclosure, "")
     if any(phrase in rendered for phrase in REPORT_PROHIBITED_PHRASES):
         raise ValueError(f"{label} contains prohibited advice or execution wording")
     if any(pattern.search(rendered) for pattern in P35_PROHIBITED_REPORT_PATTERNS):
         raise ValueError(f"{label} contains prohibited advice, instruction, or evaluative wording")
+
+
+def _report_prose_payload(value: object, *, key: str | None = None) -> object:
+    """Project report payloads to user-visible prose for phrase scanning."""
+
+    if isinstance(value, dict):
+        return {
+            item_key: _report_prose_payload(item, key=str(item_key))
+            for item_key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return tuple(_report_prose_payload(item, key=key) for item in value)
+    if isinstance(value, str):
+        return value if key in REPORT_PROSE_KEYS else ""
+    return value
 
 
 def _payload_for_provider_output_safety(value: object, *, key: str | None = None) -> object:

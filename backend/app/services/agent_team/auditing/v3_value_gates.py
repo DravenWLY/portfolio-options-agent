@@ -209,7 +209,42 @@ _F4_SIZING_HORIZON_RE = re.compile(
     re.IGNORECASE,
 )
 _F4_NEWS_INTERPRETATION_RE = re.compile(
-    r"\b(?:priced in|dovish|hawkish|rate cut|rate hike|material(?:ity)?)\b",
+    r"\b(?:priced in|dovish|hawkish|rate cut|rate hike)\b",
+    re.IGNORECASE,
+)
+_F4_NEWS_MATERIALITY_RE = re.compile(
+    r"\b(?:im)?material(?:ity)?\b",
+    re.IGNORECASE,
+)
+_F4_SHARED_PATTERNS = (
+    _F4_FORECAST_RE,
+    _F4_RATING_RE,
+    _F4_SUITABILITY_RE,
+    _F4_ACTION_RE,
+    _F4_SIZING_HORIZON_RE,
+)
+# Every role-specific F-4 pattern is registered here. PM synthesis inherits
+# their union because it weighs every analyst surface, not only shared advice.
+_F4_ROLE_SPECIFIC_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "news_analyst": (
+        _F4_NEWS_INTERPRETATION_RE,
+    ),
+}
+# Role-only patterns are intentionally excluded from PM inheritance. News
+# needs a stricter materiality rule for event context; PM uses its own
+# sentence-aware materiality rule so it can still weigh saved evidence.
+_F4_ROLE_ONLY_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "news_analyst": (_F4_NEWS_MATERIALITY_RE,),
+}
+_PM_MATERIALITY_PREDICATE_RE = re.compile(
+    r"\b(?:is|was|are|were|remains?|stays?|seems?|appears?|looks?|becomes?|became)\s+"
+    r"(?:(?:not|very|quite|highly|clearly|rather|extremely|somewhat|fairly|truly|deeply|\w+ly)\s+)*"
+    r"(?:im)?material\b",
+    re.IGNORECASE,
+)
+_PM_MATERIALITY_NOMINAL_RE = re.compile(r"\bmateriality\b", re.IGNORECASE)
+_PM_MATERIALITY_EVIDENCE_NOUN_RE = re.compile(
+    r"\b(?:sections?|evidence|inputs?|findings?|snapshots?|reading)\b",
     re.IGNORECASE,
 )
 _F4_INTERPRETATION_RE = re.compile(
@@ -619,13 +654,25 @@ def _advice_boundary_flag(
     *,
     role_name: str | None = None,
     attribution_markers: tuple[str, ...] = P36_ATTRIBUTION_MARKERS,
+    include_all_role_specific: bool = False,
 ) -> str | None:
     # Execution phrases are rejected by the provider output contract before
     # this gate runs. The runner then drops the entire live Risk section to its
     # deterministic floor, so F-4 deliberately does not double-handle them.
-    patterns = (_F4_FORECAST_RE, _F4_RATING_RE, _F4_SUITABILITY_RE, _F4_ACTION_RE, _F4_SIZING_HORIZON_RE)
-    if role_name == "news_analyst":
-        patterns = (*patterns, _F4_NEWS_INTERPRETATION_RE)
+    role_specific_patterns = (
+        tuple(
+            pattern
+            for patterns in _F4_ROLE_SPECIFIC_PATTERNS.values()
+            for pattern in patterns
+        )
+        if include_all_role_specific
+        else _F4_ROLE_SPECIFIC_PATTERNS.get(role_name or "", ())
+    )
+    patterns = (
+        *_F4_SHARED_PATTERNS,
+        *role_specific_patterns,
+        *_F4_ROLE_ONLY_PATTERNS.get(role_name or "", ()),
+    )
     if any(pattern.search(markdown) for pattern in patterns):
         return ADVICE_BOUNDARY_FLAG
     prose_without_headings = "\n".join(
@@ -704,9 +751,15 @@ def _pm_advice_boundary_flag(
     *,
     freeform_markdown: str,
 ) -> str | None:
-    shared_flag = _advice_boundary_flag(markdown, attribution_markers=P36_PM_ATTRIBUTION_MARKERS)
+    shared_flag = _advice_boundary_flag(
+        markdown,
+        attribution_markers=P36_PM_ATTRIBUTION_MARKERS,
+        include_all_role_specific=True,
+    )
     if shared_flag is not None:
         return shared_flag
+    if _pm_materiality_flag(markdown):
+        return ADVICE_BOUNDARY_FLAG
     if (
         _PM_TRADE_SUBJECT_FRAME_RE.search(markdown)
         or _PM_DIRECTIONAL_LEAN_RE.search(markdown)
@@ -716,6 +769,20 @@ def _pm_advice_boundary_flag(
     ):
         return ADVICE_BOUNDARY_FLAG
     return None
+
+
+def _pm_materiality_flag(markdown: str) -> bool:
+    """Block PM public-record materiality while retaining evidence weighting."""
+
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", markdown):
+        if not (
+            _PM_MATERIALITY_PREDICATE_RE.search(sentence)
+            or _PM_MATERIALITY_NOMINAL_RE.search(sentence)
+        ):
+            continue
+        if not _PM_MATERIALITY_EVIDENCE_NOUN_RE.search(sentence):
+            return True
+    return False
 
 
 def _pm_grounding_flag(*, markdown: str, accepted_role_names: frozenset[str]) -> str | None:

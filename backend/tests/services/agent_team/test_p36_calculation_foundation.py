@@ -16,6 +16,7 @@ from app.services.agent_team.auditing.v3_value_gates import (
     V2_ARTIFACT_SCHEMA_VERSION,
     WHAT_WAS_VERIFIED_FLAG,
     _advice_boundary_flag,
+    _pm_advice_boundary_flag,
     frozen_artifact_gate_version,
     validate_p36_public_analysis_section,
     validate_p36_pm_synthesis,
@@ -1488,6 +1489,41 @@ def test_p36_public_role_specific_advice_boundary_canaries_drop_sections(
     ) == ADVICE_BOUNDARY_FLAG
 
 
+@pytest.mark.parametrize(
+    "news_verdict",
+    (
+        "The impact is material.",
+        "The news is material.",
+        "The 8-K is material.",
+        "The guidance update is material.",
+        "It is material.",
+        "This is material.",
+        "The catalyst is material.",
+        "The print was material.",
+        "The filing is not material.",
+        "The filing is highly material.",
+        "The disclosure is quite material.",
+        "The materiality here is high.",
+    ),
+)
+def test_p36_news_bare_materiality_rule_matches_aa146a2(news_verdict: str) -> None:
+    assert _advice_boundary_flag(news_verdict, role_name="news_analyst") == ADVICE_BOUNDARY_FLAG
+
+
+@pytest.mark.parametrize(
+    "news_verdict",
+    (
+        "The data is immaterial.",
+        "The filing is immaterial.",
+        "The charge was immaterial.",
+        "The immateriality of the item was noted.",
+    ),
+)
+def test_p36_news_immateriality_tightening_is_ratified_by_ruling_t5b_3(news_verdict: str) -> None:
+    # RULING-T5B-3 ratified this fail-closed tightening over aa146a2.
+    assert _advice_boundary_flag(news_verdict, role_name="news_analyst") == ADVICE_BOUNDARY_FLAG
+
+
 def test_p36_public_f9_and_f11_drop_unanchored_or_filing_content_prose() -> None:
     results = _p36_public_role_results()
     technical = _p36_public_section("technical_analyst")
@@ -1533,7 +1569,12 @@ def _p36_pm_synthesis_payload() -> dict[str, object]:
     }
 
 
-def _validate_pm_payload(payload: dict[str, object], *, accepted: frozenset[str] | None = None) -> str | None:
+def _validate_pm_payload(
+    payload: dict[str, object],
+    *,
+    accepted: frozenset[str] | None = None,
+    surfaced_markdown: tuple[str, ...] = (),
+) -> str | None:
     return validate_p36_pm_synthesis(
         evidence_weighting=str(payload["evidence_weighting"]),
         evidence_tensions=tuple(payload["evidence_tensions"]),  # type: ignore[arg-type]
@@ -1542,6 +1583,7 @@ def _validate_pm_payload(payload: dict[str, object], *, accepted: frozenset[str]
         role_results=(),
         accepted_role_names=accepted
         or frozenset({"technical_analyst", "fundamentals_analyst", "news_analyst"}),
+        surfaced_markdown=surfaced_markdown,
     )
 
 
@@ -1592,6 +1634,149 @@ def test_p36_pm_hard_verdict_canaries_drop_from_every_freeform_field(
     else:
         payload[field_name] = f"{verdict} The saved evidence remains limited by its frozen scope."
     assert _validate_pm_payload(payload) == ADVICE_BOUNDARY_FLAG
+
+
+@pytest.mark.parametrize(
+    "news_verdict",
+    (
+        "The filing is not material.",
+        "The release is already priced in.",
+        "The tone was hawkish.",
+        "The rate cut is dovish.",
+        "It is material.",
+        "The 8-K is material.",
+        "The filing is highly material.",
+        "The event is not material.",
+        "The materiality of the filing is high.",
+        "The impact was immaterial.",
+    ),
+)
+@pytest.mark.parametrize("field_name", ("evidence_weighting", "trust_assessment"))
+def test_p36_pm_inherits_news_interpretation_bans_in_every_freeform_field(
+    news_verdict: str,
+    field_name: str,
+) -> None:
+    payload = _p36_pm_synthesis_payload()
+    if field_name == "evidence_weighting":
+        payload[field_name] = (
+            f"{news_verdict} The company section is a saved input. The events section is a saved input."
+        )
+    else:
+        payload[field_name] = f"{news_verdict} The saved evidence remains limited by its frozen scope."
+    surfaced_markdown = ("The accepted events section listed Form 8-K.",) if "8-K" in news_verdict else ()
+    flag = _validate_pm_payload(payload, surfaced_markdown=surfaced_markdown)
+    assert flag is not None
+    if news_verdict == "The 8-K is material.":
+        # "The 8" is treated as an invalid long-date form by F-5 and therefore
+        # fails first. The direct probe below still locks the PM F-4 decision.
+        assert flag == NUMERIC_PROVENANCE_FLAG
+    else:
+        assert flag == ADVICE_BOUNDARY_FLAG
+
+
+def test_p36_pm_materiality_gate_blocks_unlisted_record_subject_independent_of_f5() -> None:
+    assert _pm_advice_boundary_flag(
+        "The 8-K is material.",
+        freeform_markdown="The 8-K is material.",
+    ) == ADVICE_BOUNDARY_FLAG
+
+
+@pytest.mark.parametrize(
+    "evidence_phrase",
+    (
+        "The company section is not material to this reading.",
+        "The saved sections are the material inputs.",
+        "The source material was reviewed.",
+        "A material portion of the weighting comes from the profile.",
+        "The evidence is material to the synthesis.",
+        "The findings differ materially across sections.",
+    ),
+)
+def test_p36_pm_allows_material_language_when_it_weights_evidence(evidence_phrase: str) -> None:
+    payload = _p36_pm_synthesis_payload()
+    payload["evidence_weighting"] = (
+        f"{evidence_phrase} The company section is a saved input. The events section is a saved input."
+    )
+    surfaced_markdown = ("The accepted events section listed Form 8-K.",) if "8-K" in evidence_phrase else ()
+    assert _validate_pm_payload(payload, surfaced_markdown=surfaced_markdown) is None
+
+
+@pytest.mark.parametrize(
+    "residual_phrase",
+    (
+        "The section shows the filing is material.",
+        "The evidence confirms the 8-K is material.",
+        "The company section and the events section disagree on dates, and the filing is highly material.",
+    ),
+)
+def test_p36_pm_known_residual_same_sentence_colocation_is_documented(residual_phrase: str) -> None:
+    # Tolerated co-location gap, not approved output. A future targeted gate
+    # may tighten this behavior without changing the accepted-output contract.
+    payload = _p36_pm_synthesis_payload()
+    payload["evidence_weighting"] = (
+        f"{residual_phrase} The company section is a saved input. The events section is a saved input."
+    )
+    surfaced_markdown = ("The accepted events section listed Form 8-K.",) if "8-K" in residual_phrase else ()
+    assert _validate_pm_payload(payload, surfaced_markdown=surfaced_markdown) is None
+
+
+def test_p36_pm_known_residual_predicate_severing_wrap_is_documented() -> None:
+    # Tolerated predicate-severing wrap gap introduced by the F-B2 splitter,
+    # not approved output. A future normalize-per-field pass may tighten this
+    # behavior without changing the accepted-output contract.
+    payload = _p36_pm_synthesis_payload()
+    payload["evidence_weighting"] = (
+        "The filing is\nmaterial. The company section is a saved input. The events section is a saved input."
+    )
+    assert _validate_pm_payload(payload) is None
+
+
+def test_p36_pm_wrapped_nominal_materiality_still_drops() -> None:
+    # The nominal materiality ban survives a newline and bounds the wrap residual.
+    payload = _p36_pm_synthesis_payload()
+    payload["evidence_weighting"] = (
+        "The materiality\nof the filing is high. The company section is a saved input. The events section is a saved input."
+    )
+    assert _validate_pm_payload(payload) == ADVICE_BOUNDARY_FLAG
+
+
+def test_p36_pm_materiality_does_not_merge_unpunctuated_priorities_into_trust() -> None:
+    control = _p36_pm_synthesis_payload()
+    control["verification_priorities"] = (
+        "Verify the latest saved snapshot date before relying on this report.",
+        "Review the saved coverage before relying on this report.",
+    )
+    control["trust_assessment"] = (
+        "The materiality of the filing is high. "
+        "The saved evidence can bear only the weight allowed by its freshness and coverage caveats."
+    )
+    assert _validate_pm_payload(control) == ADVICE_BOUNDARY_FLAG
+
+    probe = _p36_pm_synthesis_payload()
+    probe["verification_priorities"] = (
+        "Verify the latest saved snapshot date before relying on this report.",
+        "Review the saved snapshot inputs before relying on this report",
+    )
+    probe["trust_assessment"] = control["trust_assessment"]
+    assert _validate_pm_payload(probe) == ADVICE_BOUNDARY_FLAG
+
+
+def test_p36_pm_materiality_does_not_merge_unpunctuated_weighting_into_tension() -> None:
+    control = _p36_pm_synthesis_payload()
+    control["evidence_weighting"] = (
+        "The company section carries the most weight because it is the reviewed profile record. "
+        "The events section supplies dated record context without filing contents. "
+        "The saved inputs stand."
+    )
+    control["evidence_tensions"] = (
+        "The filing is highly material. The tension remains unresolved.",
+    )
+    assert _validate_pm_payload(control) == ADVICE_BOUNDARY_FLAG
+
+    probe = _p36_pm_synthesis_payload()
+    probe["evidence_weighting"] = control["evidence_weighting"].removesuffix(".")
+    probe["evidence_tensions"] = control["evidence_tensions"]
+    assert _validate_pm_payload(probe) == ADVICE_BOUNDARY_FLAG
 
 
 def test_p36_pm_tension_resolution_and_section_attribution_marker_are_gated() -> None:

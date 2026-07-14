@@ -393,6 +393,12 @@ that still passes the required prose. A is the minimal principled relaxation.
 F-6-import binding condition above. Claude E specifies, Claude G ratifies, per
 the established governance for safety-scanner changes.
 
+**RULING-T5B-3 (Claude G, 2026-07-14):** the predicate-severing wrap
+`"The filing is\nmaterial."` is a tolerated, canary-locked residual rather than
+approved output; a future normalize-per-field pass may tighten it without
+changing the accepted-output contract, while wrapped nominal materiality remains
+blocked.
+
 **Required tests:** accepted Risk section reaches the PM; `cash_balance` /
 `account_id` / other compound tokens, identifiers, secrets, paths, and raw
 payloads still fail closed in the PM payload; the relaxation does not apply

@@ -11,15 +11,18 @@ from app.services.agent_team.auditing.v3_value_gates import (
     IDENTIFIER_AMBIGUOUS_FLAG,
     IDENTIFIER_PRIVACY_FLAG,
     NUMERIC_PROVENANCE_FLAG,
+    P36_PM_PROMPT_VERSION,
     STRUCTURE_CONTRACT_FLAG,
     V2_ARTIFACT_SCHEMA_VERSION,
     WHAT_WAS_VERIFIED_FLAG,
     _advice_boundary_flag,
     frozen_artifact_gate_version,
     validate_p36_public_analysis_section,
+    validate_p36_pm_synthesis,
     validate_v3_value_bearing_markdown,
     validate_p36_risk_analysis_section,
 )
+from app.services.agent_team.auditing.p36_constants import P36_F6_VOCABULARY_ONLY_TOKENS
 from app.services.agent_team.orchestration.deterministic_standalone import (
     build_deterministic_standalone_summary_check,
     freeze_deterministic_standalone_summary_check,
@@ -28,6 +31,7 @@ from app.services.agent_team.llm_clients.contracts import LLMProviderResponse
 from app.services.agent_team.llm_clients.contracts import registered_static_system_prompts
 from app.services.agent_team.orchestration import tool_mediated_runner as runner
 from app.services.agent_team.orchestration.p36_public_prompts import P36_PUBLIC_SYSTEM_PROMPTS
+from app.services.agent_team.orchestration.p36_pm_prompt import P36_PM_SYSTEM_PROMPT
 from app.services.agent_team.orchestration.tool_mediated_runner import (
     build_tool_mediated_agent_team_summary,
     run_tool_mediated_agent_team,
@@ -784,6 +788,30 @@ def test_p36_v3_frozen_role_text_allows_topic_vocabulary_but_blocks_compound_pri
         SavedToolMediatedRunArtifactRead.model_validate(compound_token)
 
 
+@pytest.mark.parametrize("topic", tuple(sorted(P36_F6_VOCABULARY_ONLY_TOKENS)))
+@pytest.mark.parametrize(
+    "role_name",
+    ("risk_management_agent", "technical_analyst", "fundamentals_analyst", "news_analyst"),
+)
+def test_p36_f6_vocabulary_import_does_not_change_numeric_or_identifier_gate_outcomes(
+    role_name: str,
+    topic: str,
+) -> None:
+    sentence = f"The {topic} 48213 was reviewed in the saved evidence."
+    expected = IDENTIFIER_PRIVACY_FLAG if topic == "account" else NUMERIC_PROVENANCE_FLAG
+    if role_name == "risk_management_agent":
+        assert validate_p36_risk_analysis_section(
+            markdown=f"{_p36_risk_section(include_values=True)}\n\n{sentence}",
+            role_results=_p36_risk_gate_results(),
+        ) == expected
+        return
+    assert validate_p36_public_analysis_section(
+        role_name=role_name,
+        markdown=f"{_p36_public_section(role_name)}\n\n{sentence}",
+        role_results=_p36_public_role_results()[role_name],
+    ) == expected
+
+
 class _P36RiskLoopProvider:
     provider_name = "p36-risk-loop-fake"
     model = "p36-risk-loop-model"
@@ -1482,3 +1510,307 @@ def test_p36_public_f9_and_f11_drop_unanchored_or_filing_content_prose() -> None
         markdown=news,
         role_results=results["news_analyst"],
     ) == GROUNDING_FLAG
+
+
+def _p36_pm_synthesis_payload() -> dict[str, object]:
+    return {
+        "evidence_weighting": (
+            "The company section carries the most weight because it is the reviewed profile record. "
+            "The events section supplies dated record context without filing contents. "
+            "The deterministic findings retain the documented scope and freshness limits."
+        ),
+        "evidence_tensions": (
+            "The company section and the events section cover different dated records, and the tension remains unresolved. Re-syncing the saved inputs would resolve it.",
+        ),
+        "verification_priorities": (
+            "Verify the latest saved snapshot date before relying on this report.",
+            "Review the public-record coverage against the saved scope.",
+        ),
+        "trust_assessment": (
+            "The deterministic findings and accepted sections provide frozen context for this report. "
+            "The saved evidence can bear only the weight allowed by its freshness and coverage caveats."
+        ),
+    }
+
+
+def _validate_pm_payload(payload: dict[str, object], *, accepted: frozenset[str] | None = None) -> str | None:
+    return validate_p36_pm_synthesis(
+        evidence_weighting=str(payload["evidence_weighting"]),
+        evidence_tensions=tuple(payload["evidence_tensions"]),  # type: ignore[arg-type]
+        verification_priorities=tuple(payload["verification_priorities"]),  # type: ignore[arg-type]
+        trust_assessment=str(payload["trust_assessment"]),
+        role_results=(),
+        accepted_role_names=accepted
+        or frozenset({"technical_analyst", "fundamentals_analyst", "news_analyst"}),
+    )
+
+
+def test_p36_pm_prompt_is_reviewed_static_and_typed_gate_accepts_safe_synthesis() -> None:
+    assert P36_PM_SYSTEM_PROMPT in registered_static_system_prompts()
+    assert "Return one strict JSON object and nothing else" in P36_PM_SYSTEM_PROMPT
+    assert _validate_pm_payload(_p36_pm_synthesis_payload()) is None
+
+
+@pytest.mark.parametrize(
+    "verdict",
+    (
+        "The trade is attractive.",
+        "The trade holds up well.",
+        "The setup looks solid.",
+        "The evidence points the right way.",
+        "The idea makes sense.",
+        "On balance the position stands up.",
+    ),
+)
+def test_p36_pm_soft_and_hard_verdicts_drop_from_freeform_fields(verdict: str) -> None:
+    payload = _p36_pm_synthesis_payload()
+    payload["evidence_weighting"] = verdict + " The technical section is a saved input. The company section is a saved input."
+    assert _validate_pm_payload(payload) == ADVICE_BOUNDARY_FLAG
+    payload = _p36_pm_synthesis_payload()
+    payload["trust_assessment"] = verdict + " The saved evidence remains limited by its frozen scope."
+    assert _validate_pm_payload(payload) == ADVICE_BOUNDARY_FLAG
+
+
+@pytest.mark.parametrize(
+    "verdict",
+    (
+        "Buy this trade.",
+        "Reduce the position.",
+        "This is a good entry.",
+    ),
+)
+@pytest.mark.parametrize("field_name", ("evidence_weighting", "trust_assessment"))
+def test_p36_pm_hard_verdict_canaries_drop_from_every_freeform_field(
+    verdict: str,
+    field_name: str,
+) -> None:
+    payload = _p36_pm_synthesis_payload()
+    if field_name == "evidence_weighting":
+        payload[field_name] = (
+            f"{verdict} The company section is a saved input. The events section is a saved input."
+        )
+    else:
+        payload[field_name] = f"{verdict} The saved evidence remains limited by its frozen scope."
+    assert _validate_pm_payload(payload) == ADVICE_BOUNDARY_FLAG
+
+
+def test_p36_pm_tension_resolution_and_section_attribution_marker_are_gated() -> None:
+    payload = _p36_pm_synthesis_payload()
+    payload["evidence_tensions"] = (
+        "The technical section identifies a downtrend, and the tension favors that record. The company section is a saved input.",
+    )
+    assert _validate_pm_payload(payload) == ADVICE_BOUNDARY_FLAG
+
+    payload = _p36_pm_synthesis_payload()
+    payload["evidence_weighting"] = (
+        "The company section describes elevated concentration in the saved record. "
+        "The events section is a saved input. The deterministic findings retain the documented scope."
+    )
+    assert _validate_pm_payload(payload) is None
+
+
+def test_p36_pm_numeric_provenance_allows_only_surfaced_values() -> None:
+    payload = _p36_pm_synthesis_payload()
+    payload["evidence_weighting"] = (
+        "The company section records 48213 as a new figure. "
+        "The events section is a saved input. The deterministic findings retain the documented scope."
+    )
+    assert _validate_pm_payload(payload) == NUMERIC_PROVENANCE_FLAG
+
+
+def test_p36_pm_typed_f1_f2_f3_attribution_and_grounding_gates_fail_closed() -> None:
+    payload = _p36_pm_synthesis_payload()
+    payload["verification_priorities"] = ("Reduce the position by half.", "Review the frozen inputs.")
+    assert _validate_pm_payload(payload) == STRUCTURE_CONTRACT_FLAG
+
+    payload = _p36_pm_synthesis_payload()
+    payload["evidence_tensions"] = ("- The technical section has a gap.",)
+    assert _validate_pm_payload(payload) == STRUCTURE_CONTRACT_FLAG
+
+    payload = _p36_pm_synthesis_payload()
+    payload["evidence_weighting"] = (
+        "Concentration is elevated in the record. The company section is a saved input. The events section is a saved input."
+    )
+    assert _validate_pm_payload(payload) == "attribution_required_blocked"
+
+    payload = _p36_pm_synthesis_payload()
+    payload["evidence_weighting"] = (
+        "The risk section carries the most weight because it is the freshest saved input. The company section is a saved input. The events section is a saved input."
+    )
+    assert _validate_pm_payload(payload, accepted=frozenset({"technical_analyst", "fundamentals_analyst"})) == GROUNDING_FLAG
+
+
+class _P36PmLoopProvider:
+    provider_name = "p36-pm-loop-fake"
+    model = "p36-pm-loop-model"
+
+    def __init__(self, *, unsafe_pm: bool = False, unavailable_pm: bool = False) -> None:
+        self.calls = []
+        self.unsafe_pm = unsafe_pm
+        self.unavailable_pm = unavailable_pm
+
+    def complete(self, request):
+        self.calls.append(request)
+        if request.role_name in {"technical_analyst", "fundamentals_analyst", "news_analyst"}:
+            content = _p36_public_section(request.role_name)
+            return LLMProviderResponse(
+                request_id=request.request_id,
+                role_name=request.role_name,
+                status="ok",
+                provider=self.provider_name,
+                model=self.model,
+                prompt_version=request.prompt_version,
+                content_markdown=content,
+                is_mock=True,
+                finish_reason="stop",
+            )
+        if self.unavailable_pm:
+            return LLMProviderResponse(
+                request_id=request.request_id,
+                role_name=request.role_name,
+                status="provider_unavailable",
+                provider=self.provider_name,
+                model=self.model,
+                prompt_version=request.prompt_version,
+                content_markdown=None,
+                is_mock=True,
+                finish_reason="stop",
+            )
+        payload = _p36_pm_synthesis_payload()
+        if self.unsafe_pm:
+            payload["evidence_weighting"] = (
+                "The trade holds up well. The technical section is a saved input. The company section is a saved input."
+            )
+        return LLMProviderResponse(
+            request_id=request.request_id,
+            role_name=request.role_name,
+            status="ok",
+            provider=self.provider_name,
+            model=self.model,
+            prompt_version=request.prompt_version,
+            content_markdown=json.dumps(payload),
+            is_mock=True,
+            finish_reason="stop",
+        )
+
+
+class _P36PmWithRiskProvider:
+    provider_name = "p36-pm-with-risk-fake"
+    model = "p36-pm-with-risk-model"
+
+    def __init__(self) -> None:
+        self.calls = []
+        self.risk_call_count = 0
+
+    def complete(self, request):
+        self.calls.append(request)
+        if request.role_name == "risk_management_agent":
+            self.risk_call_count += 1
+            content = (
+                '{"tool_requests": ['
+                '{"tool_id": "C1", "args": {"scope_category": "industry"}}, '
+                '{"tool_id": "C2", "args": {}}, '
+                '{"tool_id": "C3", "args": {}}, '
+                '{"tool_id": "C15", "args": {}}'
+                ']}'
+                if self.risk_call_count == 1
+                else _p36_risk_section()
+            )
+        elif request.role_name in {"technical_analyst", "fundamentals_analyst", "news_analyst"}:
+            content = _p36_public_section(request.role_name)
+        else:
+            content = json.dumps(_p36_pm_synthesis_payload())
+        return LLMProviderResponse(
+            request_id=request.request_id,
+            role_name=request.role_name,
+            status="ok",
+            provider=self.provider_name,
+            model=self.model,
+            prompt_version=request.prompt_version,
+            content_markdown=content,
+            is_mock=True,
+            finish_reason="stop",
+        )
+
+
+def test_p36_pm_loop_appends_typed_synthesis_and_freezes_without_rerun() -> None:
+    provider = _P36PmLoopProvider()
+    evidence = _public_calculation_evidence(include_eod=True)
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 7, 12, tzinfo=UTC),
+        llm_provider=provider,
+        p36_public_live_enabled=True,
+        p36_pm_live_enabled=True,
+    )
+    assert summary.final_synthesis_authored_by == "portfolio_manager_agent"
+    assert "**Portfolio Manager synthesis**" in (summary.final_synthesis_markdown or "")
+    assert summary.tool_run_artifact is not None
+    assert summary.tool_run_artifact.pm_synthesis is not None
+    assert any(run.prompt_version == P36_PM_PROMPT_VERSION for run in summary.tool_run_artifact.provider_runs)
+    calls_before_readback = len(provider.calls)
+    SavedToolMediatedRunArtifactRead.model_validate(summary.tool_run_artifact.model_dump(mode="json"))
+    assert len(provider.calls) == calls_before_readback
+    missing_pm_run = summary.tool_run_artifact.model_dump(mode="python")
+    missing_pm_run["provider_runs"] = tuple(
+        run for run in missing_pm_run["provider_runs"] if run["role_name"] != "portfolio_manager_agent"
+    )
+    with pytest.raises(ValueError, match="matching PM provider run"):
+        SavedToolMediatedRunArtifactRead.model_validate(missing_pm_run)
+    assert [request.role_name for request in provider.calls] == [
+        "fundamentals_analyst",
+        "news_analyst",
+        "technical_analyst",
+        "portfolio_manager_agent",
+    ]
+
+
+def test_p36_pm_receives_accepted_risk_section_with_only_vocabulary_relaxed() -> None:
+    provider = _P36PmWithRiskProvider()
+    summary = build_tool_mediated_agent_team_summary(
+        _public_calculation_evidence(include_eod=True),
+        report_generated_at=datetime(2026, 7, 12, tzinfo=UTC),
+        llm_provider=provider,
+        p36_risk_live_enabled=True,
+        p36_public_live_enabled=True,
+        p36_pm_live_enabled=True,
+    )
+
+    assert summary.final_synthesis_authored_by == "portfolio_manager_agent"
+    pm_request = provider.calls[-1]
+    assert pm_request.role_name == "portfolio_manager_agent"
+    assert pm_request.messages[1].content_kind == "p36_pm_accepted_sections"
+    assert "cash calculation" in pm_request.messages[1].content
+    assert [request.role_name for request in provider.calls] == [
+        "fundamentals_analyst",
+        "news_analyst",
+        "technical_analyst",
+        "risk_management_agent",
+        "risk_management_agent",
+        "portfolio_manager_agent",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("unsafe_pm", "unavailable_pm", "expected_line"),
+    (
+        (True, False, "did not pass its safety checks and was omitted"),
+        (False, True, "was not available for this run"),
+    ),
+)
+def test_p36_pm_loop_drops_the_whole_block_to_the_deterministic_floor(
+    unsafe_pm: bool,
+    unavailable_pm: bool,
+    expected_line: str,
+) -> None:
+    summary = build_tool_mediated_agent_team_summary(
+        _public_calculation_evidence(include_eod=True),
+        report_generated_at=datetime(2026, 7, 12, tzinfo=UTC),
+        llm_provider=_P36PmLoopProvider(unsafe_pm=unsafe_pm, unavailable_pm=unavailable_pm),
+        p36_public_live_enabled=True,
+        p36_pm_live_enabled=True,
+    )
+    assert summary.final_synthesis_authored_by == "deterministic_template"
+    assert expected_line in (summary.final_synthesis_markdown or "")
+    assert summary.tool_run_artifact is not None
+    assert summary.tool_run_artifact.pm_synthesis is None

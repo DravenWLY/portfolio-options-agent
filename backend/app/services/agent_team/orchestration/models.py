@@ -313,6 +313,16 @@ class LiveRoleResult:
 
 
 @dataclass(frozen=True)
+class PmSynthesis:
+    """Validated typed P36 PM content before deterministic document rendering."""
+
+    evidence_weighting: str
+    evidence_tensions: tuple[str, ...]
+    verification_priorities: tuple[str, ...]
+    trust_assessment: str
+
+
+@dataclass(frozen=True)
 class ToolMediatedRunState:
     catalog: EvidenceCatalog
     plan: PlannerPlan
@@ -322,14 +332,20 @@ class ToolMediatedRunState:
     open_questions: tuple[str, ...]
     provider_mode: str = PROVIDER_MODE
     provider_runs: tuple[ProviderRunMeta, ...] = ()
+    pm_synthesis: PmSynthesis | None = None
+    pm_fallback_reason: str | None = None
 
     def __post_init__(self) -> None:
-        has_p36_prompt = any(run.prompt_version == "p36-role-analysis-v1" for run in self.provider_runs)
+        has_p36_prompt = any(
+            run.prompt_version in {"p36-role-analysis-v1", "p36-pm-synthesis-v1"}
+            for run in self.provider_runs
+        )
         has_p36_calculation = any(result.contract_version == "p36_calc_envelope_v1" for result in self.tool_results)
         validate_saved_tool_freeze_payload(
             asdict(self),
             allow_p36_calculation_values=has_p36_calculation,
             allow_p36_live_markdown=has_p36_prompt,
+            allow_p36_pm_synthesis=self.pm_synthesis is not None,
         )
 
 

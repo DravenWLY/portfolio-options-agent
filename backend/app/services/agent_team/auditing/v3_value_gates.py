@@ -18,7 +18,10 @@ from app.services.agent_team.auditing.live_report_gates import (
     validate_live_report_consistency,
     prompt_fact_labels_for_tool_result,
 )
-from app.services.agent_team.auditing.p36_constants import P36_ATTRIBUTION_MARKERS
+from app.services.agent_team.auditing.p36_constants import (
+    P36_ATTRIBUTION_MARKERS,
+    P36_PM_ATTRIBUTION_MARKERS,
+)
 from app.services.agent_team.llm_clients.contracts import find_secret_like_values
 from app.services.agent_team.safety.report_output_safety import SOURCE_LEAK_PATTERNS
 from app.services.agent_team.tools import P36_CALC_TOOL_CONTRACT_VERSION, SEC_RAW_PATH_OR_FILE_RE
@@ -75,6 +78,49 @@ P36_PUBLIC_WORD_BOUNDS = {
     "fundamentals_analyst": (90, 400),
     "news_analyst": (90, 400),
 }
+P36_PM_VERIFICATION_IMPERATIVES = frozenset(
+    {"verify", "check", "confirm", "review", "re-sync", "compare"}
+)
+_PM_TRADE_SUBJECT_FRAME_RE = re.compile(
+    r"\b(?:the\s+)?(?:trade|position|setup|entry|idea|purchase|sale|order)\s+"
+    r"(?:is|are|was|were|looks?|seems?|appears?|holds?(?:\s+up)?|makes?|works?|stands?|remains?|checks?\s+out)\b",
+    re.IGNORECASE,
+)
+_PM_DIRECTIONAL_LEAN_RE = re.compile(
+    r"\b(?:points?\s+(?:the\s+)?(?:right|wrong)\s+way|"
+    r"favors?\s+(?:buying|selling|the\s+purchase|the\s+sale|acting|the\s+trade)|"
+    r"leans?\s+(?:bullish|bearish|toward|for|against)|"
+    r"tilts?\s+(?:the\s+balance|toward)|"
+    r"the\s+(?:right|wrong|smart|safe)\s+(?:move|call|decision|play)|"
+    r"supports?\s+(?:buying|selling|the\s+purchase|acting|the\s+trade)|"
+    r"(?:argues|makes\s+the\s+case)\s+for)\b",
+    re.IGNORECASE,
+)
+_PM_ENTRY_VERDICT_RE = re.compile(
+    r"\bthis\s+(?:is|looks?|seems?|appears?)\s+(?:an?\s+)?(?:good|smart|safe|right)\s+entry\b",
+    re.IGNORECASE,
+)
+_PM_TENSION_RESOLUTION_RE = re.compile(
+    r"\b(?:tension|disagreement|conflict)\s+(?:favors?|supports?|points?\s+(?:to|toward)|means)\b",
+    re.IGNORECASE,
+)
+_PM_FREEFORM_TRADE_DIRECTIVE_RE = re.compile(
+    r"(?:^|[.!?]\s+)(?:please\s+)?[A-Za-z]+\s+(?:the\s+)?(?:trade|position|setup|entry|idea|purchase|sale|order)\b",
+    re.IGNORECASE,
+)
+_PM_SECTION_ROLE_BY_LABEL = {
+    "technical": "technical_analyst",
+    "risk": "risk_management_agent",
+    "fundamentals": "fundamentals_analyst",
+    "company": "fundamentals_analyst",
+    "news": "news_analyst",
+    "events": "news_analyst",
+    "portfolio manager": "portfolio_manager_agent",
+}
+_PM_NAMED_SECTION_RE = re.compile(
+    r"\b(?:the\s+)?(technical|risk|fundamentals|company|news|events|portfolio manager)\s+section\b",
+    re.IGNORECASE,
+)
 # The source snapshot defines every governed display label. No free-text alias
 # can authorize a macro number in News prose.
 FRED_MACRO_SERIES_DISPLAY_ALIASES = frozenset(item.label.lower() for item in FRED_MACRO_SERIES)
@@ -245,6 +291,85 @@ def validate_p36_public_analysis_section(
     return None
 
 
+def validate_p36_pm_synthesis(
+    *,
+    evidence_weighting: str,
+    evidence_tensions: tuple[str, ...],
+    verification_priorities: tuple[str, ...],
+    trust_assessment: str,
+    role_results: tuple[_ToolResultLike, ...],
+    accepted_role_names: frozenset[str],
+    surfaced_markdown: tuple[str, ...] = (),
+) -> str | None:
+    """Apply typed F-1/F-2/F-3 plus the PM-specific v3 gate stack.
+
+    PM prose is intentionally not an analyst markdown section. The four typed
+    fields are the only model-authored surface; list markup is added later by
+    the deterministic composer.
+    """
+
+    structure_flag = _pm_structure_flag(
+        evidence_weighting=evidence_weighting,
+        evidence_tensions=evidence_tensions,
+        verification_priorities=verification_priorities,
+        trust_assessment=trust_assessment,
+    )
+    if structure_flag is not None:
+        return structure_flag
+    markdown = _pm_field_text(
+        evidence_weighting=evidence_weighting,
+        evidence_tensions=evidence_tensions,
+        verification_priorities=verification_priorities,
+        trust_assessment=trust_assessment,
+    )
+    allowed = _allowed_numeric_values(role_results)
+    _extend_allowed_numbers_from_markdown(allowed, surfaced_markdown)
+    provenance_flag = _numeric_provenance_flag(markdown=markdown, allowed=allowed)
+    if provenance_flag is not None:
+        return provenance_flag
+    identifier_flag = _identifier_privacy_flag(markdown, allowed=allowed)
+    if identifier_flag is not None:
+        return identifier_flag
+    advice_flag = _pm_advice_boundary_flag(
+        markdown,
+        freeform_markdown="\n".join((evidence_weighting, *evidence_tensions, trust_assessment)),
+    )
+    if advice_flag is not None:
+        return advice_flag
+    grounding_flag = _pm_grounding_flag(markdown=markdown, accepted_role_names=accepted_role_names)
+    if grounding_flag is not None:
+        return grounding_flag
+    return None
+
+
+def pm_calculation_matches_surfaced_values(
+    calculation: _ToolResultLike,
+    *,
+    surfaced_results: tuple[_ToolResultLike, ...],
+    surfaced_markdown: tuple[str, ...] = (),
+) -> bool:
+    """Admit a PM re-check only when every numeric/date value was surfaced.
+
+    The PM may use a calculation to confirm an existing result. It never gains
+    an independent numeric provenance source from that request.
+    """
+
+    if not str(getattr(calculation, "tool_name", "")).startswith("calc_"):
+        return True
+    surfaced = _allowed_numeric_values(surfaced_results)
+    _extend_allowed_numbers_from_markdown(surfaced, surfaced_markdown)
+    for row in prompt_fact_labels_for_tool_result(calculation):  # type: ignore[arg-type]
+        value = row["value_label"]
+        if DATE_RE.fullmatch(value):
+            if value not in surfaced.dates:
+                return False
+            continue
+        for token in NUMBER_RE.findall(value):
+            if not _numeric_allowed(token, surfaced):
+                return False
+    return True
+
+
 def frozen_artifact_gate_version(artifact: object) -> str:
     """Derive one gate family from frozen prompt/calc versions; never mix them."""
 
@@ -273,6 +398,11 @@ def validate_frozen_artifact_gate_set(artifact: object) -> None:
     has_p36_risk_live_run = any(
         getattr(item, "role_name", None) == "risk_management_agent"
         and getattr(item, "prompt_version", None) == P36_ROLE_PROMPT_VERSION
+        for item in provider_runs
+    )
+    has_p36_pm_live_run = any(
+        getattr(item, "role_name", None) == "portfolio_manager_agent"
+        and getattr(item, "prompt_version", None) == P36_PM_PROMPT_VERSION
         for item in provider_runs
     )
     for finding_set in tuple(getattr(artifact, "audited_findings", ()) or ()):
@@ -305,6 +435,38 @@ def validate_frozen_artifact_gate_set(artifact: object) -> None:
             flag = validate_live_report_consistency(markdown=markdown, role_results=all_tool_results)  # type: ignore[arg-type]
         if flag is not None:
             raise ValueError(f"frozen artifact {gate_version} gate rejected live report: {flag}")
+    pm_synthesis = getattr(artifact, "pm_synthesis", None)
+    if gate_version == "v3" and has_p36_pm_live_run and pm_synthesis is not None:
+        accepted_role_names = frozenset(
+            getattr(finding_set, "role_name", "")
+            for finding_set in tuple(getattr(artifact, "audited_findings", ()) or ())
+            if getattr(finding_set, "role_name", None) != "portfolio_manager_agent"
+            and bool(getattr(finding_set, "live_report_markdown", None))
+        )
+        surfaced_markdown = tuple(
+            str(getattr(finding_set, "live_report_markdown", ""))
+            for finding_set in tuple(getattr(artifact, "audited_findings", ()) or ())
+            if getattr(finding_set, "role_name", None) in accepted_role_names
+        ) + tuple(
+            str(getattr(finding, "claim_text", ""))
+            for finding_set in tuple(getattr(artifact, "audited_findings", ()) or ())
+            if getattr(finding_set, "role_name", None) != "portfolio_manager_agent"
+            for finding in tuple(getattr(finding_set, "findings", ()) or ())
+        )
+        # Frozen PM re-checks are audit metadata only. They never expand the
+        # PM's F-5 set: only values already rendered in accepted sections or
+        # deterministic findings may authorize frozen PM prose.
+        flag = validate_p36_pm_synthesis(
+            evidence_weighting=str(getattr(pm_synthesis, "evidence_weighting", "")),
+            evidence_tensions=tuple(getattr(pm_synthesis, "evidence_tensions", ()) or ()),
+            verification_priorities=tuple(getattr(pm_synthesis, "verification_priorities", ()) or ()),
+            trust_assessment=str(getattr(pm_synthesis, "trust_assessment", "")),
+            role_results=(),
+            accepted_role_names=accepted_role_names,
+            surfaced_markdown=surfaced_markdown,
+        )
+        if flag is not None:
+            raise ValueError(f"frozen artifact {gate_version} gate rejected PM synthesis: {flag}")
 
 
 class _AllowedNumbers:
@@ -330,6 +492,23 @@ def _allowed_numeric_values(role_results: Iterable[_ToolResultLike]) -> _Allowed
                 if decimal is not None:
                     allowed.decimals.add(decimal)
     return allowed
+
+
+def _extend_allowed_numbers_from_markdown(allowed: _AllowedNumbers, markdowns: Iterable[str]) -> None:
+    """Admit only values that an accepted section already rendered.
+
+    This is PM-specific: a synthesis may re-weigh surfaced work, but it may
+    not silently promote another value from a tool envelope into report prose.
+    """
+
+    for markdown in markdowns:
+        if not isinstance(markdown, str):
+            continue
+        allowed.dates.update(DATE_RE.findall(markdown))
+        for token in NUMBER_RE.findall(markdown):
+            decimal = _decimal(token)
+            if decimal is not None:
+                allowed.decimals.add(decimal)
 
 
 def _numeric_provenance_flag(*, markdown: str, allowed: _AllowedNumbers) -> str | None:
@@ -435,7 +614,12 @@ def _identifier_privacy_flag(markdown: str, *, allowed: _AllowedNumbers) -> str 
     return None
 
 
-def _advice_boundary_flag(markdown: str, *, role_name: str | None = None) -> str | None:
+def _advice_boundary_flag(
+    markdown: str,
+    *,
+    role_name: str | None = None,
+    attribution_markers: tuple[str, ...] = P36_ATTRIBUTION_MARKERS,
+) -> str | None:
     # Execution phrases are rejected by the provider output contract before
     # this gate runs. The runner then drops the entire live Risk section to its
     # deterministic floor, so F-4 deliberately does not double-handle them.
@@ -448,8 +632,99 @@ def _advice_boundary_flag(markdown: str, *, role_name: str | None = None) -> str
         line for line in markdown.splitlines() if not line.strip().startswith("#")
     )
     for sentence in re.split(r"(?<=[.!?])\s+", prose_without_headings):
-        if _F4_INTERPRETATION_RE.search(sentence) and not any(marker in sentence.lower() for marker in P36_ATTRIBUTION_MARKERS):
+        if _F4_INTERPRETATION_RE.search(sentence) and not any(marker in sentence.lower() for marker in attribution_markers):
             return ATTRIBUTION_REQUIRED_FLAG
+    return None
+
+
+def _pm_structure_flag(
+    *,
+    evidence_weighting: str,
+    evidence_tensions: tuple[str, ...],
+    verification_priorities: tuple[str, ...],
+    trust_assessment: str,
+) -> str | None:
+    if not (3 <= _sentence_count(evidence_weighting) <= 6):
+        return STRUCTURE_CONTRACT_FLAG
+    if not (0 <= len(evidence_tensions) <= 3):
+        return STRUCTURE_CONTRACT_FLAG
+    if not (2 <= len(verification_priorities) <= 5):
+        return STRUCTURE_CONTRACT_FLAG
+    if not (2 <= _sentence_count(trust_assessment) <= 4):
+        return STRUCTURE_CONTRACT_FLAG
+    for item in (*evidence_tensions, *verification_priorities):
+        if not item.strip() or _contains_model_markdown(item):
+            return STRUCTURE_CONTRACT_FLAG
+    if _contains_model_markdown(evidence_weighting) or _contains_model_markdown(trust_assessment):
+        return STRUCTURE_CONTRACT_FLAG
+    for item in evidence_tensions:
+        if not (1 <= _sentence_count(item) <= 2):
+            return STRUCTURE_CONTRACT_FLAG
+    for item in verification_priorities:
+        if _sentence_count(item) != 1 or _verification_imperative(item) is None:
+            return STRUCTURE_CONTRACT_FLAG
+    return None
+
+
+def _sentence_count(value: str) -> int:
+    return len(tuple(part for part in re.split(r"(?<=[.!?])\s+", value.strip()) if part.strip()))
+
+
+def _contains_model_markdown(value: str) -> bool:
+    return bool(re.search(r"(?:^|\n)\s*(?:[-#]\s*)", value))
+
+
+def _verification_imperative(value: str) -> str | None:
+    match = re.match(r"^\s*([A-Za-z-]+)\b", value)
+    if match is None:
+        return None
+    verb = match.group(1).lower()
+    return verb if verb in P36_PM_VERIFICATION_IMPERATIVES else None
+
+
+def _pm_field_text(
+    *,
+    evidence_weighting: str,
+    evidence_tensions: tuple[str, ...],
+    verification_priorities: tuple[str, ...],
+    trust_assessment: str,
+) -> str:
+    return "\n".join(
+        (
+            evidence_weighting,
+            *evidence_tensions,
+            *verification_priorities,
+            trust_assessment,
+        )
+    )
+
+
+def _pm_advice_boundary_flag(
+    markdown: str,
+    *,
+    freeform_markdown: str,
+) -> str | None:
+    shared_flag = _advice_boundary_flag(markdown, attribution_markers=P36_PM_ATTRIBUTION_MARKERS)
+    if shared_flag is not None:
+        return shared_flag
+    if (
+        _PM_TRADE_SUBJECT_FRAME_RE.search(markdown)
+        or _PM_DIRECTIONAL_LEAN_RE.search(markdown)
+        or _PM_ENTRY_VERDICT_RE.search(markdown)
+        or _PM_TENSION_RESOLUTION_RE.search(markdown)
+        or _PM_FREEFORM_TRADE_DIRECTIVE_RE.search(freeform_markdown)
+    ):
+        return ADVICE_BOUNDARY_FLAG
+    return None
+
+
+def _pm_grounding_flag(*, markdown: str, accepted_role_names: frozenset[str]) -> str | None:
+    if _F11_UNGROUNDED_RE.search(markdown):
+        return GROUNDING_FLAG
+    for match in _PM_NAMED_SECTION_RE.finditer(markdown):
+        role_name = _PM_SECTION_ROLE_BY_LABEL[match.group(1).lower()]
+        if role_name not in accepted_role_names:
+            return GROUNDING_FLAG
     return None
 
 

@@ -8,6 +8,7 @@ from app.services.agent_team.llm_clients.contracts import (
     LLMProviderMessage,
     LLMProviderRequest,
     LLMProviderResponse,
+    P36_F6_VOCABULARY_ONLY_TOKENS,
     ReviewedStaticSystemPrompt,
     register_static_system_prompts,
     registered_static_system_prompts,
@@ -16,6 +17,7 @@ from app.services.agent_team.llm_clients.contracts import (
 from app.services.agent_team.orchestration.p36_risk_prompt import (
     P36_RISK_SYSTEM_PROMPT,
 )
+from app.services.agent_team.orchestration.p36_pm_prompt import P36_PM_SYSTEM_PROMPT
 
 
 pytestmark = [pytest.mark.unit]
@@ -236,6 +238,48 @@ def test_p36_static_registry_keeps_forbidden_key_private_token_and_secret_scans(
                 ),
             )
         )
+
+
+def test_p36_pm_accepted_section_projection_is_exactly_governed_and_pm_only() -> None:
+    assert P36_F6_VOCABULARY_ONLY_TOKENS == frozenset(
+        {"account", "holdings", "cash", "positions", "portfolio", "exposure", "nickname"}
+    )
+    evidence = LLMProviderMessage(
+        role="user",
+        content_kind="p36_pm_accepted_sections",
+        content="The accepted Risk section describes cash, holdings, positions, portfolio exposure, and the nickname.",
+    )
+    request = LLMProviderRequest(
+        request_id="p36-pm-accepted-sections",
+        role_name="portfolio_manager_agent",
+        messages=(LLMProviderMessage(role="system", content=P36_PM_SYSTEM_PROMPT), evidence),
+        prompt_version="p36-pm-synthesis-v1",
+    )
+    assert request.messages[1].content_kind == "p36_pm_accepted_sections"
+
+    with pytest.raises(ValueError, match="restricted to the PM synthesis request"):
+        LLMProviderRequest(
+            request_id="p36-public-evidence",
+            role_name="technical_analyst",
+            messages=(LLMProviderMessage(role="system", content="Synthetic system prompt."), evidence),
+            prompt_version="p36-role-analysis-v1",
+        )
+
+
+@pytest.mark.parametrize(
+    "content",
+    (
+        "The cash_balance field was present.",
+        "The account_id field was present.",
+        "api_key=syntheticvalue12345",
+        "https://example.invalid/raw-source",
+        "/Archives/edgar/data/synthetic",
+        "The raw_payload field was present.",
+    ),
+)
+def test_p36_pm_accepted_section_projection_keeps_non_vocabulary_scans(content: str) -> None:
+    with pytest.raises(ValueError):
+        LLMProviderMessage(role="user", content_kind="p36_pm_accepted_sections", content=content)
 
 
 def test_p36_system_message_not_in_reviewed_registry_is_not_phrase_exempt() -> None:

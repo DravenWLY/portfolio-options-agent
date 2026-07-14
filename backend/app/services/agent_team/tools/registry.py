@@ -162,11 +162,11 @@ def default_tool_registry() -> dict[str, ToolRegistryEntry]:
                     is_mock=False,
                 )
                 for name, label, roles in (
-                    ("calc_price_range_position", "Frozen price-range calculation", ("technical_analyst",)),
-                    ("calc_return_windows", "Frozen return-window calculation", ("technical_analyst",)),
-                    ("calc_drawdown_stats", "Frozen drawdown calculation", ("technical_analyst",)),
-                    ("calc_volatility_stats", "Frozen volatility calculation", ("technical_analyst",)),
-                    ("calc_ma_relationships", "Frozen moving-average calculation", ("technical_analyst",)),
+                    ("calc_price_range_position", "Frozen price-range calculation", ("technical_analyst", "portfolio_manager_agent")),
+                    ("calc_return_windows", "Frozen return-window calculation", ("technical_analyst", "portfolio_manager_agent")),
+                    ("calc_drawdown_stats", "Frozen drawdown calculation", ("technical_analyst", "portfolio_manager_agent")),
+                    ("calc_volatility_stats", "Frozen volatility calculation", ("technical_analyst", "portfolio_manager_agent")),
+                    ("calc_ma_relationships", "Frozen moving-average calculation", ("technical_analyst", "portfolio_manager_agent")),
                     ("calc_financial_ratios", "Frozen financial-ratio calculation", ("fundamentals_analyst", "portfolio_manager_agent")),
                     ("calc_period_change", "Frozen statement-period calculation", ("fundamentals_analyst", "portfolio_manager_agent")),
                     ("calc_macro_series_change", "Frozen macro-series calculation", ("news_analyst", "portfolio_manager_agent")),

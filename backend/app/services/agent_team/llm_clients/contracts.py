@@ -10,6 +10,7 @@ import re
 from typing import Iterable, Literal, Protocol
 
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
+from app.services.agent_team.auditing.p36_constants import P36_F6_VOCABULARY_ONLY_TOKENS
 
 
 AgentTeamRole = Literal[
@@ -33,6 +34,7 @@ LLMProviderStatus = Literal[
 ]
 LLMProviderFinishReason = Literal["length", "stop", "unknown"]
 LLMMessageRole = Literal["system", "user", "assistant"]
+LLMMessageContentKind = Literal["default", "p36_pm_accepted_sections"]
 
 AGENT_TEAM_ROLES: tuple[AgentTeamRole, ...] = (
     "fundamentals_analyst",
@@ -133,6 +135,10 @@ SECRET_LIKE_VALUE_PATTERNS = (
     re.compile(r"\bsk-[0-9A-Za-z_\-]{16,}\b"),
     re.compile(r"\b(?:api|access|secret)[_-]?key\s*[:=]\s*[0-9A-Za-z_\-]{8,}\b", re.IGNORECASE),
 )
+RAW_SOURCE_PATH_PATTERNS = (
+    re.compile(r"https?://", re.IGNORECASE),
+    re.compile(r"(?:^|/)Archives/edgar/", re.IGNORECASE),
+)
 
 
 @dataclass(frozen=True)
@@ -141,13 +147,22 @@ class LLMProviderMessage:
 
     role: LLMMessageRole
     content: str
+    content_kind: LLMMessageContentKind = "default"
 
     def __post_init__(self) -> None:
         if self.role not in ("system", "user", "assistant"):
             raise ValueError(f"unsupported message role: {self.role}")
+        if self.content_kind not in ("default", "p36_pm_accepted_sections"):
+            raise ValueError(f"unsupported message content kind: {self.content_kind}")
+        if self.content_kind == "p36_pm_accepted_sections" and self.role != "user":
+            raise ValueError("P36 PM accepted-section evidence must be a user message")
         if not self.content.strip():
             raise ValueError("message content must not be empty")
-        validate_llm_provider_payload(asdict(self), label="LLM provider message")
+        validate_llm_provider_payload(
+            asdict(self),
+            label="LLM provider message",
+            allow_p36_pm_accepted_section_vocabulary=self.content_kind == "p36_pm_accepted_sections",
+        )
 
 
 @dataclass(frozen=True)
@@ -177,6 +192,15 @@ class LLMProviderRequest:
             raise ValueError("max_tokens must be positive")
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
+        accepted_section_messages = tuple(
+            message for message in self.messages if message.content_kind == "p36_pm_accepted_sections"
+        )
+        if accepted_section_messages and (
+            self.role_name != "portfolio_manager_agent"
+            or self.prompt_version != "p36-pm-synthesis-v1"
+            or len(accepted_section_messages) != 1
+        ):
+            raise ValueError("P36 PM accepted-section evidence is restricted to the PM synthesis request")
         validate_llm_provider_payload(asdict(self), label="LLM provider request")
 
 
@@ -232,14 +256,22 @@ class LLMProvider(Protocol):
         """Return a provider response without exposing private brokerage data."""
 
 
-def validate_llm_provider_payload(payload: object, *, label: str) -> None:
+def validate_llm_provider_payload(
+    payload: object,
+    *,
+    label: str,
+    allow_p36_pm_accepted_section_vocabulary: bool = False,
+) -> None:
     """Reject private data keys/values and prohibited advice/execution phrases."""
 
     forbidden = find_forbidden_keys(payload, forbidden_keys=LLM_PROVIDER_FORBIDDEN_KEYS)
     if forbidden:
         blocked = ", ".join(sorted(forbidden))
         raise ValueError(f"{label} contains forbidden private fields: {blocked}")
-    private_values = _find_forbidden_string_values_segmentwise(payload)
+    private_values = _find_forbidden_string_values_segmentwise(
+        payload,
+        allow_p36_pm_accepted_section_vocabulary=allow_p36_pm_accepted_section_vocabulary,
+    )
     if private_values:
         blocked = ", ".join(sorted(private_values))
         raise ValueError(f"{label} contains forbidden private value token(s): {blocked}")
@@ -284,7 +316,12 @@ def _find_prohibited_llm_phrases_segmentwise(value: object, *, prefix: str = "")
     return find_prohibited_llm_phrases(value, prefix=prefix)
 
 
-def _find_forbidden_string_values_segmentwise(value: object, *, prefix: str = "") -> set[str]:
+def _find_forbidden_string_values_segmentwise(
+    value: object,
+    *,
+    prefix: str = "",
+    allow_p36_pm_accepted_section_vocabulary: bool = False,
+) -> set[str]:
     """Retain private-token scans on static prompts except plain topic words.
 
     Reviewed system prompts teach ordinary Risk vocabulary such as ``cash``.
@@ -307,11 +344,17 @@ def _find_forbidden_string_values_segmentwise(value: object, *, prefix: str = ""
                         message,
                         prefix=message_prefix,
                         prompt_version=prompt_version if isinstance(prompt_version, str) else None,
+                        allow_p36_pm_accepted_section_vocabulary=False,
                     )
                 )
             return found
         if "role" in value and "content" in value:
-            return _find_forbidden_string_values_message(value, prefix=prefix, prompt_version=None)
+            return _find_forbidden_string_values_message(
+                value,
+                prefix=prefix,
+                prompt_version=None,
+                allow_p36_pm_accepted_section_vocabulary=allow_p36_pm_accepted_section_vocabulary,
+            )
     return find_forbidden_string_values(value, prefix=prefix)
 
 
@@ -320,11 +363,30 @@ def _find_forbidden_string_values_message(
     *,
     prefix: str,
     prompt_version: str | None,
+    allow_p36_pm_accepted_section_vocabulary: bool,
 ) -> set[str]:
     if not isinstance(message, dict):
         return find_forbidden_string_values(message, prefix=prefix)
     role = message.get("role")
     content = message.get("content")
+    if allow_p36_pm_accepted_section_vocabulary or _is_p36_pm_accepted_section_segment(
+        role=role,
+        content_kind=message.get("content_kind"),
+        prompt_version=prompt_version,
+    ):
+        found = find_forbidden_string_values(
+            {key: item for key, item in message.items() if key != "content"},
+            prefix=prefix,
+        )
+        found.update(
+            find_forbidden_string_values(
+                content,
+                prefix=f"{prefix}.content" if prefix else "content",
+                ignored_plain_tokens=P36_F6_VOCABULARY_ONLY_TOKENS,
+            )
+        )
+        found.update(_find_raw_source_paths(content, prefix=f"{prefix}.content" if prefix else "content"))
+        return found
     if _is_registered_static_system_segment(role=role, content=content):
         found = find_forbidden_string_values(
             {key: item for key, item in message.items() if key != "content"},
@@ -339,6 +401,19 @@ def _find_forbidden_string_values_message(
         )
         return found
     return find_forbidden_string_values(message, prefix=prefix)
+
+
+def _is_p36_pm_accepted_section_segment(
+    *,
+    role: object,
+    content_kind: object,
+    prompt_version: str | None,
+) -> bool:
+    return (
+        role == "user"
+        and content_kind == "p36_pm_accepted_sections"
+        and prompt_version == "p36-pm-synthesis-v1"
+    )
 
 
 def _find_prohibited_llm_phrases_message(
@@ -468,6 +543,25 @@ def find_secret_like_values(value: object, *, prefix: str = "") -> set[str]:
         for index, item in enumerate(value):
             item_path = f"{prefix}[{index}]" if prefix else f"[{index}]"
             found.update(find_secret_like_values(item, prefix=item_path))
+        return found
+    return set()
+
+
+def _find_raw_source_paths(value: object, *, prefix: str = "") -> set[str]:
+    if isinstance(value, str):
+        return {prefix or "<value>"} if any(pattern.search(value) for pattern in RAW_SOURCE_PATH_PATTERNS) else set()
+    if isinstance(value, dict):
+        found: set[str] = set()
+        for key, item in value.items():
+            key_path = f"{prefix}.{key}" if prefix else str(key)
+            found.update(_find_raw_source_paths(str(key), prefix=key_path))
+            found.update(_find_raw_source_paths(item, prefix=key_path))
+        return found
+    if isinstance(value, (list, tuple)):
+        found: set[str] = set()
+        for index, item in enumerate(value):
+            item_path = f"{prefix}[{index}]" if prefix else f"[{index}]"
+            found.update(_find_raw_source_paths(item, prefix=item_path))
         return found
     return set()
 

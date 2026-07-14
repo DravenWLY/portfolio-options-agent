@@ -287,6 +287,7 @@ def validate_saved_tool_freeze_payload(
     *,
     allow_p36_calculation_values: bool = False,
     allow_p36_live_markdown: bool = False,
+    allow_p36_pm_synthesis: bool = False,
 ) -> None:
     """Validate frozen tool-mediated run artifacts before saved-report persistence."""
 
@@ -302,6 +303,7 @@ def validate_saved_tool_freeze_payload(
         value,
         allow_quantity_units=allow_p36_calculation_values,
         allow_value_bearing_live_markdown=allow_p36_live_markdown,
+        allow_p36_pm_synthesis=allow_p36_pm_synthesis,
     )
     if metric_paths:
         raise ValueError(f"saved tool-mediated run artifact contains generated metric text: {sorted(metric_paths)}")
@@ -313,6 +315,7 @@ def _find_saved_tool_freeze_metric_strings(
     prefix: str = "",
     allow_quantity_units: bool = False,
     allow_value_bearing_live_markdown: bool = False,
+    allow_p36_pm_synthesis: bool = False,
 ) -> set[str]:
     if isinstance(value, str):
         patterns = _SAVED_TOOL_FREEZE_GENERATED_METRIC_PATTERNS
@@ -331,12 +334,20 @@ def _find_saved_tool_freeze_metric_strings(
             key_path = f"{prefix}.{key}" if prefix else str(key)
             if allow_value_bearing_live_markdown and str(key) == "live_report_markdown":
                 continue
+            if allow_p36_pm_synthesis and str(key) in {
+                "evidence_weighting",
+                "evidence_tensions",
+                "verification_priorities",
+                "trust_assessment",
+            }:
+                continue
             found.update(
                 _find_saved_tool_freeze_metric_strings(
                     item,
                     prefix=key_path,
                     allow_quantity_units=allow_quantity_units,
                     allow_value_bearing_live_markdown=allow_value_bearing_live_markdown,
+                    allow_p36_pm_synthesis=allow_p36_pm_synthesis,
                 )
             )
         return found
@@ -350,6 +361,7 @@ def _find_saved_tool_freeze_metric_strings(
                     prefix=item_path,
                     allow_quantity_units=allow_quantity_units,
                     allow_value_bearing_live_markdown=allow_value_bearing_live_markdown,
+                    allow_p36_pm_synthesis=allow_p36_pm_synthesis,
                 )
             )
         return found
@@ -659,6 +671,25 @@ class SavedToolMediatedProviderRunRead(BaseModel):
         return self
 
 
+class SavedP36PmSynthesisRead(BaseModel):
+    """Frozen typed PM content; the composer owns all list/heading markup."""
+
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    evidence_weighting: str = Field(min_length=1)
+    evidence_tensions: tuple[str, ...] = ()
+    verification_priorities: tuple[str, ...] = ()
+    trust_assessment: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def pm_synthesis_must_be_safe(self) -> "SavedP36PmSynthesisRead":
+        validate_saved_tool_freeze_payload(
+            self.model_dump(mode="python"),
+            allow_p36_pm_synthesis=True,
+        )
+        return self
+
+
 class SavedToolMediatedRunArtifactRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
@@ -673,6 +704,7 @@ class SavedToolMediatedRunArtifactRead(BaseModel):
     audited_findings: tuple[SavedToolMediatedRoleFindingSetRead, ...]
     auditor: SavedToolMediatedAuditorRead
     provider_runs: tuple[SavedToolMediatedProviderRunRead, ...] = ()
+    pm_synthesis: SavedP36PmSynthesisRead | None = None
     open_questions: tuple[str, ...]
     synthesis_evidence_references: tuple[str, ...]
     warning_codes: tuple[str, ...]
@@ -683,10 +715,16 @@ class SavedToolMediatedRunArtifactRead(BaseModel):
     def tool_run_artifact_must_be_safe(self) -> "SavedToolMediatedRunArtifactRead":
         if self.tool_result_count != len(self.tool_results):
             raise ValueError("tool_result_count must match frozen tool results")
+        if self.pm_synthesis is not None and not any(
+            run.role_name == "portfolio_manager_agent" and run.prompt_version == "p36-pm-synthesis-v1"
+            for run in self.provider_runs
+        ):
+            raise ValueError("frozen P36 PM synthesis requires its matching PM provider run")
         validate_saved_tool_freeze_payload(
             self.model_dump(mode="python"),
             allow_p36_calculation_values=self.artifact_schema_version == _P36_TOOL_RUN_ARTIFACT_SCHEMA_VERSION,
             allow_p36_live_markdown=self.artifact_schema_version == _P36_TOOL_RUN_ARTIFACT_SCHEMA_VERSION,
+            allow_p36_pm_synthesis=self.artifact_schema_version == _P36_TOOL_RUN_ARTIFACT_SCHEMA_VERSION,
         )
         from app.services.agent_team.auditing.v3_value_gates import validate_frozen_artifact_gate_set
 

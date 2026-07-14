@@ -86,10 +86,14 @@ from app.services.agent_team.auditing.live_report_gates import (
 )
 from app.services.agent_team.auditing.v3_value_gates import (
     P36_ARTIFACT_SCHEMA_VERSION,
+    P36_PM_PROMPT_VERSION,
     P36_ROLE_PROMPT_VERSION,
+    pm_calculation_matches_surfaced_values,
+    validate_p36_pm_synthesis,
 )
 from app.services.agent_team.orchestration.p36_risk_prompt import P36_RISK_SYSTEM_PROMPT
 from app.services.agent_team.orchestration.p36_public_prompts import P36_PUBLIC_SYSTEM_PROMPTS
+from app.services.agent_team.orchestration.p36_pm_prompt import P36_PM_SYSTEM_PROMPT
 
 LIVE_ROLE_SYSTEM_PROMPT_TEMPLATE = (
     "You are {role_display_name} on a read-only portfolio review team. A\n"
@@ -295,6 +299,7 @@ def run_tool_mediated_agent_team(
     live_provider_enabled: bool = False,
     p36_risk_live_enabled: bool = False,
     p36_public_live_enabled: bool = False,
+    p36_pm_live_enabled: bool = False,
     market_context: MarketContextExecutionContext | None = None,
 ) -> ToolMediatedRunState:
     catalog = build_evidence_catalog(evidence, registry)
@@ -363,7 +368,7 @@ def run_tool_mediated_agent_team(
     )
     provider_mode = PROVIDER_MODE
     provider_runs: list[ProviderRunMeta] = []
-    if (p36_risk_live_enabled or p36_public_live_enabled) and llm_provider is not None:
+    if (p36_risk_live_enabled or p36_public_live_enabled or p36_pm_live_enabled) and llm_provider is not None:
         provider_mode = LIVE_PROVIDER_MODE
         p36_findings: list[RoleFindingSet] = []
         for finding in raw_findings:
@@ -448,6 +453,35 @@ def run_tool_mediated_agent_team(
         )
         open_questions = _open_questions_from_contradictions(auditor.contradictions)
 
+    pm_synthesis: PmSynthesis | None = None
+    pm_fallback_reason: str | None = None
+    if p36_pm_live_enabled and llm_provider is not None:
+        pm_initial_results: list[ToolResult] = []
+        for tool_name in P36_PM_BASELINE_TOOLS:
+            result = execute_tool_request(
+                ToolRequest(tool_name=tool_name, requesting_role="portfolio_manager_agent"),
+                evidence=evidence,
+                registry=registry,
+                market_context=active_market_context,
+            )
+            pm_initial_results.append(result)
+            tool_results.append(result)
+        by_role["portfolio_manager_agent"] = tuple(pm_initial_results)
+        pm_loop = _run_p36_pm_loop(
+            audited_findings,
+            tuple(pm_initial_results),
+            evidence=evidence,
+            registry=registry,
+            provider=llm_provider,
+            market_context=active_market_context,
+        )
+        if pm_loop.tool_results:
+            by_role["portfolio_manager_agent"] = (*by_role["portfolio_manager_agent"], *pm_loop.tool_results)
+            tool_results.extend(pm_loop.tool_results)
+        provider_runs.extend(pm_loop.provider_runs)
+        pm_synthesis = pm_loop.synthesis
+        pm_fallback_reason = pm_loop.fallback_reason
+
     pm_finding = _portfolio_manager_finding_set(audited_findings, open_questions)
     return ToolMediatedRunState(
         catalog=catalog,
@@ -458,6 +492,8 @@ def run_tool_mediated_agent_team(
         open_questions=open_questions,
         provider_mode=provider_mode,
         provider_runs=tuple(provider_runs),
+        pm_synthesis=pm_synthesis,
+        pm_fallback_reason=pm_fallback_reason,
     )
 
 
@@ -543,6 +579,44 @@ P36_PUBLIC_MAX_PROVIDER_CALLS = 3
 P36_PUBLIC_MAX_TOOL_REQUESTS = 8
 P36_PUBLIC_WALL_CLOCK_SECONDS = 90
 P36_PUBLIC_TOKEN_CEILING = P36_PUBLIC_MAX_PROVIDER_CALLS * P36_ANALYST_MAX_TOKENS_PER_ITERATION
+P36_PM_CALC_TOOL_IDS = {
+    "C1": "calc_exposure_delta",
+    "C2": "calc_concentration_metrics",
+    "C3": "calc_cash_impact",
+    "C4": "calc_option_structure",
+    "C5": "calc_scenario_exposure",
+    "C6": "calc_price_range_position",
+    "C7": "calc_return_windows",
+    "C8": "calc_drawdown_stats",
+    "C9": "calc_volatility_stats",
+    "C10": "calc_ma_relationships",
+    "C11": "calc_financial_ratios",
+    "C12": "calc_period_change",
+    "C13": "calc_macro_series_change",
+    "C14": "calc_event_window",
+    "C15": "calc_freshness_inventory",
+}
+P36_PM_BASELINE_TOOLS = (
+    "trade_intent_summary",
+    "portfolio_scope_context",
+    "deterministic_review_findings",
+    "broker_snapshot_freshness",
+    "market_quote_freshness",
+    "evidence_gap_inspector",
+)
+P36_PM_MAX_PROVIDER_CALLS = 2
+P36_PM_MAX_TOOL_REQUESTS = 6
+P36_PM_WALL_CLOCK_SECONDS = 60
+P36_PM_MAX_TOKENS = 1600
+P36_PM_TOKEN_CEILING = P36_PM_MAX_PROVIDER_CALLS * P36_PM_MAX_TOKENS
+
+
+@dataclass(frozen=True)
+class _PmLoopResult:
+    synthesis: PmSynthesis | None
+    tool_results: tuple[ToolResult, ...]
+    provider_runs: tuple[ProviderRunMeta, ...]
+    fallback_reason: str | None = None
 
 
 def _run_p36_risk_loop(
@@ -989,6 +1063,304 @@ def _p36_dormant_public_calculation_result(
     )
 
 
+def _run_p36_pm_loop(
+    audited_findings: tuple[RoleFindingSet, ...],
+    initial_results: tuple[ToolResult, ...],
+    *,
+    evidence: SavedEvidencePackageRead,
+    registry: dict[str, ToolRegistryEntry],
+    provider: LLMProvider,
+    market_context: MarketContextExecutionContext,
+) -> _PmLoopResult:
+    """Run the PM last over audited, frozen analyst work only."""
+
+    loop_results: list[ToolResult] = []
+    provider_runs: list[ProviderRunMeta] = []
+    consecutive_refusals = 0
+    reserved_tokens = 0
+    started_at = monotonic()
+    accepted_role_names = frozenset(
+        finding.role_name
+        for finding in audited_findings
+        if finding.role_name != "portfolio_manager_agent" and bool(finding.live_report_markdown)
+    )
+    surfaced_markdown = _pm_surfaced_markdown(audited_findings, accepted_role_names=accepted_role_names)
+    for iteration in range(1, P36_PM_MAX_PROVIDER_CALLS + 1):
+        if monotonic() - started_at > P36_PM_WALL_CLOCK_SECONDS:
+            return _PmLoopResult(None, tuple(loop_results), tuple(provider_runs), "unavailable")
+        request: LLMProviderRequest | None = None
+        try:
+            role_results = (*initial_results, *loop_results)
+            request = _p36_pm_provider_request(
+                audited_findings,
+                role_results,
+                provider=provider,
+                iteration=iteration,
+            )
+            reserved_tokens += request.max_tokens
+            if reserved_tokens > P36_PM_TOKEN_CEILING:
+                return _PmLoopResult(None, tuple(loop_results), tuple(provider_runs), "unavailable")
+            response_payload = _provider_response_payload(provider.complete(request))
+            provider_runs.append(_provider_run_meta(response_payload, fallback_request=request))
+            if str(response_payload.get("status") or "failed") != "ok" or response_payload.get("finish_reason") == "length":
+                return _PmLoopResult(None, tuple(loop_results), tuple(provider_runs), "unavailable")
+            parsed = _parse_p36_pm_response(str(response_payload.get("content_markdown") or "").strip())
+            if parsed is None:
+                loop_results.append(
+                    blocked_tool_result(
+                        tool_name="calc_request_refused",
+                        role_name="portfolio_manager_agent",
+                        evidence_tier="agent_safe",
+                    )
+                )
+                consecutive_refusals += 1
+                if consecutive_refusals >= 2:
+                    return _PmLoopResult(None, tuple(loop_results), tuple(provider_runs), "unavailable")
+                continue
+            tool_requests, synthesis = parsed
+            if synthesis is not None:
+                gate_results = _pm_gate_results(
+                    audited_findings,
+                    initial_results=initial_results,
+                    loop_results=tuple(loop_results),
+                    accepted_role_names=accepted_role_names,
+                    surfaced_markdown=surfaced_markdown,
+                )
+                flag = validate_p36_pm_synthesis(
+                    evidence_weighting=synthesis.evidence_weighting,
+                    evidence_tensions=synthesis.evidence_tensions,
+                    verification_priorities=synthesis.verification_priorities,
+                    trust_assessment=synthesis.trust_assessment,
+                    role_results=gate_results,
+                    accepted_role_names=accepted_role_names,
+                    surfaced_markdown=surfaced_markdown,
+                )
+                if flag is not None:
+                    return _PmLoopResult(None, tuple(loop_results), tuple(provider_runs), "gate_drop")
+                return _PmLoopResult(synthesis, tuple(loop_results), tuple(provider_runs))
+            if iteration == P36_PM_MAX_PROVIDER_CALLS:
+                return _PmLoopResult(None, tuple(loop_results), tuple(provider_runs), "unavailable")
+            executed = 0
+            for raw_request in tool_requests:
+                if len(loop_results) >= P36_PM_MAX_TOOL_REQUESTS:
+                    return _PmLoopResult(None, tuple(loop_results), tuple(provider_runs), "unavailable")
+                validated = _validate_p36_pm_calc_request(raw_request, registry=registry)
+                if validated is None:
+                    loop_results.append(
+                        blocked_tool_result(
+                            tool_name="calc_request_refused",
+                            role_name="portfolio_manager_agent",
+                            evidence_tier="agent_safe",
+                        )
+                    )
+                    continue
+                loop_results.append(
+                    execute_tool_request(
+                        validated,
+                        evidence=evidence,
+                        registry=registry,
+                        market_context=market_context,
+                    )
+                )
+                executed += 1
+            consecutive_refusals = consecutive_refusals + 1 if executed == 0 else 0
+            if consecutive_refusals >= 2:
+                return _PmLoopResult(None, tuple(loop_results), tuple(provider_runs), "unavailable")
+        except TimeoutError:
+            return _PmLoopResult(None, tuple(loop_results), tuple(provider_runs), "unavailable")
+        except (TypeError, ValueError, AttributeError, json.JSONDecodeError):
+            return _PmLoopResult(None, tuple(loop_results), tuple(provider_runs), "gate_drop")
+    return _PmLoopResult(None, tuple(loop_results), tuple(provider_runs), "unavailable")
+
+
+def _p36_pm_provider_request(
+    audited_findings: tuple[RoleFindingSet, ...],
+    role_results: tuple[ToolResult, ...],
+    *,
+    provider: LLMProvider,
+    iteration: int,
+) -> LLMProviderRequest:
+    accepted_sections = tuple(
+        {
+            "role_name": finding.role_name,
+            "display_name": role_definition(finding.role_name).display_name,  # type: ignore[arg-type]
+            "section_markdown": finding.live_report_markdown,
+        }
+        for finding in audited_findings
+        if finding.role_name != "portfolio_manager_agent" and finding.live_report_markdown
+    )
+    deterministic_findings = tuple(
+        {
+            "role_name": finding_set.role_name,
+            "finding_text": finding.claim_text,
+            "evidence_refs": finding.evidence_refs,
+            "caveat_codes": finding.caveat_codes,
+        }
+        for finding_set in audited_findings
+        if finding_set.role_name != "portfolio_manager_agent"
+        for finding in finding_set.findings
+    )
+    envelopes = tuple(_prompt_tool_result_envelope(result) for result in role_results)
+    messages = (
+        LLMProviderMessage(role="system", content=P36_PM_SYSTEM_PROMPT),
+        LLMProviderMessage(
+            role="user",
+            content_kind="p36_pm_accepted_sections",
+            content=repr(
+                {
+                    "iteration": iteration,
+                    "accepted_sections": accepted_sections,
+                    "deterministic_findings": deterministic_findings,
+                    "tool_result_envelopes": envelopes,
+                    "available_calculation_ids": tuple(P36_PM_CALC_TOOL_IDS),
+                    "response_contract": (
+                        "Return either JSON object {'tool_requests': [{'tool_id': <approved calculation ID>, "
+                        "'args': {}}]} or the final strict PmSynthesis JSON object. "
+                        "Tool arguments must use only approved reference or enum fields."
+                    ),
+                }
+            ),
+        ),
+    )
+    return LLMProviderRequest(
+        request_id=f"p36_portfolio_manager_agent_iteration_{iteration}",
+        role_name="portfolio_manager_agent",
+        messages=messages,
+        provider=provider.provider_name,
+        model=provider.model,
+        prompt_version=P36_PM_PROMPT_VERSION,
+        max_tokens=P36_PM_MAX_TOKENS,
+        timeout_seconds=30,
+        temperature=0.0,
+        metadata={"runner_mode": LIVE_PROVIDER_MODE},
+    )
+
+
+def _parse_p36_pm_response(content: str) -> tuple[tuple[dict[str, object], ...], PmSynthesis | None] | None:
+    if not content:
+        return None
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    if set(parsed) == {"tool_requests"}:
+        requests = parsed.get("tool_requests")
+        if not isinstance(requests, list) or not requests or not all(isinstance(item, dict) for item in requests):
+            return None
+        return tuple(requests), None
+    required = {"evidence_weighting", "evidence_tensions", "verification_priorities", "trust_assessment"}
+    if set(parsed) != required:
+        return None
+    weighting = parsed.get("evidence_weighting")
+    tensions = parsed.get("evidence_tensions")
+    priorities = parsed.get("verification_priorities")
+    trust = parsed.get("trust_assessment")
+    if (
+        not isinstance(weighting, str)
+        or not isinstance(trust, str)
+        or not isinstance(tensions, list)
+        or not isinstance(priorities, list)
+        or not all(isinstance(item, str) for item in (*tensions, *priorities))
+    ):
+        return None
+    return (), PmSynthesis(
+        evidence_weighting=weighting,
+        evidence_tensions=tuple(tensions),
+        verification_priorities=tuple(priorities),
+        trust_assessment=trust,
+    )
+
+
+def _validate_p36_pm_calc_request(
+    raw_request: dict[str, object],
+    *,
+    registry: dict[str, ToolRegistryEntry],
+) -> ToolRequest | None:
+    if set(raw_request) != {"tool_id", "args"}:
+        return None
+    tool_id = raw_request.get("tool_id")
+    args = raw_request.get("args")
+    if not isinstance(tool_id, str) or not isinstance(args, dict):
+        return None
+    tool_name = P36_PM_CALC_TOOL_IDS.get(tool_id)
+    entry = registry.get(tool_name) if tool_name is not None else None
+    if entry is None or not entry.allows_role("portfolio_manager_agent"):
+        return None
+    if not all(isinstance(key, str) and isinstance(value, str) for key, value in args.items()):
+        return None
+    if any(any(character.isdigit() for character in value) for value in args.values()):
+        return None
+    if tool_name == "calc_exposure_delta":
+        if set(args) - {"scope_category"}:
+            return None
+        if args.get("scope_category", "industry") not in {"single_name", "industry", "sector"}:
+            return None
+    elif args:
+        return None
+    try:
+        return ToolRequest(tool_name=tool_name, requesting_role="portfolio_manager_agent", args=dict(args))
+    except ValueError:
+        return None
+
+
+def _pm_surfaced_markdown(
+    audited_findings: tuple[RoleFindingSet, ...],
+    *,
+    accepted_role_names: frozenset[str],
+) -> tuple[str, ...]:
+    sections = tuple(
+        finding.live_report_markdown
+        for finding in audited_findings
+        if finding.role_name in accepted_role_names and finding.live_report_markdown
+    )
+    findings = tuple(
+        finding.claim_text
+        for finding_set in audited_findings
+        if finding_set.role_name != "portfolio_manager_agent"
+        for finding in finding_set.findings
+    )
+    return (*sections, *findings)
+
+
+def _pm_gate_results(
+    audited_findings: tuple[RoleFindingSet, ...],
+    *,
+    initial_results: tuple[ToolResult, ...],
+    loop_results: tuple[ToolResult, ...],
+    accepted_role_names: frozenset[str],
+    surfaced_markdown: tuple[str, ...],
+) -> tuple[ToolResult, ...]:
+    # Analyst result envelopes are only provenance sources when their section
+    # was accepted. PM re-checks join only if their values were already shown.
+    # The runner stores roles sequentially, so reconstruct the analyst set from
+    # each accepted finding's frozen references rather than reading current data.
+    accepted_refs = {
+        ref
+        for finding_set in audited_findings
+        if finding_set.role_name in accepted_role_names
+        for finding in finding_set.findings
+        for ref in finding.evidence_refs
+    }
+    # PM baseline envelopes never grant numeric provenance: the PM can repeat
+    # only values already visible in accepted sections or deterministic
+    # findings. A verification calculation is retained only when every value
+    # reproduces that surfaced record.
+    matched = tuple(
+        result
+        for result in loop_results
+        if pm_calculation_matches_surfaced_values(
+            result,
+            surfaced_results=(),
+            surfaced_markdown=surfaced_markdown,
+        )
+    )
+    del accepted_refs  # refs are carried in surfaced markdown and frozen findings.
+    del initial_results
+    return matched
+
+
 def _live_provider_role_findings(
     deterministic: RoleFindingSet,
     role_results: tuple[ToolResult, ...],
@@ -1313,6 +1685,7 @@ def build_tool_mediated_agent_team_summary(
     live_provider_enabled: bool = False,
     p36_risk_live_enabled: bool = False,
     p36_public_live_enabled: bool = False,
+    p36_pm_live_enabled: bool = False,
     market_context: MarketContextExecutionContext | None = None,
 ) -> SavedAgentTeamSummaryRead:
     generated_at = report_generated_at or _now_utc()
@@ -1328,6 +1701,7 @@ def build_tool_mediated_agent_team_summary(
             live_provider_enabled=live_provider_enabled,
             p36_risk_live_enabled=p36_risk_live_enabled,
             p36_public_live_enabled=p36_public_live_enabled,
+            p36_pm_live_enabled=p36_pm_live_enabled,
             market_context=market_context,
         )
         payload = _summary_payload_from_run_state(run_state, evidence, report_generated_at=generated_at)
@@ -1348,6 +1722,7 @@ def build_tool_mediated_agent_team_summary_from_provider_resolution(
     registry: dict[str, ToolRegistryEntry] | None = None,
     p36_risk_live_enabled: bool = False,
     p36_public_live_enabled: bool = False,
+    p36_pm_live_enabled: bool = False,
     market_context: MarketContextExecutionContext | None = None,
 ) -> SavedAgentTeamSummaryRead:
     """Build a tool-mediated summary using the reviewed provider-factory seam.
@@ -1368,6 +1743,7 @@ def build_tool_mediated_agent_team_summary_from_provider_resolution(
         live_provider_enabled=live_enabled,
         p36_risk_live_enabled=p36_risk_live_enabled and live_enabled,
         p36_public_live_enabled=p36_public_live_enabled and live_enabled,
+        p36_pm_live_enabled=p36_pm_live_enabled and live_enabled,
         market_context=market_context,
     )
 
@@ -1747,6 +2123,8 @@ def _summary_payload_from_run_state(
         tool_results=run_state.tool_results,
         report_generated_at=report_generated_at,
         live_provider_mode=run_state.provider_mode == LIVE_PROVIDER_MODE,
+        pm_synthesis=run_state.pm_synthesis,
+        pm_fallback_reason=run_state.pm_fallback_reason,
     )
     terminal = {"completed", "skipped"}
     run_status = "completed" if all(summary.role_status in terminal for summary in role_summaries) else "partially_completed"
@@ -1765,7 +2143,9 @@ def _summary_payload_from_run_state(
         "warning_codes": warning_codes,
         "report_status": "full_agent_report",
         "final_synthesis_markdown": synthesis,
-        "final_synthesis_authored_by": "deterministic_template",
+        "final_synthesis_authored_by": (
+            "portfolio_manager_agent" if run_state.pm_synthesis is not None else "deterministic_template"
+        ),
         "evidence_schema_version": evidence.evidence_schema_version,
         "evidence_references": synthesis_refs,
         "tool_run_artifact": tool_run_artifact.model_dump(mode="python"),
@@ -1783,7 +2163,10 @@ def _tool_run_artifact_payload(
         artifact_schema_version=(
             P36_ARTIFACT_SCHEMA_VERSION
             if any(result.contract_version == "p36_calc_envelope_v1" for result in run_state.tool_results)
-            or any(provider_run.prompt_version == P36_ROLE_PROMPT_VERSION for provider_run in run_state.provider_runs)
+            or any(
+                provider_run.prompt_version in {P36_ROLE_PROMPT_VERSION, P36_PM_PROMPT_VERSION}
+                for provider_run in run_state.provider_runs
+            )
             else "p33a_tool_run_freeze_v1"
         ),
         provider_mode=run_state.provider_mode,  # type: ignore[arg-type]
@@ -1796,6 +2179,7 @@ def _tool_run_artifact_payload(
         audited_findings=tuple(_frozen_finding_set(finding_set) for finding_set in run_state.audited_findings),
         auditor=asdict(run_state.auditor),
         provider_runs=tuple(asdict(provider_run) for provider_run in run_state.provider_runs),
+        pm_synthesis=asdict(run_state.pm_synthesis) if run_state.pm_synthesis is not None else None,
         open_questions=run_state.open_questions,
         synthesis_evidence_references=synthesis_refs,
         warning_codes=warning_codes,
@@ -1916,6 +2300,8 @@ def _synthesis_markdown(
     tool_results: tuple[ToolResult, ...],
     report_generated_at: datetime,
     live_provider_mode: bool = False,
+    pm_synthesis: PmSynthesis | None = None,
+    pm_fallback_reason: str | None = None,
 ) -> str:
     before_after = evidence.before_after_portfolio_impact
     concentration = evidence.concentration_risk_drift
@@ -1943,6 +2329,7 @@ def _synthesis_markdown(
         "## Summary",
         "What would I be ignoring if I acted manually now? What you would be ignoring is organized below from frozen saved evidence only.",
         _summary_paragraph(evidence, headline=headline),
+        *_pm_synthesis_lines(pm_synthesis, fallback_reason=pm_fallback_reason),
         "",
         "## If you proceed",
         *_markdown_paragraphs(
@@ -1992,6 +2379,45 @@ def _synthesis_markdown(
     if find_internal_display_tokens(document):
         raise ValueError("tool-mediated document contains an internal display token")
     return document
+
+
+def _pm_synthesis_lines(
+    synthesis: PmSynthesis | None,
+    *,
+    fallback_reason: str | None,
+) -> tuple[str, ...]:
+    if synthesis is None:
+        if fallback_reason == "gate_drop":
+            return (
+                "",
+                "A live Portfolio Manager synthesis was generated for this report but did not pass its safety checks and was omitted. The summary above is deterministic.",
+            )
+        if fallback_reason == "unavailable":
+            return (
+                "",
+                "A live Portfolio Manager synthesis was not available for this run. The summary above is deterministic.",
+            )
+        return ()
+    tension_lines = (
+        ("", "Where the evidence pulls apart:", *_markdown_list_items(synthesis.evidence_tensions))
+        if synthesis.evidence_tensions
+        else ()
+    )
+    verification_lines = tuple(
+        f"{index}. {item}" for index, item in enumerate(synthesis.verification_priorities, start=1)
+    )
+    return (
+        "",
+        "**Portfolio Manager synthesis** (AI-generated analysis of the saved evidence; verified against this report's frozen calculations):",
+        "",
+        synthesis.evidence_weighting,
+        *tension_lines,
+        "",
+        "Verify first:",
+        *verification_lines,
+        "",
+        synthesis.trust_assessment,
+    )
 
 
 def _trade_review_title(evidence: SavedEvidencePackageRead, *, report_generated_at: datetime) -> str:

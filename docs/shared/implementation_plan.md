@@ -534,8 +534,8 @@ Detailed verification history is archived in:
   `docs/codex-b-architecture/PHASE_35_REAL_ACCOUNT_TRADE_IMPACT_PROTOTYPE_CONTRACT.md`.
 - Opened 2026-07-08 by Claude G after the founder rejected the P34A-T18
   structured report as not working. Founder's working-report definition:
-  trade-centered, account-aware (real Fidelity account by nickname
-  `Fidelity Individual`, buy-NVDA test trade), zero internal tokens in user
+  trade-centered, account-aware (the founder's selected real account by
+  nickname, with a real test buy intent), zero internal tokens in user
   prose, well-formatted markdown with titles/paragraphs/tables. Founder
   decisions D1-D6 recorded in the contract, including: derived percentages
   AND dollar values allowed in internal-prototype reports (identifiers/raw
@@ -546,9 +546,9 @@ Detailed verification history is archived in:
   constituent endpoints are 402 on the current tier - v2 look-through is
   founder decision P35-T7).
 - `P35-T1` - Trade-impact methodology memo. Owner: Claude H. Reviewer:
-  Claude G. Status: done 2026-07-08; review PASS as amended (blocker B1: SMH
-  mislabeled "broad-market" in three narrative examples; wording fixed in
-  place per the review spec). Decisions recorded: D-R1 (§2.4 categorical
+  Claude G. Status: done 2026-07-08; review PASS as amended (blocker B1: a
+  sector ETF name mislabeled "broad-market" in three narrative examples;
+  wording fixed in place per the review spec). Decisions recorded: D-R1 (§2.4 categorical
   caveat = backend-rendered fixed text, never LLM-authored) and D-R2 (§5
   narrative = deterministic backend-rendered prose, outside the live-gate
   $/% ban; LLM-authored narrative is a separate v4 decision). Memo at
@@ -568,10 +568,11 @@ Detailed verification history is archived in:
 - `P35-T3` - Deterministic exposure engine v1 (sector-level, before/after,
   dollars + percentages, thresholds, narrative statements). Owner: Codex C.
   Reviewer: Claude G. Status: done 2026-07-08; review PASS after blocker
-  P35-T3-F1 (narrative hardcoded SMH/VTI fund names, emitting false holdings
+  P35-T3-F1 (narrative hardcoded two fund names, emitting false holdings
   statements for any non-golden portfolio; fixed to derive held ETF/fund
   symbols from reviewed positions). Golden worked example byte-identical;
-  non-golden SOXX/IWM/MSFT+AMD regression proves no false SMH/VTI mentions.
+  non-golden SOXX/IWM/MSFT+AMD synthetic regression proves no false
+  hardcoded-name mentions.
   Pure Python; injected/default-off FMP company-profile classification
   (POA_MARKET_CONTEXT_MODE, 30-req budget, sanitized errors); ETF theme map
   + broad-market exclusion + coverage metric; funding regimes; reference-point
@@ -672,12 +673,12 @@ Detailed verification history is archived in:
   blocked_unknown_freshness; fixed by P35-T7b-F2). RUN 3 DONE 2026-07-10
   (founder-authorized): first full live end-to-end pass - real selected
   account snapshot reached the engine, funding-shortfall warning surfaced on
-  real cash, semiconductor SMH+NVDA overlap surfaced, two live Gemini role
-  notes generated and gated (gemini-3.5-flash attempted, rejected by API,
+  real cash, a real fund/single-name industry overlap surfaced, two live
+  Gemini role notes generated and gated (gemini-3.5-flash attempted, rejected by API,
   fell back to gemini-2.5-flash), full_agent_report returned. NOT accepted
   yet - report defect list for P35-T9: (1) false "already above the 30.0%
   industry reference point before this trade" clause appended unconditionally
-  in the engine's semiconductor-overlap statement (exposure_engine.py ~:852);
+  in the engine's industry-overlap statement (exposure_engine.py ~:852);
   (2) raw fact key atr14_usd rendered in the market-context table
   (FACT_DISPLAY_LABELS missing entry; unmapped keys should fail closed);
   (3) composer doubling "reviews stock buy review" (runner ~:1351);
@@ -686,7 +687,7 @@ Detailed verification history is archived in:
   display label ("Market quote freshness: manual") because the envelope feeds
   the labeled string instead of the bare category; (7) near-duplicate
   freshness/as-of rows in the market-context table. Data finding for
-  founder/Claude H: cash balance and the SPAXX money-market position appear
+  founder/Claude H: cash balance and the money-market core position appear
   as equal-value separate rows both counted in the portfolio total (likely
   the same swept dollars counted twice), which also understates available
   cash in the shortfall warning - needs a domain ruling on core-position
@@ -1583,6 +1584,192 @@ exercise their own judgment within this frame.
   after the docs commit: FINDING-2 guard test (Codex C, next touch) and the
   pre-activation checklist. T6 FROZEN pending explicit founder per-run
   authorization.
+
+  **P36-T6 EXECUTION LOG (founder authorized 2026-07-14; Codex B executes).**
+  Founder authorized one live five-role run and saved a founder-authorized
+  real review in the app workspace - the standing private acceptance case
+  (identifiers and trade details held outside project docs).
+  Attempt history, all fail-closed with zero provider calls so far: (v1)
+  Codex B correctly stopped - my prompt pointed at the fixture-backed
+  /trade-reviews listing which never shows real saves; (v2 prep) diagnosis
+  found the real blocker: POA_AGENT_TEAM_REPORT_GENERATION_MODE was unset, so
+  Claude G's earlier probe POST ran the deterministic pipeline in under a
+  second (and overwrote an older thread's agent summary with a fresh
+  deterministic one - benign, disclosed). Corrected mechanism understanding: the endpoint
+  ALWAYS regenerates (no readback path); the launch recipe is the P35-proven
+  three-layer compose (base + live-llm + p35-t6-run2 overlay) with
+  POA_LLM_MODE=live POA_LLM_PROVIDER=google on the command; keys flow from
+  .env via env_file; no .env edits needed (v2's instruction to edit .env was
+  Claude G error, corrected in v3); (v3) Codex B blocked at PREFLIGHT on a
+  REAL LATENT DEFECT:
+  **FINDING P36-T6-1 (tracked, post-T6, Codex C): circular import**
+  app.schemas.reports -> llm_clients.contracts -> agent_team.__init__ ->
+  legacy_console.run_state -> safety/__init__ -> safety.report_output_safety
+  -> app.schemas.reports. Server boot order masks it (uvicorn imports
+  app.main first; serving works - proven by health 200 + successful POSTs);
+  any COLD interpreter entering mid-cycle fails (bit Claude G's direct
+  test-module load AND Codex B's preflight, same day). Fix post-T6: break the
+  cycle (lazy import inside the validator or move shared types), add a
+  naked-import regression test (python -c "from
+  app.services.reports.agent_team_report import ..." must succeed). Claude G
+  reviews. Unblock for T6 (verified by Claude G, reproduce + fix, offline):
+  preflight imports app.main FIRST, then the resolvers - mirrors uvicorn boot
+  order, zero code change. Also corrected: LLMProviderResolution has NO
+  `mode` attr; preflight checks provider/model/status/available/error_code.
+  v4 issued. T6 attempt still unconsumed.
+  **(v4) T6 EXECUTED 2026-07-14 - Codex B, one attempt, HTTP 201 in under 30
+  seconds, live Gemini provider (provider_mode=tool_mediated_live). Claude G
+  cross-checked the artifact metadata field-for-field and returned SAFETY
+  PASS.** Outcomes: 4/5 roles completed live; fundamentals skipped honestly
+  (no_reviewed_public_evidence - FMP fundamentals lane dormant, expected).
+  Gates observed working in production: technical analyst live prose DROPPED
+  by F-5 (live_numeric_mismatch_dropped) leaving the deterministic freshness
+  note; PM live synthesis fell to the deterministic floor
+  (final_synthesis_authored_by=deterministic_template,
+  numeric_consistency_blocked) - fail-closed as designed; risk manager live
+  Gemini prose PASSED the full gate stack and shipped (first live-authored
+  real-account prose through the v3 gates). No privacy/identifier flags. The
+  report itself is verdict-free with verify-before-acting guidance.
+  Deliverables: run artifacts (JSON + rendered Markdown) exist as untracked
+  files under the ignored reports directory, per data rules; contents and
+  identifiers are not recorded in docs. Report displayed to the founder
+  in-session at founder's explicit instruction. Stack torn down, ports free.
+  **FOUNDER VERDICT ON T6 RUN 1 (2026-07-14): prototype, far from a working
+  version. All agents except the PM delivered no analysis. New priority:
+  make each agent AVAILABLE, one at a time (they do not overlap). The
+  founder-authorized real review (standing private acceptance case) is the
+  example case for every fix.**
+
+  **ROOT CAUSE A (Claude G, verified in code, explains 4 of 5 empty
+  surfaces): the API route generate_report_agent_team_summary
+  (routes/reports.py:48) passes ONLY mode + provider_resolution into
+  generate_agent_team_report_for_thread. All five public-source policy
+  params (edgar_policy/client, edgar_recent_filings_policy/client,
+  fmp_fundamentals_policy/context, fmp_eod_history_policy/context,
+  fred_macro_series_policy/context) default to None, and
+  build_public_evidence_projection with edgar_policy=None returns
+  NoReviewedPublicEvidenceProvider().snapshot() - the EMPTY package - with
+  every optional lane skipped. Env knobs (POA_MARKET_CONTEXT_MODE=live in
+  the T6 overlay) never reach this call. The route predates T5A-2's public
+  roles and was never wired.** Consequences in run 1: fundamentals skipped;
+  news reduced to an unavailability note; technical starved of C6-C10 series
+  (its live prose then failed F-5 and dropped); the PM had almost no
+  surfaced numbers to verify against (hypothesis for
+  numeric_consistency_blocked -> deterministic floor; Claude E to confirm
+  from the run-1 artifact); AND the deterministic classifier lacked the
+  reviewed symbol's industry mapping (public company profile empty),
+  producing the report's one real CONTENT DEFECT: the industry-exposure
+  bucket shows a zero trade delta and identical before/after totals for a
+  purchase the report itself describes as adding exposure in that same
+  industry - the new position was never classified into the industry
+  bucket, understating post-trade exposure. Also noted (polish, not
+  blocking): the Risk Manager paragraph is duplicated (role section + inside
+  the synthesis); the report title renders the UTC-next-day date; a
+  capitalization typo from founder workspace input carries faithfully into
+  the title.
+
+  **P36-T7 - PER-AGENT AVAILABILITY (the founder's new priority; one agent
+  at a time; the standing private acceptance case as the fixture for every
+  step):**
+  - T7-A1 TECHNICAL ANALYST (first): wire fmp_eod_history policy/context
+    (FMP market-context lane - ALREADY APPROVED, key in .env) through the
+    route via env-driven resolvers, mirroring how the route already resolves
+    generation mode + provider. Also fixes the industry-classification
+    defect if the company-profile lane rides the same wiring (EDGAR profile
+    - approved). Acceptance on the standing case: technical section with
+    F-5-verified numbers from C6-C10.
+  - T7-A2 NEWS ANALYST: wire edgar_recent_filings policy/client (EDGAR -
+    approved, keyless). FRED stays dormant (separate founder source
+    decision). Acceptance: filings-metadata-grounded news section.
+  - T7-A3 PM LIVE SYNTHESIS: after A1/A2 give the PM real accepted sections,
+    Claude E analyzes the run-1 numeric_consistency_blocked drop (invented
+    numbers vs over-strict matching) and re-tests; expectation: with real
+    surfaced numbers the PM live block passes or the eval says why not.
+  - T7-A4 FUNDAMENTALS ANALYST: BLOCKED ON FOUNDER SOURCE DECISION - approve
+    FMP fundamentals (C11/C12) -> then the T5A-2 pre-activation checklist
+    binds (E-F1 heading keying, yield-scrub audit); alternative: EDGAR
+    company-facts as a free approved-family lane (needs Claude E design).
+  - T7-A5 (optional) FRED macro for News: founder source decision + its
+    checklist items (C13 pairing findings, label audit).
+  VERIFICATION PATTERN per step: Codex C implements ONE lane + offline
+  tests -> Claude G review -> tool_mediated_mock re-run on the standing
+  private acceptance case (mock LLM; approved-source fetches only; no
+  authorization needed) -> ONE founder-authorized live run -> compare
+  sections; archive each run's artifact in per-run subfolders under the
+  ignored reports directory (regeneration overwrites the thread's summary,
+  so that folder is the history; identifiers stay out of docs).
+  CARRIED POST-T6 ITEMS: FINDING P36-T6-1 (import cycle, Codex C + naked
+  import regression test); FINDING-2 guard test; composer duplication +
+  date-rendering polish (bundle into T7 slices); delete
+  docker-compose.p35-t6-run2.yml after T7 stabilizes (or rename to a
+  tracked, documented t7 overlay); docs commit for this log.
+
+  **RUN-1 RECORD CORRECTION (Claude G, 2026-07-14, after Claude E's T7-A3
+  analysis - VERIFIED): T6 run 1 executed the LEGACY P35 live branch, not
+  the P36 path. ROOT CAUSE B.** Claude E's synthetic two-cell discriminator
+  showed the legacy branch reproduces run 1's flag family string-for-string
+  while the P36 branch emits a disjoint family
+  (numeric_provenance_blocked/live_provider_safety_fallback) - the branches
+  are mutually exclusive at tool_mediated_runner.py:371. Claude G confirmed
+  via the one-field metadata check Claude E specified: run 1's artifact has
+  exactly 2 provider_runs, both prompt_version=p35-role-note-v2 (no
+  p36-role-analysis-v1 / p36-pm-synthesis-v1 ever ran), and localized the
+  seam: _build_tool_mediated_summary (agent_team_report.py:192) passes no
+  p36 flags, they default False down the whole chain, and NO env knob for
+  them exists anywhere in the repo - the P36 five-role path has never been
+  reachable from the API; only tests set the flags. CORRECTIONS to the run-1
+  log above: the PM never ran (deterministic_template = never-ran on the
+  legacy branch, which has no PM loop; LEGACY_LIVE_ROLE_ALLOWLIST =
+  {technical, risk} - exactly the two roles with live activity);
+  "numeric_consistency_blocked on the PM path" was a summary-level rollup,
+  not a PM gate event; the live risk prose that shipped ran under the P35
+  prompt/gate family (p35-role-note-v2), NOT the v3/P36 stack - Claude G's
+  earlier "first live prose through the v3 gates" claim is WITHDRAWN. Gates
+  behaved correctly in BOTH families; no tuning needed (Claude E T7-A3 gate
+  answer). Two root causes now: A = empty public evidence (route policy
+  wiring, T7-A1/A2); B = p36 flags unplumbed (T7-B). A alone cannot make
+  run 2 five-live.
+  **T7-B (NEW, FRONT OF QUEUE - critical path): plumb the p36 lane flags.**
+  Claude G knob spec: POA_P36_LIVE_LANES, comma-set from {risk, public, pm};
+  unset/empty = legacy branch (byte-identical today); resolved at the route
+  (like generation mode + provider) and passed through
+  _build_tool_mediated_summary. Per-lane switches ARE the founder's
+  one-agent-at-a-time dial. Lands WITH Claude E's three canaries: (1)
+  five-live preflight - a T6-mode run must record provider runs for all five
+  roles with prompt versions only in {p36-role-analysis-v1,
+  p36-pm-synthesis-v1}; (2) branch-exclusivity - p36-flagged runs must never
+  emit numeric_consistency_blocked/live_numeric_mismatch_dropped and vice
+  versa; (3) starved-package P36 family - thin package: technical drops
+  numeric_provenance_blocked, fundamentals/news honest-gap sections survive,
+  PM digit drops numeric_provenance_blocked. Owner: Codex C. Claude G
+  reviews. The A1 mock re-run on the standing case is HELD until T7-B lands
+  (else it exercises the legacy branch again).
+  **T7-A1 REVIEW (Claude G, 2026-07-14): PASS - reviewed for real.** Diff
+  verified: existing market_context_policy_from_environment reused; off or
+  credential-incomplete -> (None, None), byte-identical today; one lane
+  only; service signature unchanged; route tests cover set/unset; 584
+  passed locally (incl. agent_team suites). FINDING-2 IS ALSO CLOSED in the
+  same tree: test_report_prose_allowlist_covers_every_user_visible_prose_key
+  asserts USER_VISIBLE_PROSE_KEYS - REPORT_PROSE_KEYS == frozenset() -
+  verified present and passing. TWO REPORT-INTEGRITY DEFECTS in the T7-A1
+  report (process, not code): (a) it stated "Review: Claude G PASS; reviewer
+  closed" BEFORE any Claude G review occurred - NORM RESTATED: no agent
+  writes another agent's verdict into a report; verdicts come only from the
+  named reviewer's own relay; (b) files-changed omitted
+  test_report_output_phrasing.py (the FINDING-2 guard test). Work good,
+  bookkeeping wrong - both corrections required in Codex B's next report.
+  **TEAM MAP (founder asked about capacity + onboarding):** Codex C = T7-B
+  (critical path). Codex B = T7-A2 EDGAR wiring prep (same pattern as A1;
+  rebase after T7-B; plus the two report corrections). Claude E = five-live
+  mock-run eval acceptance after T7-B; then T7-A3 on real data. Claude G =
+  T7-B knob-spec review + run-2 safety acceptance. PROPOSED ONBOARD (founder
+  decision): **Codex D - "Verification & Hygiene"** owning the independent
+  backlog with zero critical-path overlap: FINDING P36-T6-1 import cycle +
+  naked-import regression test; composer polish (duplicate Risk paragraph in
+  synthesis, UTC-next-day title date); replace docker-compose.p35-t6-run2.yml
+  with a tracked documented t7 overlay + T7 runbook (launch recipe,
+  preflight, per-run artifact archiving, teardown checks). Start with ONE
+  new agent; split an ops agent out later only if D saturates.
 - `P36-T5B` - Live PM synthesis: typed PmSynthesis (four verdict-incapable
   fields), whole-block fail-closed, composer rendering, PM calc
   verification access. Owner: Codex C (implementation). Status: DESIGN PHASE

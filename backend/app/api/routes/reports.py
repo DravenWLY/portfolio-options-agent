@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.config import ConfigurationError
 from app.db.session import get_db
 from app.schemas.reports import (
     ReportThreadCreate,
@@ -13,12 +14,34 @@ from app.schemas.reports import (
 )
 from app.services.reports import crud as report_service
 from app.services.reports import agent_team_report as agent_team_report_service
+from app.services.market_data.eod_history import (
+    MarketContextExecutionContext,
+    MarketContextPolicy,
+    default_market_context_execution_context,
+    market_context_policy_from_environment,
+)
 
 router = APIRouter(tags=["reports"])
 
 # Compatibility seam for fixture tests that assert Skyframe POST interception
 # happens before saved-report generation can reach the real service.
 generate_agent_team_report_for_thread = agent_team_report_service.generate_agent_team_report_for_thread
+
+
+def _resolve_fmp_eod_history_generation_context() -> tuple[
+    MarketContextPolicy | None,
+    MarketContextExecutionContext | None,
+]:
+    """Resolve the approved EOD lane only when its existing live config is complete."""
+
+    policy = market_context_policy_from_environment()
+    if not policy.live_enabled:
+        return None, None
+    try:
+        return policy, default_market_context_execution_context()
+    except ConfigurationError:
+        # A live mode without the backend-only FMP credential remains disabled.
+        return None, None
 
 
 @router.post("/users/{user_id}/reports", response_model=ReportThreadRead, status_code=status.HTTP_201_CREATED)
@@ -56,17 +79,28 @@ def generate_report_agent_team_summary(
     db: Session = Depends(get_db),
 ) -> SavedReviewArtifactRead:
     generation_mode = agent_team_report_service.resolve_backend_agent_team_report_generation_mode()
-    provider_resolution = (
-        agent_team_report_service.resolve_agent_team_report_provider_resolution()
-        if generation_mode == "tool_mediated"
-        else None
-    )
+    if generation_mode == "tool_mediated":
+        provider_resolution = agent_team_report_service.resolve_agent_team_report_provider_resolution()
+        p36_risk_live_enabled, p36_public_live_enabled, p36_pm_live_enabled = (
+            agent_team_report_service.resolve_p36_live_lane_flags()
+        )
+    else:
+        provider_resolution = None
+        p36_risk_live_enabled = False
+        p36_public_live_enabled = False
+        p36_pm_live_enabled = False
+    fmp_eod_history_policy, fmp_eod_history_context = _resolve_fmp_eod_history_generation_context()
     agent_summary = agent_team_report_service.generate_agent_team_report_for_thread(
         db,
         user_id,
         thread_id,
         mode=generation_mode,
         provider_resolution=provider_resolution,
+        p36_risk_live_enabled=p36_risk_live_enabled,
+        p36_public_live_enabled=p36_public_live_enabled,
+        p36_pm_live_enabled=p36_pm_live_enabled,
+        fmp_eod_history_policy=fmp_eod_history_policy,
+        fmp_eod_history_context=fmp_eod_history_context,
     )
     if agent_summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved review artifact not found")

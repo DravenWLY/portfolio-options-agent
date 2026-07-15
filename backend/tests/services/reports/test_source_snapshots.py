@@ -383,6 +383,24 @@ def test_fmp_eod_history_freezes_one_normalized_window_per_saved_package() -> No
     assert client.calls == [("XYZ", 260)]
 
 
+def test_public_evidence_projection_attaches_eod_history_when_approved_policy_is_present() -> None:
+    client = _ReplayFmpEodClient()
+    context = market_context_execution_context_for_client(client, collected_at=NOW)
+
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="XYZ",
+        fmp_eod_history_policy=MarketContextPolicy(mode="live"),
+        fmp_eod_history_context=context,
+    )
+
+    section = public_evidence.public_market_context
+    assert public_evidence.public_evidence_mode == "provider_reference"
+    assert section is not None
+    assert section.source_key == "fmp_eod_history"
+    assert section.availability == "available"
+    assert client.calls == [("XYZ", 260)]
+
+
 def test_source_snapshot_settings_are_default_off_and_budget_capped() -> None:
     settings = build_settings(env={}, load_dotenv=False)
 

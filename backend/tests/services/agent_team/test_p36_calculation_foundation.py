@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+from app.config import ConfigurationError
 from app.schemas.reports import SavedEvidenceSectionRead, SavedToolMediatedRunArtifactRead
 from app.schemas.reports import SavedPublicEvidenceFactRead, SavedPublicEvidenceSectionRead
 from app.services.agent_team.auditing.v3_value_gates import (
@@ -28,7 +29,7 @@ from app.services.agent_team.orchestration.deterministic_standalone import (
     build_deterministic_standalone_summary_check,
     freeze_deterministic_standalone_summary_check,
 )
-from app.services.agent_team.llm_clients.contracts import LLMProviderResponse
+from app.services.agent_team.llm_clients.contracts import AGENT_TEAM_ROLES, LLMProviderResponse
 from app.services.agent_team.llm_clients.contracts import registered_static_system_prompts
 from app.services.agent_team.orchestration import tool_mediated_runner as runner
 from app.services.agent_team.orchestration.p36_public_prompts import P36_PUBLIC_SYSTEM_PROMPTS
@@ -46,6 +47,7 @@ from app.services.agent_team.tools import (
     execute_tool_request,
 )
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
+from app.services.reports.agent_team_report import P36_LIVE_LANES_ENV, resolve_p36_live_lane_flags
 from app.services.reports.display_labels import find_internal_display_tokens
 from app.services.reports.display_labels import UNKNOWN_DISPLAY_LABEL
 from app.services.reports.source_snapshots import (
@@ -88,6 +90,7 @@ def _calculation_evidence(*, supported_flow: str = "stock_buy"):
             "Technology | $100.00 | 50.0% | +$20.00 | $120.00 | 60.0%.",
         ),
     )
+
     concentration = SavedEvidenceSectionRead(
         section_key="concentration_risk_drift",
         section_label="Concentration and risk drift",
@@ -102,6 +105,15 @@ def _calculation_evidence(*, supported_flow: str = "stock_buy"):
             "concentration_risk_drift": concentration,
         }
     )
+
+
+def test_p36_live_lane_resolver_defaults_off_and_rejects_unknown_configuration() -> None:
+    assert resolve_p36_live_lane_flags({}) == (False, False, False)
+    assert resolve_p36_live_lane_flags({P36_LIVE_LANES_ENV: "   "}) == (False, False, False)
+    assert resolve_p36_live_lane_flags({P36_LIVE_LANES_ENV: "risk, public,pm"}) == (True, True, True)
+
+    with pytest.raises(ConfigurationError, match="unsupported lane names"):
+        resolve_p36_live_lane_flags({P36_LIVE_LANES_ENV: "risk,unknown"})
 
 
 def _fmp_fundamentals_section(*, include_prior: bool = False) -> SavedPublicEvidenceSectionRead:
@@ -1974,6 +1986,128 @@ def test_p36_pm_receives_accepted_risk_section_with_only_vocabulary_relaxed() ->
         "risk_management_agent",
         "portfolio_manager_agent",
     ]
+
+
+def test_p36_all_live_lanes_preflight_freezes_every_role_with_v3_prompts() -> None:
+    provider = _P36PmWithRiskProvider()
+    summary = build_tool_mediated_agent_team_summary(
+        _public_calculation_evidence(include_eod=True),
+        report_generated_at=datetime(2026, 7, 12, tzinfo=UTC),
+        llm_provider=provider,
+        p36_risk_live_enabled=True,
+        p36_public_live_enabled=True,
+        p36_pm_live_enabled=True,
+    )
+
+    assert summary.tool_run_artifact is not None
+    provider_runs = summary.tool_run_artifact.provider_runs
+    assert {run.role_name for run in provider_runs} == set(AGENT_TEAM_ROLES)
+    assert {run.prompt_version for run in provider_runs} <= {
+        "p36-role-analysis-v1",
+        "p36-pm-synthesis-v1",
+    }
+
+
+class _LegacyP35Provider:
+    provider_name = "legacy-p35-fake"
+    model = "legacy-p35-model"
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    def complete(self, request):
+        self.calls.append(request)
+        return LLMProviderResponse(
+            request_id=request.request_id,
+            role_name=request.role_name,
+            status="ok",
+            provider=self.provider_name,
+            model=self.model,
+            prompt_version=request.prompt_version,
+            content_markdown=(
+                "The saved evidence remains limited to the reviewed package. "
+                "Current context was not reviewed for this saved report."
+            ),
+            is_mock=True,
+            finish_reason="stop",
+        )
+
+
+def test_p36_and_legacy_runs_keep_numeric_gate_flags_branch_exclusive() -> None:
+    p36_summary = build_tool_mediated_agent_team_summary(
+        _public_calculation_evidence(include_eod=True),
+        report_generated_at=datetime(2026, 7, 12, tzinfo=UTC),
+        llm_provider=_P36PmWithRiskProvider(),
+        p36_risk_live_enabled=True,
+        p36_public_live_enabled=True,
+        p36_pm_live_enabled=True,
+    )
+    legacy_summary = build_tool_mediated_agent_team_summary(
+        _public_calculation_evidence(include_eod=True),
+        report_generated_at=datetime(2026, 7, 12, tzinfo=UTC),
+        llm_provider=_LegacyP35Provider(),
+        live_provider_enabled=True,
+    )
+
+    assert "numeric_consistency_blocked" not in repr(p36_summary)
+    assert "live_numeric_mismatch_dropped" not in repr(p36_summary)
+    assert "numeric_provenance_blocked" not in repr(legacy_summary)
+    assert "live_provider_safety_fallback" not in repr(legacy_summary)
+
+
+class _P36StarvedPackageProvider:
+    provider_name = "p36-starved-package-fake"
+    model = "p36-starved-package-model"
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    def complete(self, request):
+        self.calls.append(request)
+        if request.role_name == "technical_analyst":
+            content = _p36_public_section("technical_analyst") + "\n\nThe frozen technical record includes 999."
+        elif request.role_name in {"fundamentals_analyst", "news_analyst"}:
+            content = _p36_public_section(request.role_name)
+        else:
+            payload = _p36_pm_synthesis_payload()
+            payload["trust_assessment"] = f"{payload['trust_assessment']} The unreviewed value is 999."
+            content = json.dumps(payload)
+        return LLMProviderResponse(
+            request_id=request.request_id,
+            role_name=request.role_name,
+            status="ok",
+            provider=self.provider_name,
+            model=self.model,
+            prompt_version=request.prompt_version,
+            content_markdown=content,
+            is_mock=True,
+            finish_reason="stop",
+        )
+
+
+def test_p36_starved_package_drops_unproven_digits_but_keeps_honest_public_gaps() -> None:
+    summary = build_tool_mediated_agent_team_summary(
+        _public_calculation_evidence(include_eod=False),
+        report_generated_at=datetime(2026, 7, 12, tzinfo=UTC),
+        llm_provider=_P36StarvedPackageProvider(),
+        p36_public_live_enabled=True,
+        p36_pm_live_enabled=True,
+    )
+
+    roles = {role.role_name: role for role in summary.role_summaries}
+    assert roles["technical_analyst"].live_report_markdown is None
+    assert "numeric_provenance_blocked" in roles["technical_analyst"].warning_codes
+    assert roles["fundamentals_analyst"].live_report_markdown is not None
+    assert roles["news_analyst"].live_report_markdown is not None
+    assert "could not be verified" in roles["fundamentals_analyst"].live_report_markdown
+    assert "not reviewed" in roles["news_analyst"].live_report_markdown
+    assert summary.final_synthesis_authored_by == "deterministic_template"
+    assert summary.tool_run_artifact is not None
+    assert summary.tool_run_artifact.pm_synthesis is None
+    assert summary.tool_run_artifact.provider_runs[-1].role_name == "portfolio_manager_agent"
+    pm_payload = _p36_pm_synthesis_payload()
+    pm_payload["trust_assessment"] = f"{pm_payload['trust_assessment']} The unreviewed value is 999."
+    assert _validate_pm_payload(pm_payload) == NUMERIC_PROVENANCE_FLAG
 
 
 @pytest.mark.parametrize(

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api.routes import reports as report_routes
 from app.api.routes.trade_reviews import _saved_review_safe_caveat_code_tuple
 from app.models.broker_account import BrokerAccount
 from app.models.broker_connection import BrokerConnection
@@ -16,6 +17,7 @@ from app.schemas.trade_review_workspace import validate_trade_review_saved_sourc
 from app.services.agent_team import tool_mediated_report
 from app.services.agent_team.llm_clients.contracts import LLMProviderRequest, LLMProviderResponse, LLMProviderStatus
 from app.services.agent_team.llm_clients.factory import LLMProviderResolution
+from app.services.market_data.eod_history import MarketContextExecutionContext, MarketContextPolicy
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.reports import agent_team_report as agent_team_report_service
 from app.services.reports import crud as report_service
@@ -279,6 +281,115 @@ def test_generate_agent_team_report_route_ignores_client_requested_tool_mode(
     saved = response.json()
     assert saved["agent_summary"]["provider_mode"] == "deterministic_template"
     assert saved["agent_summary"]["tool_run_artifact"] is None
+
+
+def test_generate_agent_team_report_route_wires_live_fmp_eod_history_context(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email="route-eod-history@example.com",
+        source_reference="workspace_routeeod1",
+    )
+    policy = MarketContextPolicy(mode="live")
+    context = MarketContextExecutionContext(policy=policy)
+    monkeypatch.setattr(report_routes, "market_context_policy_from_environment", lambda: policy)
+    monkeypatch.setattr(report_routes, "default_market_context_execution_context", lambda: context)
+
+    captured: dict[str, object] = {}
+    real_generate = agent_team_report_service.generate_agent_team_report_for_thread
+
+    def _capture_generate(*args: object, **kwargs: object):
+        captured.update(kwargs)
+        return real_generate(*args, **kwargs)
+
+    monkeypatch.setattr(agent_team_report_service, "generate_agent_team_report_for_thread", _capture_generate)
+
+    response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
+
+    assert response.status_code == 201
+    assert captured["fmp_eod_history_policy"] is policy
+    assert captured["fmp_eod_history_context"] is context
+
+
+def test_generate_agent_team_report_route_leaves_fmp_eod_history_unconfigured_when_mode_is_off(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email="route-eod-history-off@example.com",
+        source_reference="workspace_routeeodoff1",
+    )
+    monkeypatch.setattr(report_routes, "market_context_policy_from_environment", lambda: MarketContextPolicy(mode="off"))
+
+    def _unexpected_context() -> MarketContextExecutionContext:
+        raise AssertionError("EOD context resolution must not run when the lane is disabled")
+
+    monkeypatch.setattr(report_routes, "default_market_context_execution_context", _unexpected_context)
+
+    captured: dict[str, object] = {}
+    real_generate = agent_team_report_service.generate_agent_team_report_for_thread
+
+    def _capture_generate(*args: object, **kwargs: object):
+        captured.update(kwargs)
+        return real_generate(*args, **kwargs)
+
+    monkeypatch.setattr(agent_team_report_service, "generate_agent_team_report_for_thread", _capture_generate)
+
+    response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
+
+    assert response.status_code == 201
+    assert captured["fmp_eod_history_policy"] is None
+    assert captured["fmp_eod_history_context"] is None
+
+
+def test_generate_agent_team_report_route_threads_backend_p36_live_lane_flags(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email="route-p36-lanes@example.com",
+        source_reference="workspace_routep36lanes1",
+    )
+    provider = _RouteFakeLiveProvider()
+    monkeypatch.setattr(agent_team_report_service, "resolve_backend_agent_team_report_generation_mode", lambda: "tool_mediated")
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_agent_team_report_provider_resolution",
+        lambda: LLMProviderResolution(
+            provider=provider,
+            status="ok",
+            provider_name="mock",
+            model=provider.model,
+        ),
+    )
+    monkeypatch.setattr(agent_team_report_service, "resolve_p36_live_lane_flags", lambda: (True, True, True))
+    monkeypatch.setattr(report_routes, "_resolve_fmp_eod_history_generation_context", lambda: (None, None))
+
+    captured: dict[str, object] = {}
+    real_generate = agent_team_report_service.generate_agent_team_report_for_thread
+
+    def _capture_generate(*args: object, **kwargs: object):
+        captured.update(kwargs)
+        return real_generate(*args, **kwargs)
+
+    monkeypatch.setattr(agent_team_report_service, "generate_agent_team_report_for_thread", _capture_generate)
+
+    response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
+
+    assert response.status_code == 201
+    assert captured["p36_risk_live_enabled"] is True
+    assert captured["p36_public_live_enabled"] is True
+    assert captured["p36_pm_live_enabled"] is True
 
 
 def test_generate_agent_team_report_route_tool_mediated_mock_opt_in_persists_frozen_artifact(

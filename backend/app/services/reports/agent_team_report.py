@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import ConfigurationError
 from app.models.report_thread import ReportThread
 from app.schemas.reports import (
     SavedAgentTeamRoleSummaryRead,
@@ -41,6 +42,9 @@ if TYPE_CHECKING:
 
 AgentTeamReportGenerationMode = Literal["deterministic_template", "provider_unavailable", "tool_mediated"]
 BackendAgentTeamReportGenerationMode = Literal["deterministic_template", "tool_mediated"]
+
+P36_LIVE_LANES_ENV = "POA_P36_LIVE_LANES"
+_P36_LIVE_LANE_NAMES = frozenset({"risk", "public", "pm"})
 
 _PUBLIC_ROLE_NAMES: frozenset[str] = frozenset(
     {"fundamentals_analyst", "news_analyst", "technical_analyst"}
@@ -111,6 +115,20 @@ def resolve_agent_team_report_provider_resolution(env: "Mapping[str, str] | None
     return resolve_llm_provider_from_env(env)
 
 
+def resolve_p36_live_lane_flags(env: "Mapping[str, str] | None" = None) -> tuple[bool, bool, bool]:
+    """Resolve the backend-only P36 live-lane subset without client input."""
+
+    values = env if env is not None else os.environ
+    raw = values.get(P36_LIVE_LANES_ENV, "")
+    if not raw.strip():
+        return False, False, False
+    lanes = frozenset(part.strip().lower() for part in raw.split(","))
+    unknown = lanes - _P36_LIVE_LANE_NAMES
+    if unknown:
+        raise ConfigurationError(f"{P36_LIVE_LANES_ENV} contains unsupported lane names")
+    return "risk" in lanes, "public" in lanes, "pm" in lanes
+
+
 def generate_agent_team_report_for_thread(
     db: Session,
     user_id: UUID,
@@ -126,6 +144,9 @@ def generate_agent_team_report_for_thread(
     fred_macro_series_policy: FredMacroSeriesSourcePolicy | None = None,
     fred_macro_series_context: FredMacroSeriesExecutionContext | None = None,
     provider_resolution: "LLMProviderResolution | None" = None,
+    p36_risk_live_enabled: bool = False,
+    p36_public_live_enabled: bool = False,
+    p36_pm_live_enabled: bool = False,
 ) -> SavedAgentTeamSummaryRead | None:
     """Persist a sanitized Agent Team report summary for an existing saved artifact."""
 
@@ -167,6 +188,9 @@ def generate_agent_team_report_for_thread(
             evidence,
             provider_resolution=provider_resolution,
             report_generated_at=report_generated_at,
+            p36_risk_live_enabled=p36_risk_live_enabled,
+            p36_public_live_enabled=p36_public_live_enabled,
+            p36_pm_live_enabled=p36_pm_live_enabled,
         )
     else:
         summary = build_agent_team_summary_from_evidence(
@@ -194,6 +218,9 @@ def _build_tool_mediated_summary(
     *,
     provider_resolution: "LLMProviderResolution | None",
     report_generated_at: datetime,
+    p36_risk_live_enabled: bool = False,
+    p36_public_live_enabled: bool = False,
+    p36_pm_live_enabled: bool = False,
 ) -> SavedAgentTeamSummaryRead:
     from app.services.agent_team.llm_clients.factory import resolve_llm_provider
     from app.services.agent_team.tool_mediated_report import (
@@ -205,6 +232,9 @@ def _build_tool_mediated_summary(
         evidence,
         provider_resolution=resolution,
         report_generated_at=report_generated_at,
+        p36_risk_live_enabled=p36_risk_live_enabled,
+        p36_public_live_enabled=p36_public_live_enabled,
+        p36_pm_live_enabled=p36_pm_live_enabled,
     )
 
 

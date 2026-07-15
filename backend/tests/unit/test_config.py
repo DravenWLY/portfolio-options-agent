@@ -26,6 +26,7 @@ def test_get_settings_uses_safe_defaults_without_dotenv() -> None:
     assert settings.snaptrade_environment == "sandbox"
     assert settings.jblanked_calendar_base_url == DEFAULT_JBLANKED_CALENDAR_BASE_URL
     assert settings.jblanked_calendar_source == "forexfactory"
+    assert settings.edgar_report_evidence_mode == "off"
     assert settings.google_api_key == ""
     assert settings.openai_api_key == ""
 
@@ -124,6 +125,7 @@ def test_secret_values_are_not_in_repr_or_public_snapshot() -> None:
             "FMP_API_KEY": "test-fmp-key",
             "FRED_API_KEY": "test-fred-key",
             "JBLANKED_API_KEY": "test-jblanked-key",
+            "SEC_EDGAR_USER_AGENT": "Portfolio Copilot contact config@example.test",
             "GOOGLE_API_KEY": "test-key-not-real",
             "OPENAI_API_KEY": "test-openai-key-not-real",
         },
@@ -141,6 +143,7 @@ def test_secret_values_are_not_in_repr_or_public_snapshot() -> None:
         "test-fmp-key",
         "test-fred-key",
         "test-jblanked-key",
+        "config@example.test",
         "test-key-not-real",
         "test-openai-key-not-real",
     ):

@@ -14,6 +14,13 @@ from app.schemas.reports import (
 )
 from app.services.reports import crud as report_service
 from app.services.reports import agent_team_report as agent_team_report_service
+from app.services.reports.public_evidence import (
+    EdgarCompanyProfileClient,
+    EdgarCompanyProfileSourcePolicy,
+    EdgarRecentFilingsClient,
+    EdgarRecentFilingsSourcePolicy,
+    resolve_edgar_report_evidence_from_settings,
+)
 from app.services.market_data.eod_history import (
     MarketContextExecutionContext,
     MarketContextPolicy,
@@ -42,6 +49,23 @@ def _resolve_fmp_eod_history_generation_context() -> tuple[
     except ConfigurationError:
         # A live mode without the backend-only FMP credential remains disabled.
         return None, None
+
+
+def _resolve_edgar_report_evidence_generation_context() -> tuple[
+    EdgarCompanyProfileSourcePolicy | None,
+    EdgarCompanyProfileClient | None,
+    EdgarRecentFilingsSourcePolicy | None,
+    EdgarRecentFilingsClient | None,
+]:
+    """Resolve both approved EDGAR report lanes without partial activation."""
+
+    resolution = resolve_edgar_report_evidence_from_settings()
+    return (
+        resolution.company_profile_policy,
+        resolution.company_profile_client,
+        resolution.recent_filings_policy,
+        resolution.recent_filings_client,
+    )
 
 
 @router.post("/users/{user_id}/reports", response_model=ReportThreadRead, status_code=status.HTTP_201_CREATED)
@@ -90,6 +114,12 @@ def generate_report_agent_team_summary(
         p36_public_live_enabled = False
         p36_pm_live_enabled = False
     fmp_eod_history_policy, fmp_eod_history_context = _resolve_fmp_eod_history_generation_context()
+    (
+        edgar_policy,
+        edgar_client,
+        edgar_recent_filings_policy,
+        edgar_recent_filings_client,
+    ) = _resolve_edgar_report_evidence_generation_context()
     agent_summary = agent_team_report_service.generate_agent_team_report_for_thread(
         db,
         user_id,
@@ -99,6 +129,10 @@ def generate_report_agent_team_summary(
         p36_risk_live_enabled=p36_risk_live_enabled,
         p36_public_live_enabled=p36_public_live_enabled,
         p36_pm_live_enabled=p36_pm_live_enabled,
+        edgar_policy=edgar_policy,
+        edgar_client=edgar_client,
+        edgar_recent_filings_policy=edgar_recent_filings_policy,
+        edgar_recent_filings_client=edgar_recent_filings_client,
         fmp_eod_history_policy=fmp_eod_history_policy,
         fmp_eod_history_context=fmp_eod_history_context,
     )

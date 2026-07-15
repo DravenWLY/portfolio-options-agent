@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -11,17 +12,22 @@ from app.api.routes.trade_reviews import _saved_review_safe_caveat_code_tuple
 from app.models.broker_account import BrokerAccount
 from app.models.broker_connection import BrokerConnection
 from app.models.report_message import ReportMessage
+from app.models.report_thread import ReportThread
 from app.models.saved_review_source import SavedReviewSource
 from app.schemas.reports import SavedEvidencePackageRead, SavedReviewArtifactCreateRequest, SavedReviewArtifactRead
 from app.schemas.trade_review_workspace import validate_trade_review_saved_source_reference
 from app.services.agent_team import tool_mediated_report
 from app.services.agent_team.llm_clients.contracts import LLMProviderRequest, LLMProviderResponse, LLMProviderStatus
 from app.services.agent_team.llm_clients.factory import LLMProviderResolution
+from app.services.agent_team.orchestration.models import LIVE_PROMPT_VERSION
 from app.services.market_data.eod_history import MarketContextExecutionContext, MarketContextPolicy
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.reports import agent_team_report as agent_team_report_service
 from app.services.reports import crud as report_service
-from app.services.reports.public_evidence import EdgarCompanyProfileSourcePolicy
+from app.services.reports.public_evidence import (
+    EdgarCompanyProfileSourcePolicy,
+    EdgarRecentFilingsSourcePolicy,
+)
 from app.services.reports.source_snapshots import (
     FmpFundamentalsSourcePolicy,
     FredMacroSeriesSourcePolicy,
@@ -141,7 +147,7 @@ def test_create_saved_review_artifact_persists_generation_time_scope(client: Tes
     assert saved["status"] == "saved"
     assert saved["artifact_reference"].startswith("svrev_")
     assert saved["scope_metadata"]["scope_summary_label"] == (
-        "Review account: Primary reviewed account · Context scope: Selected reviewed context."
+        "Review account selected · Context scope: Selected reviewed context."
     )
     assert saved["deterministic_summary"]["review_actionability_status"] == "analysis_only"
     assert saved["deterministic_summary"]["symbol_or_underlying"] == "HOOD"
@@ -171,7 +177,7 @@ def test_create_saved_review_artifact_persists_generation_time_scope(client: Tes
     detail = detail_response.json()
     assert detail["scope_metadata"] == listed[0]["scope_metadata"]
     assert detail["scope_metadata"]["scope_summary_label"] == (
-        "Review account: Primary reviewed account · Context scope: Selected reviewed context."
+        "Review account selected · Context scope: Selected reviewed context."
     )
 
 
@@ -392,6 +398,62 @@ def test_generate_agent_team_report_route_threads_backend_p36_live_lane_flags(
     assert captured["p36_pm_live_enabled"] is True
 
 
+def test_generate_agent_team_report_route_wires_and_freezes_both_edgar_report_lanes(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email="route-edgar-lanes@example.com",
+        source_reference="workspace_routeedgarlanes1",
+    )
+    profile_client = _CountingEdgarProfileClient()
+    filings_client = _CountingEdgarRecentFilingsClient()
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_edgar_report_evidence_generation_context",
+        lambda: (
+            EdgarCompanyProfileSourcePolicy(enabled=True),
+            profile_client,
+            EdgarRecentFilingsSourcePolicy(enabled=True),
+            filings_client,
+        ),
+    )
+    monkeypatch.setattr(report_routes, "_resolve_fmp_eod_history_generation_context", lambda: (None, None))
+
+    saved_thread = db_session.get(ReportThread, UUID(thread_id))
+    assert saved_thread is not None
+    assert isinstance(saved_thread.saved_artifact_json, dict)
+    deterministic_baseline = deepcopy(saved_thread.saved_artifact_json["deterministic_summary"])
+    response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
+
+    assert response.status_code == 201
+    generated = response.json()
+    assert profile_client.calls == ("fetch_company_tickers", "fetch_submissions:CIK 0000123456")
+    assert filings_client.calls == ("fetch_company_tickers", "fetch_submissions:CIK 0000123456")
+    assert generated["deterministic_summary"] == deterministic_baseline
+    profile = generated["public_evidence"]["public_company_profile"]
+    filings = generated["public_evidence"]["public_events_calendar"]
+    assert profile["availability"] == "available"
+    assert filings["availability"] == "available"
+    assert {fact["fact_key"] for fact in profile["facts"]}.isdisjoint({"sector", "industry", "subindustry", "peer_group"})
+    public_rendered = repr(generated["public_evidence"]).lower()
+    for forbidden in ("/archives/", "data.sec.gov", "raw_payload", "account_id", "provider_account_id"):
+        assert forbidden not in public_rendered
+
+    listed = client.get(f"/users/{user_id}/reports").json()
+    detail = client.get(f"/users/{user_id}/reports/{thread_id}").json()
+    assert listed[0]["agent_summary"] == generated["agent_summary"]
+    assert detail["agent_summary"] == generated["agent_summary"]
+
+    regenerated = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
+    assert regenerated.status_code == 201
+    assert profile_client.calls == ("fetch_company_tickers", "fetch_submissions:CIK 0000123456")
+    assert filings_client.calls == ("fetch_company_tickers", "fetch_submissions:CIK 0000123456")
+
+
 def test_generate_agent_team_report_route_tool_mediated_mock_opt_in_persists_frozen_artifact(
     client: TestClient,
     db_session: Session,
@@ -505,7 +567,7 @@ def test_generate_agent_team_report_route_tool_mediated_live_opt_in_freezes_prov
     assert provider.calls
     assert {run["provider"] for run in artifact["provider_runs"]} == {"fake_live_provider"}
     assert {run["model"] for run in artifact["provider_runs"]} == {"fake-live-model"}
-    assert {run["prompt_version"] for run in artifact["provider_runs"]} == {"p34a-tool-mediated-role-v1"}
+    assert {run["prompt_version"] for run in artifact["provider_runs"]} == {LIVE_PROMPT_VERSION}
     assert all(run["status"] == "ok" for run in artifact["provider_runs"])
     assert "live_provider_reasoning_used" in repr(summary).lower()
 
@@ -680,13 +742,10 @@ def test_db_backed_golden_path_preview_save_generate_readback_and_regenerate(
     assert evidence.trade_intent_summary.supported_flow == expected_flow
     assert evidence.trade_intent_summary.symbol_or_underlying == expected_symbol
     assert evidence.scope_state.account_level_feasibility_evaluated is False
-    if expected_flow == "stock_buy":
-        assert evidence.before_after_portfolio_impact.availability in {"available", "limited"}
-        assert evidence.before_after_portfolio_impact.detail_labels
-        assert evidence.concentration_risk_drift.availability in {"available", "limited"}
-    else:
-        assert evidence.before_after_portfolio_impact.availability == "not_available"
-        assert evidence.concentration_risk_drift.availability == "not_available"
+    assert evidence.before_after_portfolio_impact.availability == "not_available"
+    assert evidence.concentration_risk_drift.availability == "not_available"
+    assert "account_snapshot_unavailable" in evidence.before_after_portfolio_impact.caveat_codes
+    assert "account_snapshot_unavailable" in evidence.concentration_risk_drift.caveat_codes
     monkeypatch.setattr(
         exposure_adapter_service,
         "build_trade_exposure_impact",
@@ -695,10 +754,20 @@ def test_db_backed_golden_path_preview_save_generate_readback_and_regenerate(
     reread_evidence = SavedEvidencePackageRead.from_saved_review_artifact(SavedReviewArtifactRead.model_validate(saved))
     assert reread_evidence.before_after_portfolio_impact == evidence.before_after_portfolio_impact
     assert reread_evidence.concentration_risk_drift == evidence.concentration_risk_drift
-    evidence_rendered = repr(evidence.model_dump(mode="python")).lower()
+    assert saved["scope_metadata"]["review_account"]["display_label"] == "Swing account"
+    assert evidence.scope_state.review_account_display_label == "Swing account"
+    assert repr(saved["scope_metadata"]).lower().count("swing account") == 1
+    assert repr(evidence.model_dump(mode="python")).lower().count("swing account") == 1
+
+    saved_scope_without_nickname = deepcopy(saved["scope_metadata"])
+    saved_scope_without_nickname["review_account"].pop("display_label")
+    assert "swing account" not in repr(saved_scope_without_nickname).lower()
+
+    evidence_without_nickname = evidence.model_dump(mode="python")
+    evidence_without_nickname["scope_state"].pop("review_account_display_label")
+    evidence_rendered = repr(evidence_without_nickname).lower()
     for forbidden in (
         account_reference.lower(),
-        "swing account",
         "provider_account_id_secret",
         "provider_connection_id_secret",
         "taxable account ending",
@@ -721,19 +790,22 @@ def test_db_backed_golden_path_preview_save_generate_readback_and_regenerate(
     assert generated["agent_summary"]["tool_run_artifact"] is None
     assert generated["source_reference"] == saved["source_reference"]
     assert generated["scope_metadata"] == saved["scope_metadata"]
+    assert repr(generated["scope_metadata"]).lower().count("swing account") == 1
     assert generated["deterministic_summary"] == saved["deterministic_summary"]
     assert generated["generated_at"] == saved["generated_at"]
     assert generated["public_evidence"]["public_evidence_mode"] == "not_reviewed"
     generated_summary_rendered = repr(generated["agent_summary"]).lower()
     for forbidden in (
         account_reference.lower(),
-        "swing account",
         "provider_account_id_secret",
         "provider_connection_id_secret",
         "taxable account ending",
         "buying_power",
     ):
         assert forbidden not in generated_summary_rendered
+    assert generated["agent_summary"]["tool_run_artifact"] is None
+    assert "swing account" not in repr(generated["agent_summary"]).lower()
+    assert "swing account" not in repr(generated["public_evidence"]).lower()
 
     # Later mutable account state must not reinterpret the saved report scope or source snapshot.
     later_account_response = client.post(
@@ -770,16 +842,19 @@ def test_db_backed_golden_path_preview_save_generate_readback_and_regenerate(
         "generated_at": regenerated["generated_at"],
         "public_evidence": regenerated["public_evidence"],
     } == immutable_saved_source
+    assert repr(regenerated["scope_metadata"]).lower().count("swing account") == 1
     regenerated_summary_rendered = repr(regenerated["agent_summary"]).lower()
     for forbidden in (
         account_reference.lower(),
-        "swing account",
         "provider_account_id_secret",
         "provider_connection_id_secret",
         "taxable account ending",
         "buying_power",
     ):
         assert forbidden not in regenerated_summary_rendered
+    assert regenerated["agent_summary"]["tool_run_artifact"] is None
+    assert "swing account" not in repr(regenerated["agent_summary"]).lower()
+    assert "swing account" not in repr(regenerated["public_evidence"]).lower()
 
     saved_rendered = repr(
         {
@@ -1438,13 +1513,13 @@ def _scope_metadata_payload(review_account_label: str) -> dict:
             "display_label": "Selected reviewed context",
             "selection_mode": "latest_available",
             "context_reference": "ctx_savedreview1",
-            "included_account_labels": (review_account_label,),
+            "included_account_labels": (),
             "excluded_account_labels": (),
             "account_level_feasibility_evaluated": True,
             "account_level_feasibility_label": "Account-level feasibility evaluated for selected review account",
             "caveat_codes": ("selected_context_scope",),
         },
-        "scope_summary_label": f"Review account: {review_account_label} · Context scope: Selected reviewed context.",
+        "scope_summary_label": "Review account selected · Context scope: Selected reviewed context.",
         "account_level_feasibility_evaluated": True,
         "scope_caveat_codes": ("selected_context_scope",),
     }
@@ -1592,6 +1667,36 @@ class _CountingEdgarProfileClient:
             "industry": "Brokerage",
             "subindustry": "Retail Brokerage",
             "peer_group": "Trading Apps",
+        }
+
+
+class _CountingEdgarRecentFilingsClient:
+    def __init__(self, *, raise_on_call: bool = False) -> None:
+        self.raise_on_call = raise_on_call
+        self._calls: list[str] = []
+
+    @property
+    def calls(self) -> tuple[str, ...]:
+        return tuple(self._calls)
+
+    def fetch_company_tickers(self) -> dict:
+        self._calls.append("fetch_company_tickers")
+        if self.raise_on_call:
+            raise AssertionError("EDGAR recent-filings client should not be called for saved public evidence")
+        return {"0": {"cik_str": 123456, "ticker": "HOOD", "title": "Hood Example Markets, Inc."}}
+
+    def fetch_submissions(self, cik_reference: str) -> dict:
+        self._calls.append(f"fetch_submissions:{cik_reference}")
+        if self.raise_on_call:
+            raise AssertionError("EDGAR recent-filings client should not be called for saved public evidence")
+        return {
+            "filings": {
+                "recent": {
+                    "form": ["8-K"],
+                    "filingDate": ["2026-06-01"],
+                    "accessionNumber": ["0000001234-26-000001"],
+                }
+            }
         }
 
 

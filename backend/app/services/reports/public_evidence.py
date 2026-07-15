@@ -8,10 +8,11 @@ import json
 import re
 import threading
 import time
-from typing import Any, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
+from app.config import ConfigurationError, Settings, get_settings
 from app.schemas.reports import (
     AgentTeamPublicRoleName,
     SavedEvidencePackageRead,
@@ -329,6 +330,87 @@ class EdgarRecentFilingsHttpClient:
             timeout_seconds=self._policy.request_timeout_seconds,
             response_size_cap_bytes=self._policy.response_size_cap_bytes,
         )
+
+
+@dataclass(frozen=True)
+class EdgarReportEvidenceResolution:
+    """All-or-nothing route configuration for the approved EDGAR report lanes."""
+
+    company_profile_policy: EdgarCompanyProfileSourcePolicy | None = None
+    company_profile_client: EdgarCompanyProfileClient | None = None
+    recent_filings_policy: EdgarRecentFilingsSourcePolicy | None = None
+    recent_filings_client: EdgarRecentFilingsClient | None = None
+
+    @property
+    def is_complete(self) -> bool:
+        return (
+            self.company_profile_policy is not None
+            and self.company_profile_client is not None
+            and self.recent_filings_policy is not None
+            and self.recent_filings_client is not None
+        )
+
+
+def resolve_edgar_report_evidence_from_settings(
+    *,
+    settings: Settings | None = None,
+    company_profile_client_factory: Callable[[EdgarCompanyProfileSourcePolicy], EdgarCompanyProfileClient] | None = None,
+    recent_filings_client_factory: Callable[[EdgarRecentFilingsSourcePolicy], EdgarRecentFilingsClient] | None = None,
+) -> EdgarReportEvidenceResolution:
+    """Return both approved EDGAR lanes only for complete backend configuration.
+
+    This resolver is deliberately all-or-nothing: neither lane becomes active
+    when the shared explicit mode, descriptive user-agent, or client boundary
+    is unavailable. Callers receive an empty resolution instead of a partial
+    source configuration and must make no fallback source calls.
+    """
+
+    try:
+        active_settings = settings or get_settings()
+    except ConfigurationError:
+        return EdgarReportEvidenceResolution()
+
+    if active_settings.edgar_report_evidence_mode.strip().lower() != "live":
+        return EdgarReportEvidenceResolution()
+
+    policy_kwargs = {
+        "enabled": True,
+        "external_access_enabled": True,
+        "runtime_environment": active_settings.app_env,
+        "declared_user_agent": active_settings.sec_edgar_user_agent,
+        "daily_request_budget": active_settings.p36_edgar_daily_request_budget,
+        "max_requests_per_second": active_settings.p36_edgar_max_requests_per_second,
+    }
+    company_profile_policy = EdgarCompanyProfileSourcePolicy(**policy_kwargs)
+    recent_filings_policy = EdgarRecentFilingsSourcePolicy(**policy_kwargs)
+    if not company_profile_policy.live_client_ready() or not recent_filings_policy.live_client_ready():
+        return EdgarReportEvidenceResolution()
+
+    profile_factory = company_profile_client_factory or _default_edgar_company_profile_client
+    filings_factory = recent_filings_client_factory or _default_edgar_recent_filings_client
+    try:
+        company_profile_client = profile_factory(company_profile_policy)
+        recent_filings_client = filings_factory(recent_filings_policy)
+    except Exception:
+        # Client construction is configuration-only at this boundary. Any
+        # unexpected failure leaves both lanes disabled before a source call.
+        return EdgarReportEvidenceResolution()
+    if company_profile_client is None or recent_filings_client is None:
+        return EdgarReportEvidenceResolution()
+    return EdgarReportEvidenceResolution(
+        company_profile_policy=company_profile_policy,
+        company_profile_client=company_profile_client,
+        recent_filings_policy=recent_filings_policy,
+        recent_filings_client=recent_filings_client,
+    )
+
+
+def _default_edgar_company_profile_client(policy: EdgarCompanyProfileSourcePolicy) -> EdgarCompanyProfileClient:
+    return EdgarCompanyProfileHttpClient(policy=policy)
+
+
+def _default_edgar_recent_filings_client(policy: EdgarRecentFilingsSourcePolicy) -> EdgarRecentFilingsClient:
+    return EdgarRecentFilingsHttpClient(policy=policy)
 
 
 def build_edgar_company_profile_live_smoke_projection(

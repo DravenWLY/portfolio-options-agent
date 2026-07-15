@@ -1877,7 +1877,7 @@ def test_p35_t5_pre_t5_package_renders_honest_unavailable_path_without_parse_fal
     assert "Legacy flat narrative should not be parsed into the v4 report." not in synthesis
 
 
-def test_p35_t5_document_uses_reviewed_account_nickname_with_generic_fallback() -> None:
+def test_p36_t7_a2g_document_does_not_project_reviewed_account_nickname() -> None:
     generated_at = datetime(2026, 6, 1, tzinfo=UTC)
     named_evidence = _evidence_package().model_copy(
         update={
@@ -1894,8 +1894,9 @@ def test_p35_t5_document_uses_reviewed_account_nickname_with_generic_fallback() 
 
     named_document = named_summary.final_synthesis_markdown or ""
     fallback_document = fallback_summary.final_synthesis_markdown or ""
-    assert "- Growth Demo Account - June 1, 2026" in named_document
-    assert "for Growth Demo Account using frozen evidence only." in named_document
+    assert "Growth Demo Account" not in named_document
+    assert "- reviewed account - June 1, 2026" in named_document
+    assert "for reviewed account using frozen evidence only." in named_document
     assert "- reviewed account - June 1, 2026" in fallback_document
     assert "for reviewed account using frozen evidence only." in fallback_document
 

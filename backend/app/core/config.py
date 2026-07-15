@@ -78,6 +78,8 @@ class Settings:
     market_context_mode: str = "off"
     fmp_fundamentals_mode: str = "off"
     fred_macro_series_mode: str = "off"
+    edgar_report_evidence_mode: str = "off"
+    sec_edgar_user_agent: str = field(default="", repr=False)
     p36_fmp_fundamentals_daily_request_budget: int = 10
     p36_fred_series_daily_request_budget: int = 18
     p36_edgar_daily_request_budget: int = 60
@@ -113,6 +115,7 @@ class Settings:
             "market_context_mode": self.market_context_mode,
             "fmp_fundamentals_mode": self.fmp_fundamentals_mode,
             "fred_macro_series_mode": self.fred_macro_series_mode,
+            "edgar_report_evidence_mode": self.edgar_report_evidence_mode,
             "p36_fmp_fundamentals_daily_request_budget": self.p36_fmp_fundamentals_daily_request_budget,
             "p36_fred_series_daily_request_budget": self.p36_fred_series_daily_request_budget,
             "p36_edgar_daily_request_budget": self.p36_edgar_daily_request_budget,
@@ -196,6 +199,8 @@ def build_settings(
         market_context_mode=_text(values.get("POA_MARKET_CONTEXT_MODE"), default="off"),
         fmp_fundamentals_mode=_text(values.get("POA_FMP_FUNDAMENTALS_MODE"), default="off"),
         fred_macro_series_mode=_text(values.get("POA_FRED_MACRO_SERIES_MODE"), default="off"),
+        edgar_report_evidence_mode=_text(values.get("POA_EDGAR_REPORT_EVIDENCE_MODE"), default="off"),
+        sec_edgar_user_agent=_text(values.get("SEC_EDGAR_USER_AGENT"), default=""),
         p36_fmp_fundamentals_daily_request_budget=_int(
             values.get("P36_FMP_FUNDAMENTALS_DAILY_REQUEST_BUDGET"), default=10
         ),

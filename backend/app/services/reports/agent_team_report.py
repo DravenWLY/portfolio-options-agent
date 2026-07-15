@@ -24,6 +24,8 @@ from app.services.reports.crud import saved_review_artifact_for_thread
 from app.services.reports.public_evidence import (
     EdgarCompanyProfileClient,
     EdgarCompanyProfileSourcePolicy,
+    EdgarRecentFilingsClient,
+    EdgarRecentFilingsSourcePolicy,
     build_public_evidence_projection,
     build_public_role_evidence_projection,
 )
@@ -137,6 +139,8 @@ def generate_agent_team_report_for_thread(
     mode: AgentTeamReportGenerationMode = "deterministic_template",
     edgar_policy: EdgarCompanyProfileSourcePolicy | None = None,
     edgar_client: EdgarCompanyProfileClient | None = None,
+    edgar_recent_filings_policy: EdgarRecentFilingsSourcePolicy | None = None,
+    edgar_recent_filings_client: EdgarRecentFilingsClient | None = None,
     fmp_fundamentals_policy: FmpFundamentalsSourcePolicy | None = None,
     fmp_fundamentals_context: FmpFundamentalsExecutionContext | None = None,
     fmp_eod_history_policy: MarketContextPolicy | None = None,
@@ -170,6 +174,8 @@ def generate_agent_team_report_for_thread(
                         symbol_or_underlying=evidence.trade_intent_summary.symbol_or_underlying,
                         edgar_policy=edgar_policy,
                         edgar_client=edgar_client,
+                        edgar_recent_filings_policy=edgar_recent_filings_policy,
+                        edgar_recent_filings_client=edgar_recent_filings_client,
                         fmp_fundamentals_policy=fmp_fundamentals_policy,
                         fmp_fundamentals_context=fmp_fundamentals_context,
                         fmp_eod_history_policy=fmp_eod_history_policy,

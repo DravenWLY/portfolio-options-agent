@@ -1155,15 +1155,20 @@ def test_selected_account_snapshot_resolution_failure_never_uses_demo_exposure(
     assert scope.display_label == "Account snapshot unavailable"
     assert scope.included_account_labels == ()
     assert "account_snapshot_unavailable" in scope.caveat_codes
-    assert "Account snapshot unavailable" in read.scope_metadata.scope_summary_label
+    expected_scope_summary = (
+        "Review account selected · Context scope: Account snapshot unavailable."
+        if failure_mode == "no_completed_sync"
+        else "Review account unresolved · Context scope: Account snapshot unavailable."
+    )
+    assert read.scope_metadata.scope_summary_label == expected_scope_summary
     assert "account_snapshot_unavailable" in {caveat.code for caveat in read.caveats}
     if failure_mode == "no_completed_sync":
         assert read.scope_metadata.review_account is not None
         assert read.scope_metadata.review_account.display_label == "Growth Demo Account"
         assert read.scope_metadata.review_account.is_included_in_portfolio_scope is False
+        assert repr(read.scope_metadata.model_dump(mode="python")).lower().count("growth demo account") == 1
     else:
         assert read.scope_metadata.review_account is None
-        assert "Review account unresolved" in read.scope_metadata.scope_summary_label
 
 
 def test_selected_account_snapshot_context_is_lossy_and_replaces_demo_scope(
@@ -1328,12 +1333,17 @@ def test_selected_account_snapshot_context_is_lossy_and_replaces_demo_scope(
     assert stock_read.scope_metadata is not None
     scope = stock_read.scope_metadata.portfolio_context_scope
     assert scope.scope_mode == "single_account"
-    assert scope.display_label == "Growth Demo Account"
-    assert scope.included_account_labels == ("Growth Demo Account",)
+    assert scope.display_label == "Selected account snapshot"
+    assert scope.included_account_labels == ("Selected review account",)
     assert "review_account_scope_membership_unknown" not in scope.caveat_codes
     assert stock_read.scope_metadata.review_account is not None
+    assert stock_read.scope_metadata.review_account.display_label == "Growth Demo Account"
     assert stock_read.scope_metadata.review_account.is_included_in_portfolio_scope is True
     assert stock_read.scope_metadata.account_level_feasibility_evaluated is False
+    assert stock_read.scope_metadata.scope_summary_label == (
+        "Review account selected · Context scope: Selected account snapshot."
+    )
+    assert repr(stock_read.scope_metadata.model_dump(mode="python")).lower().count("growth demo account") == 1
     assert any("position_market_value_unavailable" in section.caveat_codes for section in captured_sections)
     assert "position_market_value_unavailable" in {caveat.code for caveat in stock_read.caveats}
     assert csp_read.portfolio_context is not None

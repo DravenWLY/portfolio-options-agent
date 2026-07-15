@@ -2422,8 +2422,8 @@ def _pm_synthesis_lines(
 
 def _trade_review_title(evidence: SavedEvidencePackageRead, *, report_generated_at: datetime) -> str:
     action = _trade_action_label(evidence)
-    account_label = evidence.scope_state.review_account_display_label or "reviewed account"
-    return f"# Trade review: {action} - {account_label} - {_long_date(report_generated_at)}"
+    # The frozen nickname remains scope metadata only; summaries never project it.
+    return f"# Trade review: {action} - reviewed account - {_long_date(report_generated_at)}"
 
 
 def _trade_action_label(evidence: SavedEvidencePackageRead) -> str:
@@ -2456,11 +2456,10 @@ def _summary_headline(
 
 
 def _summary_paragraph(evidence: SavedEvidencePackageRead, *, headline: str) -> str:
-    account_label = evidence.scope_state.review_account_display_label or "reviewed account"
     flow_label = evidence.trade_intent_summary.review_flow_label.removesuffix(" review").lower()
     return (
         f"This saved report covers the saved {flow_label} "
-        f"for {account_label} using frozen evidence only. **{headline}**"
+        f"for reviewed account using frozen evidence only. **{headline}**"
     )
 
 

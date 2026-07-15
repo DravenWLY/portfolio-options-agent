@@ -28,8 +28,10 @@ from app.services.market_data.eod_history import MarketContextPolicy, market_con
 from app.services.reports.public_evidence import (
     EdgarCompanyProfileHttpClient,
     EdgarCompanyProfileSourcePolicy,
+    EdgarRecentFilingsSourcePolicy,
     EdgarSourceUnavailableError,
     build_public_evidence_projection,
+    resolve_edgar_report_evidence_from_settings,
 )
 
 
@@ -196,6 +198,27 @@ class _ReplayEdgarProfileClient:
     def fetch_submissions(self, cik_reference: str) -> dict:
         self.calls.append("submissions")
         return {"name": "Synthetic Test Company", "tickers": ["XYZ"], "exchanges": ["Nasdaq"]}
+
+
+class _ReplayEdgarRecentFilingsClient:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def fetch_company_tickers(self) -> dict:
+        self.calls.append("tickers")
+        return {"0": {"cik_str": 1234, "ticker": "XYZ", "title": "Synthetic Test Company"}}
+
+    def fetch_submissions(self, cik_reference: str) -> dict:
+        self.calls.append("submissions")
+        return {
+            "filings": {
+                "recent": {
+                    "form": ["8-K"],
+                    "filingDate": ["2026-07-01"],
+                    "accessionNumber": ["0000001234-26-000001"],
+                }
+            }
+        }
 
 
 def test_fmp_fundamentals_normalizes_only_approved_labeled_fact_groups_and_caches_per_package() -> None:
@@ -410,6 +433,92 @@ def test_source_snapshot_settings_are_default_off_and_budget_capped() -> None:
     assert settings.p36_fred_series_daily_request_budget == 18
     assert settings.p36_edgar_daily_request_budget == 60
     assert settings.p36_edgar_max_requests_per_second == 1
+
+
+def test_edgar_report_evidence_resolver_fails_closed_without_complete_settings() -> None:
+    profile_factory_calls = 0
+    filings_factory_calls = 0
+
+    def _profile_factory(policy: EdgarCompanyProfileSourcePolicy) -> _ReplayEdgarProfileClient:
+        nonlocal profile_factory_calls
+        profile_factory_calls += 1
+        return _ReplayEdgarProfileClient()
+
+    def _filings_factory(policy: EdgarRecentFilingsSourcePolicy) -> _ReplayEdgarRecentFilingsClient:
+        nonlocal filings_factory_calls
+        filings_factory_calls += 1
+        return _ReplayEdgarRecentFilingsClient()
+
+    for env in (
+        {},
+        {"POA_EDGAR_REPORT_EVIDENCE_MODE": "live"},
+        {
+            "POA_EDGAR_REPORT_EVIDENCE_MODE": "live",
+            "SEC_EDGAR_USER_AGENT": "Portfolio Copilot",
+        },
+    ):
+        resolution = resolve_edgar_report_evidence_from_settings(
+            settings=build_settings(env=env, load_dotenv=False),
+            company_profile_client_factory=_profile_factory,
+            recent_filings_client_factory=_filings_factory,
+        )
+        assert resolution.is_complete is False
+
+    assert profile_factory_calls == 0
+    assert filings_factory_calls == 0
+
+    complete_settings = build_settings(
+        env={
+            "APP_ENV": "local",
+            "POA_EDGAR_REPORT_EVIDENCE_MODE": "live",
+            "SEC_EDGAR_USER_AGENT": "Portfolio Copilot contact sources@example.test",
+        },
+        load_dotenv=False,
+    )
+
+    def _failing_profile_factory(policy: EdgarCompanyProfileSourcePolicy) -> _ReplayEdgarProfileClient:
+        raise TypeError("synthetic client construction failure")
+
+    resolution = resolve_edgar_report_evidence_from_settings(
+        settings=complete_settings,
+        company_profile_client_factory=_failing_profile_factory,
+        recent_filings_client_factory=_filings_factory,
+    )
+    assert resolution.is_complete is False
+    assert filings_factory_calls == 0
+
+
+def test_edgar_report_evidence_resolver_builds_both_normalized_lanes_with_injected_clients() -> None:
+    profile_client = _ReplayEdgarProfileClient()
+    filings_client = _ReplayEdgarRecentFilingsClient()
+    settings = build_settings(
+        env={
+            "APP_ENV": "local",
+            "POA_EDGAR_REPORT_EVIDENCE_MODE": "live",
+            "SEC_EDGAR_USER_AGENT": "Portfolio Copilot contact sources@example.test",
+        },
+        load_dotenv=False,
+    )
+
+    resolution = resolve_edgar_report_evidence_from_settings(
+        settings=settings,
+        company_profile_client_factory=lambda policy: profile_client,
+        recent_filings_client_factory=lambda policy: filings_client,
+    )
+
+    assert resolution.is_complete is True
+    public_evidence = build_public_evidence_projection(
+        symbol_or_underlying="XYZ",
+        edgar_policy=resolution.company_profile_policy,
+        edgar_client=resolution.company_profile_client,
+        edgar_recent_filings_policy=resolution.recent_filings_policy,
+        edgar_recent_filings_client=resolution.recent_filings_client,
+    )
+    assert public_evidence.public_company_profile.availability in {"available", "limited"}
+    assert public_evidence.public_events_calendar.availability == "available"
+    assert profile_client.calls == ["tickers", "submissions"]
+    assert filings_client.calls == ["tickers", "submissions"]
+    _assert_snapshot_is_safe(public_evidence.model_dump(mode="python"))
 
 
 def test_edgar_policy_requires_descriptive_user_agent_and_enforces_injected_daily_budget() -> None:

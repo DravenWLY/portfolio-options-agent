@@ -2509,7 +2509,6 @@ def _report_scope_metadata_for_workspace(
         current_user_id=current_user_id,
     )
     if account_snapshot_unavailable:
-        account_label = review_account.display_label if review_account is not None else "Review account unresolved"
         scope_caveat_codes = (
             "selected_context_scope",
             "account_snapshot_unavailable",
@@ -2531,7 +2530,11 @@ def _report_scope_metadata_for_workspace(
         read = ReportScopeMetadataRead(
             review_account=review_account,
             portfolio_context_scope=scope,
-            scope_summary_label=f"Review account: {account_label} · Context scope: Account snapshot unavailable.",
+            scope_summary_label=(
+                "Review account selected · Context scope: Account snapshot unavailable."
+                if review_account is not None
+                else "Review account unresolved · Context scope: Account snapshot unavailable."
+            ),
             account_level_feasibility_evaluated=False,
             scope_caveat_codes=scope_caveat_codes,
         )
@@ -2540,30 +2543,27 @@ def _report_scope_metadata_for_workspace(
 
     is_account_snapshot_scope = portfolio_context_summary.context_source == "account_snapshot"
     if is_account_snapshot_scope:
-        account_label = portfolio_context_summary.label or "Reviewed account"
         if review_account is not None:
             review_account = review_account.model_copy(
                 update={
-                    "display_label": account_label,
                     "is_included_in_portfolio_scope": True,
                 }
             )
         account_level_feasibility_label = "Account-level feasibility not evaluated"
-        scope_summary_label = f"Review account: {account_label} · Context scope: Selected account snapshot."
+        scope_summary_label = "Review account selected · Context scope: Selected account snapshot."
         scope_caveat_codes = (
             "selected_context_scope",
             "account_level_feasibility_not_evaluated",
             "cash_collateral_policy_not_reviewed",
             "cash_collateral_not_fully_modeled",
         )
-        included_account_labels = (account_label,) if review_account is not None else ()
         scope = _portfolio_scope_read(
             scope_reference=_opaque_scope_reference(("review_snapshot", portfolio_context_summary.context_reference)),
             scope_mode="single_account",
-            display_label=account_label,
+            display_label="Selected account snapshot",
             selection_mode=portfolio_context_summary.selection_mode,
             context_reference=portfolio_context_summary.context_reference,
-            included_account_labels=included_account_labels,
+            included_account_labels=("Selected review account",) if review_account is not None else (),
             excluded_account_labels=(),
             account_level_feasibility_evaluated=False,
             account_level_feasibility_label=account_level_feasibility_label,
@@ -2584,7 +2584,7 @@ def _report_scope_metadata_for_workspace(
     )
     if account_level_feasibility_evaluated:
         account_level_feasibility_label = "Selected review account evaluated for account-level feasibility"
-        scope_summary_label = f"Review account: {review_account.display_label} · Context scope: Selected demo portfolio context."
+        scope_summary_label = "Review account selected · Context scope: Selected demo portfolio context."
         scope_caveat_codes = (
             "selected_context_scope",
             *(() if review_account.is_included_in_portfolio_scope else ("review_account_scope_membership_unknown",)),
@@ -2596,7 +2596,7 @@ def _report_scope_metadata_for_workspace(
         and review_account is not None
     ):
         account_level_feasibility_label = "Account-level feasibility not evaluated"
-        scope_summary_label = f"Review account: {review_account.display_label} · Context scope: Selected demo portfolio context."
+        scope_summary_label = "Review account selected · Context scope: Selected demo portfolio context."
         scope_caveat_codes = (
             "selected_context_scope",
             "account_level_feasibility_not_evaluated",
@@ -2620,11 +2620,11 @@ def _report_scope_metadata_for_workspace(
         scope_caveat_codes = ("selected_context_scope", "review_account_not_selected")
 
     included_account_labels = (
-        (review_account.display_label,)
+        ("Selected review account",)
         if review_account is not None and review_account.is_included_in_portfolio_scope
         else ()
     )
-    excluded_account_labels = ("Long-term demo account",) if _is_synthetic_review_account(review_account) else ()
+    excluded_account_labels = ("Other demo account",) if _is_synthetic_review_account(review_account) else ()
     scope = _portfolio_scope_read(
         scope_reference=_DEMO_SCOPE_SELECTED_REFERENCE,
         scope_mode="selected_context",

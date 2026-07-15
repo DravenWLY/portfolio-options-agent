@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.agent_team.safety.report_output_safety import _reject_report_phrases, validate_agent_team_report_output
+from app.services.agent_team.safety.report_output_safety import (
+    REPORT_PROSE_KEYS,
+    USER_VISIBLE_PROSE_KEYS,
+    _reject_report_phrases,
+    validate_agent_team_report_output,
+)
 
 
 pytestmark = [pytest.mark.unit]
@@ -13,6 +18,10 @@ def _payload(markdown: str) -> dict[str, object]:
         "final_synthesis_markdown": markdown,
         "evidence_references": (),
     }
+
+
+def test_report_prose_allowlist_covers_every_user_visible_prose_key() -> None:
+    assert USER_VISIBLE_PROSE_KEYS - REPORT_PROSE_KEYS == frozenset()
 
 
 @pytest.mark.parametrize(

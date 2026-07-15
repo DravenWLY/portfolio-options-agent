@@ -429,7 +429,9 @@ def test_trade_review_portfolio_preview_echoes_selected_review_account_separatel
     assert scope_metadata["portfolio_context_scope"]["scope_mode"] == "selected_context"
     assert scope_metadata["portfolio_context_scope"]["account_level_feasibility_evaluated"] is True
     assert scope_metadata["account_level_feasibility_evaluated"] is True
-    assert scope_metadata["scope_summary_label"].startswith("Review account:")
+    assert scope_metadata["scope_summary_label"] == (
+        "Review account selected · Context scope: Selected demo portfolio context."
+    )
     assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
 
 
@@ -513,12 +515,22 @@ def test_trade_review_portfolio_preview_resolves_current_user_account_details_re
     assert review_account["is_review_account"] is True
     assert review_account["is_included_in_portfolio_scope"] is False
     assert review_account["is_account_level_feasibility_source"] is False
-    assert payload["scope_metadata"]["portfolio_context_scope"]["context_reference"] == "ctx_demo_latest"
-    assert payload["scope_metadata"]["portfolio_context_scope"]["scope_mode"] == "selected_context"
+    context_scope = payload["scope_metadata"]["portfolio_context_scope"]
+    assert context_scope["context_reference"].startswith("ctx_")
+    assert context_scope["context_reference"] != "ctx_demo_latest"
+    assert context_scope["scope_mode"] == "unavailable"
+    assert context_scope["display_label"] == "Account snapshot unavailable"
+    assert context_scope["included_account_labels"] == []
+    assert "account_snapshot_unavailable" in context_scope["caveat_codes"]
+    assert payload["scope_metadata"]["scope_summary_label"] == (
+        "Review account selected · Context scope: Account snapshot unavailable."
+    )
     assert payload["scope_metadata"]["account_level_feasibility_evaluated"] is False
-    assert "account_level_feasibility_not_evaluated" in payload["scope_metadata"]["scope_caveat_codes"]
-    assert "current_position_truth_unstable" in payload["scope_metadata"]["scope_caveat_codes"]
-    assert "review_account_scope_membership_unknown" in payload["scope_metadata"]["scope_caveat_codes"]
+    assert set(payload["scope_metadata"]["scope_caveat_codes"]) == {
+        "selected_context_scope",
+        "account_snapshot_unavailable",
+        "account_level_feasibility_not_evaluated",
+    }
     rendered = repr(payload).lower()
     assert "provider_account_id_secret_456" not in rendered
     assert "provider_connection_id_secret_123" not in rendered

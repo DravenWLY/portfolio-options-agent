@@ -1882,6 +1882,18 @@ exercise their own judgment within this frame.
   PASS; Claude G architecture/privacy review PASS 2026-07-16. Claude G also
   recorded one non-blocking environmental first-run test flake. `P36-T7-J4B`
   is unblocked after this checkpoint lands.
+  **External API runtime-guardrail backlog (OPEN, non-gating, 2026-07-16):**
+  `docs/shared/EXTERNAL_API_LIMITS.md` records provider-documented limits,
+  current app-owned budgets, and five enforcement gaps confirmed during the
+  Phase 36 limits review: (1) configured global LLM token/call budgets are not
+  consumed by the runner; (2) Google SDK timeout and retry settings are not
+  wired explicitly; (3) the model-candidate chain has no run-wide network-
+  attempt cap; (4) FRED calendar pagination is not bounded by a total request
+  budget; and (5) SnapTrade has no app-owned request budget above its SDK
+  boundary. These do not block the current internal run because per-role caps,
+  one-attempt authorization, source fail-closed behavior, and frozen readback
+  bound the present workflow. They must be resolved before scale or unattended
+  multi-user operation. Claude G accuracy-versus-code review PASS 2026-07-16.
 - `P36-T5B` - Live PM synthesis: typed PmSynthesis (four verdict-incapable
   fields), whole-block fail-closed, composer rendering, PM calc
   verification access. Owner: Codex C (implementation). Status: DESIGN PHASE

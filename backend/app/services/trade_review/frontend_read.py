@@ -42,6 +42,7 @@ from app.schemas.trade_review_workspace import (
     DashboardAccountSummaryRead,
     DashboardSummaryDisplaySectionRead,
     DeterministicTradeReviewRead,
+    InstrumentIdentityRead,
     MissingDataWarningRead,
     OptionsExposureRead,
     AgentProviderReadinessRead,
@@ -113,6 +114,7 @@ from app.services.trade_review.report import TradeReviewAgentProjection, build_t
 from app.services.trade_review.risk import TradeReviewRiskEngine
 from app.services.trade_review.snapshots import TradeReviewMarketSnapshot
 from app.services.trade_review.validation import TradeIntentValidator
+from app.services.symbols import SymbolService
 
 
 _LATEST_CONTEXT_REFERENCE = "ctx_demo_latest"
@@ -163,6 +165,12 @@ class _SelectedAccountSnapshotResolution:
 
     resolved: _ResolvedPortfolioContext | None = None
     requested_but_unavailable: bool = False
+
+
+@dataclass(frozen=True)
+class _ResolvedPreviewInstrumentIdentity:
+    supported_flow: SupportedTradeReviewFlow
+    identity: InstrumentIdentityRead
 
 
 @dataclass(frozen=True)
@@ -258,6 +266,7 @@ def build_trade_review_workspace_read(
     report_output: ReportComposerAgentOutput | None = None,
     portfolio_context_summary: PortfolioContextSummaryRead | None = None,
     scope_metadata: ReportScopeMetadataRead | None = None,
+    instrument_identity: InstrumentIdentityRead | None = None,
     generated_at: datetime | None = None,
 ) -> TradeReviewWorkspaceRead:
     """Build a sanitized read contract for the Phase 18A workspace.
@@ -280,7 +289,11 @@ def build_trade_review_workspace_read(
         supported_flow=flow,
         scope_metadata=resolved_scope_metadata,
     )
-    summary = _intent_summary(projection.intent_summary, supported_flow=flow)
+    summary = _intent_summary(
+        projection.intent_summary,
+        supported_flow=flow,
+        instrument_identity=instrument_identity,
+    )
     read = TradeReviewWorkspaceRead(
         review_reference=review_reference or projection.intent_id,
         generated_at=generated_at or projection.generated_at or datetime.now(UTC),
@@ -1396,6 +1409,7 @@ def build_trade_review_workspace_preview(
     payload: TradeReviewWorkspacePreviewRequest,
     *,
     generated_at: datetime | None = None,
+    symbol_service: SymbolService | None = None,
 ) -> TradeReviewWorkspaceRead:
     """Build a stateless synthetic preview for the Phase 18A API route."""
 
@@ -1408,7 +1422,9 @@ def build_trade_review_workspace_preview(
         ),
         evaluated_at=generated,
     )
-    intent = _preview_intent(payload, generated_at=generated)
+    resolved_identity = _resolve_preview_instrument_identity(payload, symbol_service=symbol_service)
+    reconciled_payload = payload.model_copy(update={"supported_flow": resolved_identity.supported_flow})
+    intent = _preview_intent(reconciled_payload, generated_at=generated)
     market_snapshot = TradeReviewMarketSnapshot(
         report_market_snapshot=None,
         missing_symbols=() if actionability.market_quotes.actionability_status == "actionable_snapshot" else (_intent_symbol(intent),),
@@ -1452,10 +1468,11 @@ def build_trade_review_workspace_preview(
         projection=to_agent_safe_projection(report),
         actionability=actionability,
         review_reference=report.intent_id,
-        supported_flow=payload.supported_flow,
+        supported_flow=resolved_identity.supported_flow,
+        instrument_identity=resolved_identity.identity,
         generated_at=generated,
     )
-    return workspace
+    return _workspace_with_instrument_reconciliation_caveat(workspace)
 
 
 def _workspace_with_exposure_caveats(
@@ -1506,6 +1523,31 @@ def _workspace_with_exposure_caveats(
             "caveats": (
                 *workspace.caveats,
                 *new_caveats,
+            )
+        }
+    )
+
+
+def _workspace_with_instrument_reconciliation_caveat(
+    workspace: TradeReviewWorkspaceRead,
+) -> TradeReviewWorkspaceRead:
+    if workspace.trade_intent_summary.instrument_identity.resolution_status != "mismatch_reconciled":
+        return workspace
+    if any(caveat.code == "instrument_type_reconciled" for caveat in workspace.caveats):
+        return workspace
+    return workspace.model_copy(
+        update={
+            "caveats": (
+                *workspace.caveats,
+                WorkspaceCaveatRead(
+                    code="instrument_type_reconciled",
+                    severity="info",
+                    applies_to="trade_intent",
+                    message=(
+                        "The submitted stock or ETF flow was reconciled to the reviewed symbol-directory "
+                        "instrument type before deterministic calculations."
+                    ),
+                ),
             )
         }
     )
@@ -2990,6 +3032,7 @@ def build_trade_review_workspace_portfolio_preview(
     db: Session | None = None,
     current_user_id: UUID | None = None,
     derived_exposure_sections_callback: Callable[[tuple[Any, ...]], None] | None = None,
+    symbol_service: SymbolService | None = None,
 ) -> TradeReviewWorkspaceRead:
     """Build a portfolio-backed preview from server-owned sanitized context."""
 
@@ -3011,8 +3054,10 @@ def build_trade_review_workspace_portfolio_preview(
     )
     preview_user_id = getattr(resolved.context, "user_id", None)
     preview_account_id = getattr(resolved.context, "account_id", None)
+    resolved_identity = _resolve_preview_instrument_identity(payload, symbol_service=symbol_service)
+    reconciled_payload = payload.model_copy(update={"supported_flow": resolved_identity.supported_flow})
     intent = _preview_intent(
-        payload,
+        reconciled_payload,
         generated_at=generated,
         # A lossy selected-account context intentionally carries no account
         # identity. Its transient intent ids are redacted before saving.
@@ -3071,7 +3116,7 @@ def build_trade_review_workspace_portfolio_preview(
         projection=to_agent_safe_projection(report),
         actionability=actionability,
         review_reference=report.intent_id,
-        supported_flow=payload.supported_flow,
+        supported_flow=resolved_identity.supported_flow,
         portfolio_context_summary=resolved.summary,
         scope_metadata=_report_scope_metadata_for_workspace(
             portfolio_context_summary=resolved.summary,
@@ -3080,15 +3125,18 @@ def build_trade_review_workspace_portfolio_preview(
             current_user_id=current_user_id,
             account_snapshot_unavailable=resolved.account_snapshot_unavailable,
         ),
+        instrument_identity=resolved_identity.identity,
         generated_at=generated,
     )
-    return _workspace_with_exposure_caveats(workspace, derived_exposure_sections)
+    workspace = _workspace_with_exposure_caveats(workspace, derived_exposure_sections)
+    return _workspace_with_instrument_reconciliation_caveat(workspace)
 
 
 def _intent_summary(
     intent_summary: dict[str, Any],
     *,
     supported_flow: SupportedTradeReviewFlow,
+    instrument_identity: InstrumentIdentityRead | None = None,
 ) -> TradeIntentSummaryRead:
     legs = tuple(_option_leg_summary(leg) for leg in intent_summary.get("legs", ()))
     return TradeIntentSummaryRead(
@@ -3104,6 +3152,7 @@ def _intent_summary(
         strategy_type=_optional_text(intent_summary.get("strategy_type")),
         underlying_symbol=_optional_text(intent_summary.get("underlying_symbol")),
         legs=legs,
+        instrument_identity=instrument_identity or InstrumentIdentityRead(),
     )
 
 
@@ -3528,6 +3577,104 @@ def _review_flow_label(flow: SupportedTradeReviewFlow) -> str:
         "cash_secured_put": "Cash-secured put review",
     }
     return labels[flow]
+
+
+def _resolve_preview_instrument_identity(
+    payload: TradeReviewWorkspacePreviewRequest,
+    *,
+    symbol_service: SymbolService | None = None,
+) -> _ResolvedPreviewInstrumentIdentity:
+    flow = payload.supported_flow
+    is_equity_flow = flow in {"stock_buy", "stock_sell_trim", "etf_buy", "etf_sell_trim"}
+    symbol = payload.symbol if is_equity_flow else getattr(payload.option_leg, "underlying_symbol", None)
+    if not symbol:
+        return _ResolvedPreviewInstrumentIdentity(
+            supported_flow=flow,
+            identity=InstrumentIdentityRead(),
+        )
+
+    try:
+        validation = (symbol_service or SymbolService()).validate(symbol)
+    except Exception:
+        validation = None
+    if validation is None or validation.data_mode != "provider_reference":
+        if not is_equity_flow:
+            return _ResolvedPreviewInstrumentIdentity(
+                supported_flow=flow,
+                identity=InstrumentIdentityRead(),
+            )
+        return _ResolvedPreviewInstrumentIdentity(
+            supported_flow=flow,
+            identity=InstrumentIdentityRead(
+                resolved_instrument_kind=_declared_instrument_kind(flow),
+                resolution_status="declared_only",
+                source_label="Submitted trade-review flow",
+                as_of_label="Declared for this saved review",
+            ),
+        )
+
+    directory_kind = {
+        "stock": "operating_company_equity",
+        "adr": "operating_company_equity",
+        "etf": "etf_or_fund",
+    }.get(validation.asset_class if validation.is_found and validation.is_supported else "")
+    directory_as_of = _safe_symbol_directory_as_of_label(validation.as_of_label)
+    if directory_kind is None:
+        return _ResolvedPreviewInstrumentIdentity(
+            supported_flow=flow,
+            identity=InstrumentIdentityRead(
+                source_label="Nasdaq Symbol Directory",
+                as_of_label=directory_as_of,
+            ),
+        )
+
+    if not is_equity_flow:
+        return _ResolvedPreviewInstrumentIdentity(
+            supported_flow=flow,
+            identity=InstrumentIdentityRead(
+                resolved_instrument_kind=directory_kind,
+                resolution_status="confirmed",
+                source_label="Nasdaq Symbol Directory",
+                as_of_label=directory_as_of,
+            ),
+        )
+
+    reconciled_flow = _flow_for_resolved_instrument_kind(flow, directory_kind)
+    return _ResolvedPreviewInstrumentIdentity(
+        supported_flow=reconciled_flow,
+        identity=InstrumentIdentityRead(
+            resolved_instrument_kind=directory_kind,
+            resolution_status="mismatch_reconciled" if reconciled_flow != flow else "confirmed",
+            source_label="Nasdaq Symbol Directory",
+            as_of_label=directory_as_of,
+        ),
+    )
+
+
+def _declared_instrument_kind(flow: SupportedTradeReviewFlow) -> str:
+    return "etf_or_fund" if flow in {"etf_buy", "etf_sell_trim"} else "operating_company_equity"
+
+
+def _flow_for_resolved_instrument_kind(
+    flow: SupportedTradeReviewFlow,
+    resolved_kind: str,
+) -> SupportedTradeReviewFlow:
+    is_buy = flow in {"stock_buy", "etf_buy"}
+    if resolved_kind == "etf_or_fund":
+        return "etf_buy" if is_buy else "etf_sell_trim"
+    return "stock_buy" if is_buy else "stock_sell_trim"
+
+
+def _safe_symbol_directory_as_of_label(value: str) -> str:
+    label = value.strip()
+    try:
+        InstrumentIdentityRead(
+            source_label="Nasdaq Symbol Directory",
+            as_of_label=label,
+        )
+    except ValueError:
+        return "Nasdaq Symbol Directory as-of unavailable"
+    return label
 
 
 def _preview_intent(

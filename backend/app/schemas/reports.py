@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.schemas.trade_review_workspace import ReportScopeMetadataRead
+from app.schemas.trade_review_workspace import InstrumentIdentityRead, ReportScopeMetadataRead
 from app.services.agent_team.llm_clients.contracts import find_secret_like_values
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 
@@ -479,6 +479,7 @@ class SavedDeterministicReviewSummaryRead(BaseModel):
     market_quote_freshness_label: str | None = None
     caveat_codes: tuple[str, ...]
     derived_exposure_sections: tuple["SavedEvidenceSectionRead", ...] = ()
+    instrument_identity: InstrumentIdentityRead = Field(default_factory=InstrumentIdentityRead)
 
     @model_validator(mode="after")
     def deterministic_summary_must_be_safe(self) -> "SavedDeterministicReviewSummaryRead":
@@ -848,6 +849,7 @@ class SavedEvidenceTradeIntentSummaryRead(BaseModel):
     supported_flow: str
     review_flow_label: str
     symbol_or_underlying: str | None = None
+    instrument_identity: InstrumentIdentityRead = Field(default_factory=InstrumentIdentityRead)
 
     @model_validator(mode="after")
     def trade_intent_must_be_safe(self) -> "SavedEvidenceTradeIntentSummaryRead":
@@ -1300,6 +1302,7 @@ class SavedEvidencePackageRead(BaseModel):
                 supported_flow=deterministic.supported_flow,
                 review_flow_label=deterministic.review_flow_label,
                 symbol_or_underlying=deterministic.symbol_or_underlying,
+                instrument_identity=deterministic.instrument_identity,
             ),
             scope_state=SavedEvidenceScopeStateRead(
                 review_account_selected=review_account is not None,

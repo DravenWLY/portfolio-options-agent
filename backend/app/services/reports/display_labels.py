@@ -110,6 +110,7 @@ CAVEAT_WARNING_DISPLAY_LABELS: dict[str, str] = {
     "fred_economic_awareness_not_available": "FRED macro calendar metadata was unavailable",
     "funding_shortfall_detected": "reviewed cash snapshot did not cover the proposed purchase",
     "insufficient_history": "history was insufficient for some indicators",
+    "instrument_type_reconciled": "the submitted instrument type was reconciled with the reviewed symbol directory",
     "liquidity_model_unverified": "liquidity model was not verified",
     "live_category_mismatch_dropped": "live category mismatch was dropped",
     "live_numeric_mismatch_dropped": "live numeric mismatch was dropped",

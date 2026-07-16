@@ -22,6 +22,28 @@ SupportedTradeReviewFlow: TypeAlias = Literal[
     "covered_call",
     "cash_secured_put",
 ]
+ResolvedInstrumentKind: TypeAlias = Literal["operating_company_equity", "etf_or_fund", "unknown"]
+InstrumentResolutionStatus: TypeAlias = Literal[
+    "confirmed",
+    "declared_only",
+    "mismatch_reconciled",
+    "unresolved",
+]
+_INSTRUMENT_IDENTITY_SOURCE_LABELS = frozenset(
+    {
+        "Instrument identity unavailable",
+        "Submitted trade-review flow",
+        "Nasdaq Symbol Directory",
+    }
+)
+_INSTRUMENT_IDENTITY_AS_OF_UNAVAILABLE = "Instrument identity as-of unavailable"
+_INSTRUMENT_IDENTITY_AS_OF_DECLARED = "Declared for this saved review"
+_INSTRUMENT_IDENTITY_AS_OF_NASDAQ_UNAVAILABLE = "Nasdaq Symbol Directory as-of unavailable"
+_INSTRUMENT_IDENTITY_AS_OF_NASDAQ_PREFIX = "Nasdaq Symbol Directory "
+_INSTRUMENT_IDENTITY_SCHEME_RE = re.compile(
+    r"\b(?:https?|file|ftps?|s3|gs|data|javascript|mailto):",
+    re.IGNORECASE,
+)
 WorkspaceCaveatSeverity: TypeAlias = Literal["info", "warning", "blocker"]
 PortfolioContextSelectionMode: TypeAlias = Literal["latest_available", "selected_context"]
 ReviewAccountSelectionMode: TypeAlias = Literal["unselected", "selected_account"]
@@ -363,6 +385,68 @@ class ReportScopeMetadataRead(BaseModel):
         return self
 
 
+class InstrumentIdentityRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    resolved_instrument_kind: ResolvedInstrumentKind = "unknown"
+    resolution_status: InstrumentResolutionStatus = "unresolved"
+    source_label: str = Field(default="Instrument identity unavailable", min_length=1, max_length=160)
+    as_of_label: str = Field(default="Instrument identity as-of unavailable", min_length=1, max_length=160)
+
+    @model_validator(mode="after")
+    def instrument_identity_must_be_consistent_and_safe(self) -> "InstrumentIdentityRead":
+        if self.source_label not in _INSTRUMENT_IDENTITY_SOURCE_LABELS:
+            raise ValueError("instrument identity source label is not reviewed")
+        _validate_instrument_identity_as_of_label(self.as_of_label)
+        if self.resolution_status == "unresolved" and self.resolved_instrument_kind != "unknown":
+            raise ValueError("unresolved instrument identity must use unknown instrument kind")
+        if self.resolution_status != "unresolved" and self.resolved_instrument_kind == "unknown":
+            raise ValueError("resolved instrument identity must include a reviewed instrument kind")
+        if self.source_label == "Instrument identity unavailable":
+            if self.resolution_status != "unresolved" or self.as_of_label != _INSTRUMENT_IDENTITY_AS_OF_UNAVAILABLE:
+                raise ValueError("unavailable instrument identity must use unresolved unavailable provenance")
+        elif self.source_label == "Submitted trade-review flow":
+            if self.resolution_status != "declared_only" or self.as_of_label != _INSTRUMENT_IDENTITY_AS_OF_DECLARED:
+                raise ValueError("submitted instrument identity must use declared-only provenance")
+        else:
+            if self.resolution_status not in {"confirmed", "mismatch_reconciled", "unresolved"}:
+                raise ValueError("Nasdaq instrument identity must use a directory-backed resolution status")
+            if not self.as_of_label.startswith(_INSTRUMENT_IDENTITY_AS_OF_NASDAQ_PREFIX):
+                raise ValueError("Nasdaq instrument identity must use Nasdaq as-of provenance")
+        validate_trade_review_workspace_payload(self.model_dump(mode="python"))
+        return self
+
+
+def _validate_instrument_identity_as_of_label(label: str) -> None:
+    if label != label.strip() or not label.isascii() or not label.isprintable():
+        raise ValueError("instrument identity as-of label must be normalized safe text")
+    if label not in {
+        _INSTRUMENT_IDENTITY_AS_OF_UNAVAILABLE,
+        _INSTRUMENT_IDENTITY_AS_OF_DECLARED,
+        _INSTRUMENT_IDENTITY_AS_OF_NASDAQ_UNAVAILABLE,
+    } and not label.startswith(_INSTRUMENT_IDENTITY_AS_OF_NASDAQ_PREFIX):
+        raise ValueError("instrument identity as-of label is not reviewed")
+
+    from app.services.agent_team.llm_clients.contracts import (
+        RAW_SOURCE_PATH_PATTERNS,
+        find_forbidden_string_values,
+        find_secret_like_values,
+    )
+
+    lowered = label.lower()
+    if (
+        "/" in label
+        or "\\" in label
+        or ".." in label
+        or _INSTRUMENT_IDENTITY_SCHEME_RE.search(label)
+        or any(token in lowered for token in FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+        or find_forbidden_string_values(label)
+        or find_secret_like_values(label)
+        or any(pattern.search(label) for pattern in RAW_SOURCE_PATH_PATTERNS)
+    ):
+        raise ValueError("instrument identity as-of label contains unsafe provenance text")
+
+
 class TradeIntentSummaryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
@@ -378,6 +462,7 @@ class TradeIntentSummaryRead(BaseModel):
     strategy_type: str | None = None
     underlying_symbol: str | None = None
     legs: tuple[WorkspaceOptionLegSummaryRead, ...] = ()
+    instrument_identity: InstrumentIdentityRead = Field(default_factory=InstrumentIdentityRead)
 
 
 class ScenarioPayoffPointRead(BaseModel):

@@ -36,6 +36,9 @@ def test_display_label_map_covers_current_report_vocabularies() -> None:
     assert display_label_for_code("account_snapshot_unavailable") == (
         "the selected account's synced snapshot was unavailable, so exposure impact was not computed"
     )
+    assert display_label_for_code("instrument_type_reconciled") == (
+        "the submitted instrument type was reconciled with the reviewed symbol directory"
+    )
     assert display_label_for_code("money_market_core_treated_as_cash") == (
         "a money market core position was treated as cash"
     )

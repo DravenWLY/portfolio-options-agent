@@ -28,7 +28,12 @@ from app.schemas.reports import (
     SavedReviewArtifactRead,
     SavedReviewReportMetadataRead,
 )
-from app.schemas.trade_review_workspace import PortfolioScopeRead, ReportScopeMetadataRead, ReviewAccountRead
+from app.schemas.trade_review_workspace import (
+    InstrumentIdentityRead,
+    PortfolioScopeRead,
+    ReportScopeMetadataRead,
+    ReviewAccountRead,
+)
 from app.services.reports.crud import (
     _saved_artifact_json_can_be_committed,
     _saved_review_source_payload_is_valid,
@@ -50,6 +55,7 @@ from app.services.reports.public_evidence import (
 )
 from app.services.agent_team.safety.report_output_safety import validate_agent_team_report_output
 from app.services.trade_review import exposure_adapter as exposure_adapter_service
+from app.services import symbols as symbols_service
 
 
 pytestmark = pytest.mark.unit
@@ -268,6 +274,143 @@ def test_saved_evidence_package_keeps_legacy_stubs_without_frozen_sections() -> 
     )
     assert evidence.concentration_risk_drift.availability == "limited"
     assert evidence.concentration_risk_drift.summary_label == "Highest deterministic severity: warning."
+    assert evidence.trade_intent_summary.instrument_identity.resolution_status == "unresolved"
+    assert evidence.trade_intent_summary.instrument_identity.resolved_instrument_kind == "unknown"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {},
+        {
+            "resolved_instrument_kind": "operating_company_equity",
+            "resolution_status": "declared_only",
+            "source_label": "Submitted trade-review flow",
+            "as_of_label": "Declared for this saved review",
+        },
+        {
+            "resolved_instrument_kind": "etf_or_fund",
+            "resolution_status": "confirmed",
+            "source_label": "Nasdaq Symbol Directory",
+            "as_of_label": "Nasdaq Symbol Directory file time 2026-05-20",
+        },
+        {
+            "resolved_instrument_kind": "unknown",
+            "resolution_status": "unresolved",
+            "source_label": "Nasdaq Symbol Directory",
+            "as_of_label": "Nasdaq Symbol Directory as-of unavailable",
+        },
+        {
+            "resolved_instrument_kind": "operating_company_equity",
+            "resolution_status": "confirmed",
+            "source_label": "Nasdaq Symbol Directory",
+            "as_of_label": (
+                "Nasdaq Symbol Directory file time 20260520; imported 2026-05-20T21:00:00+00:00"
+            ),
+        },
+    ),
+)
+def test_instrument_identity_schema_accepts_only_consistent_reviewed_provenance(payload: dict) -> None:
+    InstrumentIdentityRead.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "source_label",
+    (
+        "Provider symbol directory",
+        "Nasdaq Symbol Directory mirror",
+        "Nasdaq Symbol Directory\nraw source",
+    ),
+)
+def test_instrument_identity_schema_rejects_unreviewed_source_labels(source_label: str) -> None:
+    with pytest.raises(ValidationError):
+        InstrumentIdentityRead(
+            resolved_instrument_kind="etf_or_fund",
+            resolution_status="confirmed",
+            source_label=source_label,
+            as_of_label="Nasdaq Symbol Directory file time 2026-05-20",
+        )
+
+
+@pytest.mark.parametrize(
+    "as_of_label",
+    (
+        "Nasdaq Symbol Directory https://example.invalid/raw",
+        "Nasdaq Symbol Directory /tmp/raw-directory",
+        "Nasdaq Symbol Directory C:\\raw-directory",
+        "Nasdaq Symbol Directory\nfile time 2026-05-20",
+        "Nasdaq Symbol Directory\vfile time 2026-05-20",
+        "Nasdaq Symbol Directory file time 2026-05-20\u2028raw",
+        "Nasdaq Symbol Directory http:example.invalid",
+        "Nasdaq Symbol Directory file:raw-directory",
+        "Nasdaq Symbol Directory provider_account_id=acct-12345",
+        "Nasdaq Symbol Directory account_number=987654321",
+        "Nasdaq Symbol Directory sk-proj-abcdefghijklmnopqrstuvwxyz123456",
+    ),
+)
+def test_instrument_identity_schema_rejects_unsafe_as_of_provenance(as_of_label: str) -> None:
+    with pytest.raises(ValidationError):
+        InstrumentIdentityRead(
+            resolved_instrument_kind="etf_or_fund",
+            resolution_status="confirmed",
+            source_label="Nasdaq Symbol Directory",
+            as_of_label=as_of_label,
+        )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {
+            "resolved_instrument_kind": "operating_company_equity",
+            "resolution_status": "confirmed",
+            "source_label": "Submitted trade-review flow",
+            "as_of_label": "Declared for this saved review",
+        },
+        {
+            "resolved_instrument_kind": "etf_or_fund",
+            "resolution_status": "declared_only",
+            "source_label": "Nasdaq Symbol Directory",
+            "as_of_label": "Nasdaq Symbol Directory file time 2026-05-20",
+        },
+        {
+            "resolved_instrument_kind": "unknown",
+            "resolution_status": "unresolved",
+            "source_label": "Submitted trade-review flow",
+            "as_of_label": "Declared for this saved review",
+        },
+    ),
+)
+def test_instrument_identity_schema_rejects_inconsistent_status_and_provenance(payload: dict) -> None:
+    with pytest.raises(ValidationError):
+        InstrumentIdentityRead.model_validate(payload)
+
+
+def test_saved_evidence_package_reuses_frozen_instrument_identity_without_reclassification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frozen_identity = InstrumentIdentityRead(
+        resolved_instrument_kind="etf_or_fund",
+        resolution_status="mismatch_reconciled",
+        source_label="Nasdaq Symbol Directory",
+        as_of_label="Nasdaq Symbol Directory file time 2026-05-20",
+    )
+    artifact = _saved_review_artifact(
+        deterministic_summary=_saved_deterministic_summary().model_copy(
+            update={"instrument_identity": frozen_identity},
+        )
+    )
+    monkeypatch.setattr(
+        symbols_service.SymbolService,
+        "validate",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("saved evidence readback must not reclassify the instrument")
+        ),
+    )
+
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
+
+    assert evidence.trade_intent_summary.instrument_identity == frozen_identity
 
 
 def test_saved_evidence_package_fails_closed_on_poisoned_frozen_section() -> None:

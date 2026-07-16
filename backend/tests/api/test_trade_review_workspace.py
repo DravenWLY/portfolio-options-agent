@@ -17,6 +17,7 @@ from app.models.option_position import OptionPosition
 from app.models.saved_review_source import SavedReviewSource
 from app.models.stock_position import StockPosition
 from app.models.user import User
+from app.schemas.reports import SavedEvidencePackageRead, SavedReviewArtifactRead
 from app.services.broker_import.providers.exceptions import BrokerProviderReauthRequiredError
 from app.services.broker_import.providers.models import (
     ProviderBalanceSnapshot,
@@ -26,9 +27,22 @@ from app.services.broker_import.providers.models import (
 )
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.schemas.trade_review_workspace import validate_trade_review_saved_source_reference
+from app.services.symbols import SymbolRecord, SymbolService
+from app.services.trade_review import frontend_read as frontend_read_service
 
 
 pytestmark = [pytest.mark.api, pytest.mark.unit]
+
+
+class _ReviewedDirectoryProvider:
+    data_mode = "provider_reference"
+    source_label = "Nasdaq Symbol Directory"
+    as_of_label = "Nasdaq Symbol Directory file time 2026-05-20"
+
+    def list_symbols(self) -> tuple[SymbolRecord, ...]:
+        return (
+            SymbolRecord(symbol="FUNDX", name="Synthetic Fund", asset_class="etf", exchange="NASDAQ"),
+        )
 
 
 @pytest.mark.parametrize(
@@ -509,6 +523,9 @@ def test_trade_review_portfolio_preview_resolves_current_user_account_details_re
     assert saved_artifact["status"] == "saved"
     assert saved_artifact["scope_metadata"]["scope_summary_label"] == payload["scope_metadata"]["scope_summary_label"]
     assert saved_artifact["deterministic_summary"]["symbol_or_underlying"] == "XYZ"
+    assert saved_artifact["deterministic_summary"]["instrument_identity"] == (
+        payload["trade_intent_summary"]["instrument_identity"]
+    )
     review_account = payload["scope_metadata"]["review_account"]
     assert review_account["account_reference"] == account_reference
     assert review_account["display_label"] == "Fidelity taxable"
@@ -537,6 +554,84 @@ def test_trade_review_portfolio_preview_resolves_current_user_account_details_re
     assert "taxable account ending 1234" not in rendered
     assert not find_forbidden_keys(payload, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
     assert not find_forbidden_keys(saved_artifact, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+def test_reconciled_etf_identity_freezes_through_saved_route_and_readback(
+    client: TestClient,
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = User(display_name="Synthetic Identity User", email="identity-user@example.com")
+    db_session.add(user)
+    db_session.commit()
+    reviewed_service = SymbolService(_ReviewedDirectoryProvider())
+    monkeypatch.setattr(frontend_read_service, "SymbolService", lambda: reviewed_service)
+
+    preview_response = client.post(
+        "/trade-reviews/portfolio-preview",
+        headers={"X-User-Id": str(user.id)},
+        json={
+            "supported_flow": "stock_buy",
+            "symbol": "FUNDX",
+            "quantity": "3",
+            "price_assumption": "50",
+            "portfolio_context_selection": {"mode": "latest_available"},
+        },
+    )
+
+    assert preview_response.status_code == 200
+    preview = preview_response.json()
+    assert preview["supported_flow"] == "etf_buy"
+    assert preview["trade_intent_summary"]["asset_class"] == "etf"
+    assert preview["trade_intent_summary"]["instrument_identity"] == {
+        "resolved_instrument_kind": "etf_or_fund",
+        "resolution_status": "mismatch_reconciled",
+        "source_label": "Nasdaq Symbol Directory",
+        "as_of_label": "Nasdaq Symbol Directory file time 2026-05-20",
+    }
+    assert "instrument_type_reconciled" in {caveat["code"] for caveat in preview["caveats"]}
+
+    source_reference = preview["saved_review_source_reference"]
+    assert source_reference is not None
+    save_response = client.post(
+        f"/users/{user.id}/reports/from-trade-review",
+        json={
+            "source_kind": "trade_review_workspace",
+            "source_reference": source_reference,
+            "title": "Synthetic reconciled ETF review",
+            "report_type": "trade_review",
+        },
+    )
+
+    assert save_response.status_code == 201
+    saved_payload = save_response.json()
+    deterministic = saved_payload["deterministic_summary"]
+    assert deterministic["supported_flow"] == "etf_buy"
+    assert deterministic["instrument_identity"] == preview["trade_intent_summary"]["instrument_identity"]
+    assert "instrument_type_reconciled" in deterministic["caveat_codes"]
+    assert {section["section_key"] for section in deterministic["derived_exposure_sections"]} == {
+        "before_after_portfolio_impact",
+        "concentration_risk_drift",
+    }
+
+    artifact = SavedReviewArtifactRead.model_validate(saved_payload)
+    monkeypatch.setattr(
+        SymbolService,
+        "validate",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("saved report readback must not consult the active symbol directory")
+        ),
+    )
+    evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
+    assert evidence.trade_intent_summary.supported_flow == "etf_buy"
+    assert evidence.trade_intent_summary.instrument_identity == artifact.deterministic_summary.instrument_identity
+    frozen_before_after = next(
+        section
+        for section in artifact.deterministic_summary.derived_exposure_sections
+        if section.section_key == "before_after_portfolio_impact"
+    )
+    assert frozen_before_after.availability in {"available", "limited"}
+    assert evidence.before_after_portfolio_impact == frozen_before_after
 
 
 def test_review_account_candidates_use_user_owned_nickname_without_private_fields(

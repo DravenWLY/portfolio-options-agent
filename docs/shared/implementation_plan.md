@@ -1869,6 +1869,19 @@ exercise their own judgment within this frame.
   source-rights gate. Next: `P36-T7-J4A` instrument reconciliation/freeze,
   then `P36-T7-J4B` evidence preparation/readiness, both owned by Codex C and
   reviewed by Codex B.
+  **P36-T7-J4A - instrument reconciliation and frozen identity: DONE
+  2026-07-16 by Codex C.** The backend now reconciles stock/ADR versus ETF
+  identity from the normalized Nasdaq Symbol Directory before deterministic
+  intent and exposure calculations, freezes the reviewed kind/status/safe
+  provenance into the saved review, and reuses that frozen identity on
+  historical readback. Directory-unavailable equity flows remain
+  `declared_only`; unsupported or test-issue rows remain `unresolved` and
+  cannot rewrite the submitted flow. Schema-level provenance validation
+  rejects unreviewed labels, unsafe status/provenance combinations, URLs,
+  paths, private tokens, and secret-like strings. Codex B contract re-review
+  PASS; Claude G architecture/privacy review PASS 2026-07-16. Claude G also
+  recorded one non-blocking environmental first-run test flake. `P36-T7-J4B`
+  is unblocked after this checkpoint lands.
 - `P36-T5B` - Live PM synthesis: typed PmSynthesis (four verdict-incapable
   fields), whole-block fail-closed, composer rendering, PM calc
   verification access. Owner: Codex C (implementation). Status: DESIGN PHASE

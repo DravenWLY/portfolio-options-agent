@@ -59,11 +59,40 @@ from app.services.trade_review.payoff import PayoffReview, PayoffScenarioPoint
 from app.services.trade_review.report import TradeReviewAgentProjection
 from app.services.trade_review.snapshots import TradeReviewMarketSnapshot
 from app.services.trade_review.validation import TradeIntentValidationFinding, TradeIntentValidationResult
+from app.services.trade_review.models import ETFTradeIntent, OptionStrategyIntent, StockTradeIntent
+from app.services.symbols import SymbolRecord, SymbolService
 
 
 pytestmark = [pytest.mark.unit]
 
 NOW = datetime(2026, 5, 20, 21, 0, tzinfo=UTC)
+
+
+class _StaticSymbolProvider:
+    data_mode = "provider_reference"
+    source_label = "Nasdaq Symbol Directory"
+    as_of_label = "Nasdaq Symbol Directory file time 2026-05-20"
+
+    def __init__(self, records: tuple[SymbolRecord, ...], *, fail: bool = False) -> None:
+        self._records = records
+        self._fail = fail
+
+    def list_symbols(self) -> tuple[SymbolRecord, ...]:
+        if self._fail:
+            raise RuntimeError("synthetic directory unavailable")
+        return self._records
+
+
+def _reviewed_symbol_service() -> SymbolService:
+    return SymbolService(
+        _StaticSymbolProvider(
+            (
+                SymbolRecord(symbol="FUNDX", name="Synthetic Fund", asset_class="etf", exchange="NASDAQ"),
+                SymbolRecord(symbol="OPCO", name="Synthetic Company", asset_class="stock", exchange="NASDAQ"),
+                SymbolRecord(symbol="ADRX", name="Synthetic ADR", asset_class="adr", exchange="NASDAQ"),
+            )
+        )
+    )
 
 
 def _option_leg(*, option_type: str, leg_action: str) -> dict:
@@ -409,6 +438,203 @@ def test_portfolio_preview_service_returns_safe_context_summary() -> None:
     assert read.actionability.market_quotes.freshness_scope == "market_quote"
     assert "account_snapshot_unavailable" not in {caveat.code for caveat in read.caveats}
     assert not find_forbidden_keys(read.model_dump(mode="python"), forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+
+
+@pytest.mark.parametrize(
+    ("submitted_flow", "symbol", "resolved_flow", "intent_type", "resolved_kind"),
+    (
+        ("stock_buy", "FUNDX", "etf_buy", ETFTradeIntent, "etf_or_fund"),
+        ("stock_sell_trim", "FUNDX", "etf_sell_trim", ETFTradeIntent, "etf_or_fund"),
+        ("etf_buy", "OPCO", "stock_buy", StockTradeIntent, "operating_company_equity"),
+        ("etf_sell_trim", "ADRX", "stock_sell_trim", StockTradeIntent, "operating_company_equity"),
+    ),
+)
+def test_portfolio_preview_reconciles_stock_and_etf_identity_before_exposure_math(
+    monkeypatch: pytest.MonkeyPatch,
+    submitted_flow: str,
+    symbol: str,
+    resolved_flow: str,
+    intent_type: type,
+    resolved_kind: str,
+) -> None:
+    captured_intents: list[object] = []
+
+    def _capture_exposure_intent(*, portfolio_context: object, intent: object) -> tuple[object, ...]:
+        del portfolio_context
+        captured_intents.append(intent)
+        return ()
+
+    monkeypatch.setattr(frontend_read_service, "try_build_exposure_evidence_sections", _capture_exposure_intent)
+    read = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow=submitted_flow,
+            symbol=symbol,
+            quantity=Decimal("3"),
+            price_assumption=Decimal("50"),
+        ),
+        generated_at=NOW,
+        symbol_service=_reviewed_symbol_service(),
+    )
+
+    assert read.supported_flow == resolved_flow
+    assert read.trade_intent_summary.supported_flow == resolved_flow
+    assert read.trade_intent_summary.instrument_identity.resolved_instrument_kind == resolved_kind
+    assert read.trade_intent_summary.instrument_identity.resolution_status == "mismatch_reconciled"
+    assert read.trade_intent_summary.instrument_identity.source_label == "Nasdaq Symbol Directory"
+    assert isinstance(captured_intents[0], intent_type)
+    assert "instrument_type_reconciled" in {caveat.code for caveat in read.caveats}
+
+
+def test_portfolio_preview_preserves_declared_flow_when_directory_is_unavailable() -> None:
+    unavailable_service = SymbolService(_StaticSymbolProvider((), fail=True))
+    read = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="stock_buy",
+            symbol="FUNDX",
+            quantity=Decimal("3"),
+            price_assumption=Decimal("50"),
+        ),
+        generated_at=NOW,
+        symbol_service=unavailable_service,
+    )
+
+    identity = read.trade_intent_summary.instrument_identity
+    assert read.supported_flow == "stock_buy"
+    assert identity.resolved_instrument_kind == "operating_company_equity"
+    assert identity.resolution_status == "declared_only"
+    assert identity.source_label == "Submitted trade-review flow"
+    assert "instrument_type_reconciled" not in {caveat.code for caveat in read.caveats}
+
+
+def test_portfolio_preview_keeps_unmatched_directory_identity_unresolved() -> None:
+    unmatched = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="etf_buy",
+            symbol="MISSX",
+            quantity=Decimal("3"),
+            price_assumption=Decimal("50"),
+        ),
+        generated_at=NOW,
+        symbol_service=_reviewed_symbol_service(),
+    )
+    assert unmatched.supported_flow == "etf_buy"
+    assert unmatched.trade_intent_summary.instrument_identity.resolution_status == "unresolved"
+    assert unmatched.trade_intent_summary.instrument_identity.resolved_instrument_kind == "unknown"
+
+
+@pytest.mark.parametrize(
+    ("is_supported", "is_test_issue"),
+    (
+        (False, False),
+        (True, True),
+    ),
+)
+def test_portfolio_preview_does_not_reconcile_from_unsupported_directory_records(
+    is_supported: bool,
+    is_test_issue: bool,
+) -> None:
+    service = SymbolService(
+        _StaticSymbolProvider(
+            (
+                SymbolRecord(
+                    symbol="FUNDX",
+                    name="Synthetic Unsupported Fund",
+                    asset_class="etf",
+                    exchange="NASDAQ",
+                    is_supported=is_supported,
+                    is_test_issue=is_test_issue,
+                ),
+            )
+        )
+    )
+    read = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="stock_buy",
+            symbol="FUNDX",
+            quantity=Decimal("3"),
+            price_assumption=Decimal("50"),
+        ),
+        generated_at=NOW,
+        symbol_service=service,
+    )
+
+    assert read.supported_flow == "stock_buy"
+    assert read.trade_intent_summary.asset_class == "stock"
+    assert read.trade_intent_summary.instrument_identity.resolution_status == "unresolved"
+    assert read.trade_intent_summary.instrument_identity.resolved_instrument_kind == "unknown"
+    assert "instrument_type_reconciled" not in {caveat.code for caveat in read.caveats}
+
+
+@pytest.mark.parametrize(
+    "unsafe_as_of_label",
+    (
+        "Nasdaq Symbol Directory provider_account_id=acct-12345",
+        "Nasdaq Symbol Directory account_number=987654321",
+        "Nasdaq Symbol Directory sk-proj-abcdefghijklmnopqrstuvwxyz123456",
+        "Nasdaq Symbol Directory http:example.invalid",
+        "Nasdaq Symbol Directory file:raw-directory",
+        "Nasdaq Symbol Directory file time 2026-05-20\u2028raw",
+        "Nasdaq Symbol Directory\vfile time 2026-05-20",
+        "https://example.invalid/raw-directory-path",
+    ),
+)
+def test_portfolio_preview_rejects_private_or_secret_like_directory_metadata(
+    unsafe_as_of_label: str,
+) -> None:
+    provider = _StaticSymbolProvider(
+        (SymbolRecord(symbol="FUNDX", name="Synthetic Fund", asset_class="etf", exchange="NASDAQ"),)
+    )
+    provider.as_of_label = unsafe_as_of_label
+    safe = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="etf_buy",
+            symbol="FUNDX",
+            quantity=Decimal("3"),
+            price_assumption=Decimal("50"),
+        ),
+        generated_at=NOW,
+        symbol_service=SymbolService(provider),
+    )
+    assert safe.trade_intent_summary.instrument_identity.as_of_label == (
+        "Nasdaq Symbol Directory as-of unavailable"
+    )
+    assert unsafe_as_of_label not in repr(safe.model_dump(mode="python"))
+
+
+def test_options_flow_keeps_strategy_while_freezing_underlying_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_intents: list[object] = []
+
+    def _capture_exposure_intent(*, portfolio_context: object, intent: object) -> tuple[object, ...]:
+        del portfolio_context
+        captured_intents.append(intent)
+        return ()
+
+    monkeypatch.setattr(frontend_read_service, "try_build_exposure_evidence_sections", _capture_exposure_intent)
+    read = build_trade_review_workspace_portfolio_preview(
+        TradeReviewPortfolioPreviewRequest(
+            supported_flow="cash_secured_put",
+            option_leg={
+                "underlying_symbol": "FUNDX",
+                "option_type": "put",
+                "leg_action": "sell_to_open",
+                "expiration_date": "2026-06-19",
+                "strike": "50",
+                "quantity": "1",
+                "premium": "2",
+            },
+        ),
+        generated_at=NOW,
+        symbol_service=_reviewed_symbol_service(),
+    )
+
+    identity = read.trade_intent_summary.instrument_identity
+    assert read.supported_flow == "cash_secured_put"
+    assert identity.resolved_instrument_kind == "etf_or_fund"
+    assert identity.resolution_status == "confirmed"
+    assert isinstance(captured_intents[0], OptionStrategyIntent)
+    assert "instrument_type_reconciled" not in {caveat.code for caveat in read.caveats}
 
 
 def test_portfolio_preview_service_resolves_selected_review_account_separately_from_context() -> None:

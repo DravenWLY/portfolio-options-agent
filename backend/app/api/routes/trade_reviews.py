@@ -143,6 +143,7 @@ def _deterministic_summary_from_workspace(
         market_quote_freshness_label=_market_quote_freshness_label(workspace),
         caveat_codes=caveat_codes,
         derived_exposure_sections=derived_exposure_sections,
+        instrument_identity=workspace.trade_intent_summary.instrument_identity,
     )
 
 

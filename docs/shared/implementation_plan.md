@@ -1826,6 +1826,49 @@ exercise their own judgment within this frame.
   availability; (b) apply the same ownership rule to the Technical note
   synthesis embed; (c) drop the now-dead report_generated_at parameter on
   _synthesis_markdown.
+  **P36-T7 MOCK REHEARSAL 1 (Codex B, 2026-07-16): completed one authorized
+  generation attempt; acceptance NOT MET.** The route returned HTTP 201 in
+  2.152 seconds (30,428 response bytes) with `tool_mediated_mock`, a completed
+  run, `full_agent_report`, and deterministic synthesis. All five roles reached
+  terminal states (four completed and one honestly skipped), and no legacy
+  family flags were present. The frozen artifact remained
+  `p33a_tool_run_freeze_v1`, however, with zero provider-run records and no P36
+  prompt versions. Required public-evidence coverage was also absent: EOD
+  history, EDGAR company profile, and EDGAR recent filings were all unavailable;
+  fundamentals remained `not_reviewed`. Failure codes:
+  `artifact_schema_not_p36`, `provider_runs_missing`, and
+  `public_evidence_coverage_missing`. The single generation attempt was
+  consumed; no retry was made. Full private artifact plus sanitized metadata
+  were archived under ignored `reports/p36-t7-mock-rehearsal-1/`; no report
+  content or private identifiers were added to tracked docs. The three-layer
+  stack was fully torn down and ports 8000, 5173, and 5432 were confirmed free.
+  **P36-T7-J4 - ETF public-evidence routing gap (OPEN, founder reported
+  2026-07-16):** an active ETF symbol can pass Trade Review while the current
+  issuer-oriented EDGAR company-profile/recent-filings and FMP company-
+  fundamentals lanes all degrade as unresolved or unavailable. This is not an
+  invalid-symbol conclusion. The product must identify ETF instruments before
+  source acquisition, preserve EOD evidence when supported, route to reviewed
+  ETF-appropriate profile/holdings/issuer evidence when available, and render
+  an explicit ETF evidence gap otherwise. An unclassified ETF trade must never
+  be presented as an unchanged sector/industry exposure; the frozen review must
+  either include the classified trade delta or state that the trade is excluded
+  from classification buckets. General news-provider expansion remains out of
+  scope. Owner: Codex B contract, Codex C backend implementation, Claude H
+  domain acceptance. Status: OPEN; blocks treating the prior ETF run as a
+  five-agent acceptance result, but does not block a separately reviewed
+  operating-company stock acceptance case.
+  **P36-T7-J4 contract (Codex B, 2026-07-16): DONE.** Binding design recorded
+  in `docs/codex-b-architecture/PHASE_36_T7_SOURCE_READINESS_AND_ETF_EVIDENCE_CONTRACT.md`.
+  The normalized Nasdaq Symbol Directory is the preferred backend-owned
+  stock/ETF classifier; the resolved kind is reconciled before deterministic
+  exposure calculations and frozen with the saved review. Public-source
+  readiness moves to a no-LLM, freeze-once preparation operation before an
+  acceptance generation. Issuer-source failure never means invalid symbol,
+  operating-company fundamentals are not applicable to ETFs, and ETF-specific
+  profile/holdings/fund-event sources remain blocked behind their own
+  source-rights gate. Next: `P36-T7-J4A` instrument reconciliation/freeze,
+  then `P36-T7-J4B` evidence preparation/readiness, both owned by Codex C and
+  reviewed by Codex B.
 - `P36-T5B` - Live PM synthesis: typed PmSynthesis (four verdict-incapable
   fields), whole-block fail-closed, composer rendering, PM calc
   verification access. Owner: Codex C (implementation). Status: DESIGN PHASE

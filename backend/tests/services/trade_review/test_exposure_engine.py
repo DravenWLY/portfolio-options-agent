@@ -153,6 +153,38 @@ def test_golden_worked_example_reproduces_memo_numbers_and_sections() -> None:
     assert any("50.0% cash" in label or "58%" in label for label in concentration.detail_labels)
 
 
+def test_unclassified_trade_is_not_misrepresented_as_unchanged_semiconductor_exposure() -> None:
+    result = build_trade_exposure_impact(
+        snapshot=ReviewedExposureSnapshot(
+            cash_value=Decimal("5000"),
+            snapshot_label="synthetic reviewed snapshot",
+            positions=(
+                ExposurePosition(
+                    symbol="SMH",
+                    instrument_kind="etf",
+                    market_value=Decimal("9000"),
+                ),
+            ),
+        ),
+        proposed_trade=ProposedEquityTrade(
+            symbol="TEST",
+            quantity=Decimal("50"),
+            price=Decimal("61"),
+            price_basis_label="synthetic reviewed price basis",
+            instrument_kind="stock",
+        ),
+        classification_context=ClassificationExecutionContext(live_enabled=False),
+    )
+
+    semiconductor_row = next(row for row in result.industry_table.rows if row.label == "Semiconductors")
+    assert semiconductor_row.trade_delta == Decimal("0")
+    assert "was not included in sector or industry buckets" in result.concentration_evidence_section().summary_label
+    assert "semiconductor-classified holdings move from" not in result.concentration_evidence_section().summary_label
+    narrative = "\n".join(result.narrative_statements)
+    assert "was not counted in sector or industry exposure because its classification was unavailable" in narrative
+    assert "already holds $9,000 of SMH" not in narrative
+
+
 def test_narrative_uses_actual_fund_symbols_for_overlap_and_review_gaps() -> None:
     context = ClassificationExecutionContext(
         client=_FakeProfileClient(

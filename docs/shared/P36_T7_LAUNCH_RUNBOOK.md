@@ -95,6 +95,7 @@ docker compose \
   -f docker-compose.p36-t7.yml \
   run --rm --no-deps backend python -c '
 import app.main
+from app.api.routes import reports as report_routes
 from app.core.config import get_settings
 from app.services.market_data.eod_history import market_context_policy_from_environment
 from app.services.reports.agent_team_report import (
@@ -105,6 +106,11 @@ from app.services.reports.agent_team_report import (
 resolution = resolve_agent_team_report_provider_resolution()
 risk, public, pm = resolve_p36_live_lane_flags()
 settings = get_settings()
+eod_policy, eod_context = report_routes._resolve_fmp_eod_history_generation_context()
+fundamentals_policy, fundamentals_context = report_routes._resolve_fmp_fundamentals_generation_context()
+edgar_profile_policy, edgar_profile_client, edgar_filings_policy, edgar_filings_client = (
+    report_routes._resolve_edgar_report_evidence_generation_context()
+)
 print({
     "report_generation_mode": resolve_backend_agent_team_report_generation_mode(),
     "p36_live_lanes": {"risk": risk, "public": public, "pm": pm},
@@ -116,6 +122,16 @@ print({
         "error_code": resolution.error_code,
     },
     "market_context_mode": market_context_policy_from_environment().mode,
+    "source_lane_resolution": {
+        "eod_policy_resolved": eod_policy is not None,
+        "eod_context_resolved": eod_context is not None and eod_context.client is not None,
+        "fundamentals_policy_resolved": fundamentals_policy is not None,
+        "fundamentals_context_resolved": (
+            fundamentals_context is not None and fundamentals_context.client is not None
+        ),
+        "edgar_profile_resolved": edgar_profile_policy is not None and edgar_profile_client is not None,
+        "edgar_filings_resolved": edgar_filings_policy is not None and edgar_filings_client is not None,
+    },
     "edgar_report_evidence_mode": settings.edgar_report_evidence_mode,
     "sec_edgar_user_agent_declared": bool(settings.sec_edgar_user_agent.strip()),
 })
@@ -126,6 +142,12 @@ This preflight may report only safe configuration metadata. It must not print
 environment values, keys, account data, symbols, prompts, report content, raw
 provider payloads, or request/response bodies. It does not call an LLM, market
 provider, EDGAR, broker, or report-generation route.
+
+For a five-role acceptance run, all six `source_lane_resolution` booleans must
+be `true`. These booleans prove only that the reviewed clients are configured;
+they do not prove that a particular reviewed symbol is available from each
+source. A prior source-only compatibility check requires its own founder
+authorization because it calls external providers.
 
 ## Fresh Report Thread From A Saved Review Source
 

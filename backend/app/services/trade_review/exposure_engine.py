@@ -230,11 +230,18 @@ class ExposureImpactResult:
         )
 
     def industry_focus_sentence(self) -> str:
-        row = _row_by_label(self.industry_table.rows, "Semiconductors")
+        trade_industry = _classification_bucket(self.proposed_trade.classification, dimension="industry")
+        if trade_industry is None:
+            return (
+                f"{self.proposed_trade.symbol.upper()} was not included in sector or industry buckets "
+                "because its classification was unavailable."
+            )
+        row = _row_by_label(self.industry_table.rows, trade_industry)
         if row is None:
             return "classified industry impact is available when reviewed classifications exist."
+        descriptor = _industry_descriptor(row.label)
         return (
-            f"semiconductor-classified holdings move from {format_money(row.before_value)} "
+            f"{descriptor}-classified holdings move from {format_money(row.before_value)} "
             f"({format_percent(row.before_percent)} of the before-purchase portfolio total) to "
             f"{format_money(row.after_value)} ({format_percent(row.after_percent)} of the after-purchase portfolio total)."
         )
@@ -713,6 +720,11 @@ def _classification_bucket(classification: ExposureClassification | None, *, dim
     return value
 
 
+def _industry_descriptor(label: str) -> str:
+    normalized = label.strip().lower()
+    return "semiconductor" if normalized == "semiconductors" else normalized
+
+
 def _classified_coverage(positions: tuple[ExposurePosition, ...]) -> ClassifiedCoverage:
     securities_value = sum((p.market_value for p in positions), Decimal("0"))
     classified_value = sum(
@@ -862,10 +874,15 @@ def _narrative_statements(
     trade_row = _row_by_label(single_name_table.rows, trade_label)
     current_direct = trade_row.before_value if trade_row else Decimal("0")
     cash_use = _pct(trade.notional, funding.cash_before)
-    industry_row = _row_by_label(industry_table.rows, "Semiconductors")
+    trade_industry = _classification_bucket(trade.classification, dimension="industry")
+    industry_row = _row_by_label(industry_table.rows, trade_industry) if trade_industry is not None else None
     top_three = _top_three(single_name_table.rows)
     top_three_fund_note = _top_three_fund_note(single_name_table.rows, positions)
-    overlap_funds = _fund_symbols_for_industry(positions, industry="Semiconductors")
+    overlap_funds = (
+        _fund_symbols_for_industry(positions, industry=trade_industry)
+        if trade_industry is not None
+        else ()
+    )
     reviewed_funds = _reviewed_fund_symbols(positions)
     statements: list[str] = [
         (
@@ -902,24 +919,32 @@ def _narrative_statements(
             f"({format_percent(before_pct)} of the before-purchase portfolio total) to {format_money(after_value)} "
             f"({format_percent(after_pct)} of the after-purchase portfolio total)."
         )
-    if industry_row and industry_row.label.lower() == "semiconductors" and overlap_funds:
+    if trade_industry is None:
+        statements.append(
+            f"{trade_label} was not counted in sector or industry exposure because its classification was unavailable; "
+            "the before/after classification buckets exclude this reviewed trade."
+        )
+    if industry_row and overlap_funds:
         overlap_fund_list = render_display_list(overlap_funds)
-        overlap_fund_noun = "a semiconductor ETF" if len(overlap_funds) == 1 else "semiconductor ETFs"
+        industry_descriptor = _industry_descriptor(industry_row.label)
+        overlap_fund_noun = (
+            f"a {industry_descriptor} ETF" if len(overlap_funds) == 1 else f"{industry_descriptor} ETFs"
+        )
         overlap_fund_possessive = _possessive_display_list(overlap_funds)
         statements.append(
             f"This purchase would add a new {format_money(trade.notional)} {trade_label} position to a portfolio that already holds "
-            f"{format_money(industry_row.before_value)} of {overlap_fund_list}, {overlap_fund_noun}. Your semiconductor-classified holdings would go "
+            f"{format_money(industry_row.before_value)} of {overlap_fund_list}, {overlap_fund_noun}. Your {industry_descriptor}-classified holdings would go "
             f"from {format_money(industry_row.before_value)} ({format_percent(industry_row.before_percent)} of the before-purchase portfolio total) to "
             f"{format_money(industry_row.after_value)} ({format_percent(industry_row.after_percent)} of the after-purchase portfolio total). "
             f"{overlap_fund_possessive} individual holdings were not "
-            f"reviewed: semiconductor ETFs commonly hold {trade_label}, so your total {trade_label} exposure after this purchase could be "
+            f"reviewed: {industry_descriptor} ETFs commonly hold {trade_label}, so your total {trade_label} exposure after this purchase could be "
             f"larger than the {format_money(trade.notional)} direct position shown. To measure the overlap, check {overlap_fund_possessive} current holdings on "
             f"the fund issuer's site."
         )
         threshold_clause = _industry_reference_clause(industry_row)
         if threshold_clause:
             statements.append(
-                f"Semiconductor-classified holdings would go from {format_money(industry_row.before_value)} "
+                f"{industry_descriptor.capitalize()}-classified holdings would go from {format_money(industry_row.before_value)} "
                 f"({format_percent(industry_row.before_percent)} of the before-purchase portfolio total) to {format_money(industry_row.after_value)} "
                 f"({format_percent(industry_row.after_percent)} of the after-purchase portfolio total) -- {threshold_clause}."
             )

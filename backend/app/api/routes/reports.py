@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.config import ConfigurationError, Settings, get_settings
 from app.db.session import get_db
 from app.schemas.reports import (
+    PublicEvidencePreparationRead,
     ReportThreadCreate,
     ReportThreadDetailRead,
     ReportThreadRead,
@@ -129,6 +130,42 @@ def create_report_from_trade_review(
     if saved_artifact is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved review source not found")
     return saved_artifact
+
+
+@router.post(
+    "/users/{user_id}/reports/{thread_id}/prepare-evidence",
+    response_model=PublicEvidencePreparationRead,
+    status_code=status.HTTP_200_OK,
+)
+def prepare_report_public_evidence(
+    user_id: UUID,
+    thread_id: UUID,
+    db: Session = Depends(get_db),
+) -> PublicEvidencePreparationRead:
+    fmp_eod_history_policy, fmp_eod_history_context = _resolve_fmp_eod_history_generation_context()
+    fmp_fundamentals_policy, fmp_fundamentals_context = _resolve_fmp_fundamentals_generation_context()
+    (
+        edgar_policy,
+        edgar_client,
+        edgar_recent_filings_policy,
+        edgar_recent_filings_client,
+    ) = _resolve_edgar_report_evidence_generation_context()
+    readiness = agent_team_report_service.prepare_public_evidence_for_thread(
+        db,
+        user_id,
+        thread_id,
+        edgar_policy=edgar_policy,
+        edgar_client=edgar_client,
+        edgar_recent_filings_policy=edgar_recent_filings_policy,
+        edgar_recent_filings_client=edgar_recent_filings_client,
+        fmp_eod_history_policy=fmp_eod_history_policy,
+        fmp_eod_history_context=fmp_eod_history_context,
+        fmp_fundamentals_policy=fmp_fundamentals_policy,
+        fmp_fundamentals_context=fmp_fundamentals_context,
+    )
+    if readiness is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved review artifact not found")
+    return readiness
 
 
 @router.post(

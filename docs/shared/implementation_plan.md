@@ -1882,6 +1882,18 @@ exercise their own judgment within this frame.
   PASS; Claude G architecture/privacy review PASS 2026-07-16. Claude G also
   recorded one non-blocking environmental first-run test flake. `P36-T7-J4B`
   is unblocked after this checkpoint lands.
+  **P36-T7-J4B - public-evidence preparation and readiness: DONE 2026-07-16
+  by Codex C.** Adds a backend-only, no-LLM preparation operation that freezes
+  reviewed normalized public evidence once per saved report package and returns
+  only privacy-safe readiness enums, lane requirements, availability states,
+  and closed caveat codes. Repeat preparation and historical readback reuse the
+  frozen package with zero source calls. `declared_only` maps to `not_ready`,
+  so a symbol-directory outage or unlisted symbol blocks a five-role acceptance
+  generation by design. Preparing an unconfirmed identity permanently freezes
+  the not-reviewed gap for that thread; recovery requires a new preview and
+  save, never in-place re-resolution. Codex B contract/privacy review PASS;
+  Claude G architecture/privacy review PASS 2026-07-16 with zero required
+  fixes. `P36-T7-J4C-backend` is unblocked after this checkpoint lands.
   **External API runtime-guardrail backlog (OPEN, non-gating, 2026-07-16):**
   `docs/shared/EXTERNAL_API_LIMITS.md` records provider-documented limits,
   current app-owned budgets, and five enforcement gaps confirmed during the

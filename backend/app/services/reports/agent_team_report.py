@@ -14,10 +14,16 @@ from sqlalchemy.orm import Session
 from app.config import ConfigurationError
 from app.models.report_thread import ReportThread
 from app.schemas.reports import (
+    PublicEvidenceLaneRead,
+    PublicEvidencePreparationRead,
     SavedAgentTeamRoleSummaryRead,
     SavedAgentTeamSummaryRead,
     SavedEvidencePackageRead,
+    SavedPublicEvidencePackageRead,
+    SavedPublicEvidenceSectionRead,
+    SavedReviewArtifactRead,
 )
+from app.schemas.trade_review_workspace import InstrumentIdentityRead
 from app.services.agent_team.safety.report_output_safety import validate_agent_team_report_output
 from app.services.agent_team.agents.roles import role_registry
 from app.services.reports.crud import saved_review_artifact_for_thread
@@ -131,6 +137,289 @@ def resolve_p36_live_lane_flags(env: "Mapping[str, str] | None" = None) -> tuple
     return "risk" in lanes, "public" in lanes, "pm" in lanes
 
 
+def _report_thread_for_update(db: Session, user_id: UUID, thread_id: UUID) -> ReportThread | None:
+    """Lock the saved artifact so evidence freeze and summary writes cannot race."""
+
+    return db.scalar(
+        select(ReportThread)
+        .where(
+            ReportThread.id == thread_id,
+            ReportThread.user_id == user_id,
+            ReportThread.deleted_at.is_(None),
+        )
+        .with_for_update()
+    )
+
+
+def prepare_public_evidence_for_thread(
+    db: Session,
+    user_id: UUID,
+    thread_id: UUID,
+    *,
+    edgar_policy: EdgarCompanyProfileSourcePolicy | None = None,
+    edgar_client: EdgarCompanyProfileClient | None = None,
+    edgar_recent_filings_policy: EdgarRecentFilingsSourcePolicy | None = None,
+    edgar_recent_filings_client: EdgarRecentFilingsClient | None = None,
+    fmp_fundamentals_policy: FmpFundamentalsSourcePolicy | None = None,
+    fmp_fundamentals_context: FmpFundamentalsExecutionContext | None = None,
+    fmp_eod_history_policy: MarketContextPolicy | None = None,
+    fmp_eod_history_context: MarketContextExecutionContext | None = None,
+) -> PublicEvidencePreparationRead | None:
+    """Freeze reviewed public evidence without resolving or invoking an LLM."""
+
+    report_thread = _report_thread_for_update(db, user_id, thread_id)
+    if report_thread is None or not isinstance(report_thread.saved_artifact_json, dict):
+        return None
+
+    try:
+        artifact = saved_review_artifact_for_thread(report_thread)
+        evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
+    except (TypeError, ValidationError, ValueError):
+        return None
+
+    identity = evidence.trade_intent_summary.instrument_identity
+    if artifact.public_evidence is not None:
+        return _public_evidence_preparation_readiness(
+            identity=identity,
+            public_evidence=artifact.public_evidence,
+            evidence_state="frozen",
+        )
+
+    public_evidence = _build_prepared_public_evidence(
+        evidence=evidence,
+        identity=identity,
+        edgar_policy=edgar_policy,
+        edgar_client=edgar_client,
+        edgar_recent_filings_policy=edgar_recent_filings_policy,
+        edgar_recent_filings_client=edgar_recent_filings_client,
+        fmp_fundamentals_policy=fmp_fundamentals_policy,
+        fmp_fundamentals_context=fmp_fundamentals_context,
+        fmp_eod_history_policy=fmp_eod_history_policy,
+        fmp_eod_history_context=fmp_eod_history_context,
+    )
+    try:
+        # Reconstruct the full saved artifact before persistence so the new
+        # frozen package crosses the same privacy and source validators as
+        # ordinary saved-report readback.
+        SavedReviewArtifactRead.model_validate(
+            {
+                **artifact.model_dump(mode="python"),
+                "public_evidence": public_evidence.model_dump(mode="python"),
+            }
+        )
+    except (TypeError, ValidationError, ValueError):
+        return None
+
+    report_thread.saved_artifact_json = {
+        **report_thread.saved_artifact_json,
+        "public_evidence": public_evidence.model_dump(mode="json"),
+    }
+    db.add(report_thread)
+    db.commit()
+    return _public_evidence_preparation_readiness(
+        identity=identity,
+        public_evidence=public_evidence,
+        evidence_state="prepared",
+    )
+
+
+def _build_prepared_public_evidence(
+    *,
+    evidence: SavedEvidencePackageRead,
+    identity: InstrumentIdentityRead,
+    edgar_policy: EdgarCompanyProfileSourcePolicy | None,
+    edgar_client: EdgarCompanyProfileClient | None,
+    edgar_recent_filings_policy: EdgarRecentFilingsSourcePolicy | None,
+    edgar_recent_filings_client: EdgarRecentFilingsClient | None,
+    fmp_fundamentals_policy: FmpFundamentalsSourcePolicy | None,
+    fmp_fundamentals_context: FmpFundamentalsExecutionContext | None,
+    fmp_eod_history_policy: MarketContextPolicy | None,
+    fmp_eod_history_context: MarketContextExecutionContext | None,
+) -> SavedPublicEvidencePackageRead:
+    symbol = evidence.trade_intent_summary.symbol_or_underlying
+    if identity.resolution_status not in {"confirmed", "mismatch_reconciled"}:
+        return SavedPublicEvidencePackageRead.not_reviewed(symbol)
+    if identity.resolved_instrument_kind == "etf_or_fund":
+        return build_public_evidence_projection(
+            symbol_or_underlying=symbol,
+            fmp_eod_history_policy=fmp_eod_history_policy,
+            fmp_eod_history_context=fmp_eod_history_context,
+        )
+    if identity.resolved_instrument_kind != "operating_company_equity":
+        return SavedPublicEvidencePackageRead.not_reviewed(symbol)
+    return build_public_evidence_projection(
+        symbol_or_underlying=symbol,
+        edgar_policy=edgar_policy,
+        edgar_client=edgar_client,
+        edgar_recent_filings_policy=edgar_recent_filings_policy,
+        edgar_recent_filings_client=edgar_recent_filings_client,
+        fmp_fundamentals_policy=fmp_fundamentals_policy,
+        fmp_fundamentals_context=fmp_fundamentals_context,
+        fmp_eod_history_policy=fmp_eod_history_policy,
+        fmp_eod_history_context=fmp_eod_history_context,
+    )
+
+
+def _public_evidence_preparation_readiness(
+    *,
+    identity: InstrumentIdentityRead,
+    public_evidence: SavedPublicEvidencePackageRead,
+    evidence_state: Literal["prepared", "frozen"],
+) -> PublicEvidencePreparationRead:
+    if identity.resolution_status not in {"confirmed", "mismatch_reconciled"}:
+        caveat = (
+            "instrument_kind_not_confirmed"
+            if identity.resolution_status == "declared_only"
+            else "instrument_kind_unresolved"
+        )
+        return PublicEvidencePreparationRead(
+            resolved_instrument_kind=identity.resolved_instrument_kind,
+            resolution_status=identity.resolution_status,
+            readiness="not_ready",
+            evidence_state=evidence_state,
+            lanes=(
+                PublicEvidenceLaneRead(
+                    lane_key="instrument_identity",
+                    requirement="required",
+                    availability="not_available",
+                    caveat_codes=(caveat,),
+                ),
+            ),
+        )
+
+    if identity.resolved_instrument_kind == "etf_or_fund":
+        eod_lane = _readiness_lane(
+            lane_key="eod_history",
+            requirement="required",
+            section=public_evidence.public_market_context,
+        )
+        return PublicEvidencePreparationRead(
+            resolved_instrument_kind=identity.resolved_instrument_kind,
+            resolution_status=identity.resolution_status,
+            readiness="not_ready",
+            evidence_state=evidence_state,
+            lanes=(
+                eod_lane,
+                PublicEvidenceLaneRead(
+                    lane_key="company_profile",
+                    requirement="not_applicable",
+                    availability="not_applicable",
+                ),
+                PublicEvidenceLaneRead(
+                    lane_key="company_recent_filings",
+                    requirement="not_applicable",
+                    availability="not_applicable",
+                ),
+                PublicEvidenceLaneRead(
+                    lane_key="company_fundamentals",
+                    requirement="not_applicable",
+                    availability="not_applicable",
+                ),
+                PublicEvidenceLaneRead(
+                    lane_key="etf_profile",
+                    requirement="required",
+                    availability="not_reviewed",
+                    caveat_codes=("etf_evidence_contract_not_available",),
+                ),
+                PublicEvidenceLaneRead(
+                    lane_key="etf_holdings",
+                    requirement="required",
+                    availability="not_reviewed",
+                    caveat_codes=("etf_evidence_contract_not_available",),
+                ),
+                PublicEvidenceLaneRead(
+                    lane_key="etf_fund_events",
+                    requirement="optional",
+                    availability="not_reviewed",
+                    caveat_codes=("etf_evidence_contract_not_available",),
+                ),
+            ),
+        )
+
+    required_lanes = (
+        _readiness_lane(
+            lane_key="eod_history",
+            requirement="required",
+            section=public_evidence.public_market_context,
+        ),
+        _readiness_lane(
+            lane_key="company_profile",
+            requirement="required",
+            section=public_evidence.public_company_profile,
+        ),
+        _readiness_lane(
+            lane_key="company_recent_filings",
+            requirement="required",
+            section=public_evidence.public_events_calendar,
+        ),
+        _readiness_lane(
+            lane_key="company_fundamentals",
+            requirement="required",
+            section=public_evidence.public_fundamentals_snapshot,
+        ),
+        PublicEvidenceLaneRead(
+            lane_key="etf_profile",
+            requirement="not_applicable",
+            availability="not_applicable",
+        ),
+        PublicEvidenceLaneRead(
+            lane_key="etf_holdings",
+            requirement="not_applicable",
+            availability="not_applicable",
+        ),
+        PublicEvidenceLaneRead(
+            lane_key="etf_fund_events",
+            requirement="not_applicable",
+            availability="not_applicable",
+        ),
+    )
+    available_count = sum(
+        lane.availability in {"available", "limited"}
+        for lane in required_lanes
+        if lane.requirement == "required"
+    )
+    readiness: Literal["ready", "partial", "not_ready"]
+    if available_count == 4:
+        readiness = "ready"
+    elif available_count:
+        readiness = "partial"
+    else:
+        readiness = "not_ready"
+    return PublicEvidencePreparationRead(
+        resolved_instrument_kind=identity.resolved_instrument_kind,
+        resolution_status=identity.resolution_status,
+        readiness=readiness,
+        evidence_state=evidence_state,
+        lanes=required_lanes,
+    )
+
+
+def _readiness_lane(
+    *,
+    lane_key: Literal[
+        "eod_history",
+        "company_profile",
+        "company_recent_filings",
+        "company_fundamentals",
+    ],
+    requirement: Literal["required"],
+    section: SavedPublicEvidenceSectionRead,
+) -> PublicEvidenceLaneRead:
+    caveat_codes = {
+        "available": (),
+        "limited": ("evidence_limited",),
+        "not_available": ("evidence_not_available",),
+        "not_reviewed": ("evidence_not_reviewed",),
+        "not_applicable": (),
+    }[section.availability]
+    return PublicEvidenceLaneRead(
+        lane_key=lane_key,
+        requirement=requirement,
+        availability=section.availability,
+        caveat_codes=caveat_codes,
+    )
+
+
 def generate_agent_team_report_for_thread(
     db: Session,
     user_id: UUID,
@@ -154,13 +443,7 @@ def generate_agent_team_report_for_thread(
 ) -> SavedAgentTeamSummaryRead | None:
     """Persist a sanitized Agent Team report summary for an existing saved artifact."""
 
-    report_thread = db.scalar(
-        select(ReportThread).where(
-            ReportThread.id == thread_id,
-            ReportThread.user_id == user_id,
-            ReportThread.deleted_at.is_(None),
-        )
-    )
+    report_thread = _report_thread_for_update(db, user_id, thread_id)
     if report_thread is None or not isinstance(report_thread.saved_artifact_json, dict):
         return None
 

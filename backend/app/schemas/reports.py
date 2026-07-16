@@ -29,6 +29,27 @@ SavedEvidenceAvailability = Literal["available", "limited", "not_available", "no
 SavedPublicEvidenceRightsStatus = Literal["reviewed", "internal_demo_only", "not_reviewed"]
 SavedPublicEvidenceFreshnessCategory = Literal["fresh", "stale", "unknown", "not_available", "not_reviewed"]
 SavedPublicEvidenceMode = Literal["not_reviewed", "synthetic_demo", "provider_reference"]
+PublicEvidenceReadiness = Literal["ready", "partial", "not_ready"]
+PublicEvidenceState = Literal["prepared", "frozen"]
+PublicEvidenceLaneRequirement = Literal["required", "optional", "not_applicable"]
+PublicEvidenceReadinessCaveatCode = Literal[
+    "instrument_kind_not_confirmed",
+    "instrument_kind_unresolved",
+    "etf_evidence_contract_not_available",
+    "evidence_limited",
+    "evidence_not_available",
+    "evidence_not_reviewed",
+]
+PublicEvidenceLaneKey = Literal[
+    "instrument_identity",
+    "eod_history",
+    "company_profile",
+    "company_recent_filings",
+    "company_fundamentals",
+    "etf_profile",
+    "etf_holdings",
+    "etf_fund_events",
+]
 SavedPublicEvidenceSectionKey = Literal[
     "public_company_profile",
     "public_fundamentals_snapshot",
@@ -1189,6 +1210,139 @@ class SavedPublicEvidencePackageRead(BaseModel):
     @model_validator(mode="after")
     def public_package_must_be_safe(self) -> "SavedPublicEvidencePackageRead":
         validate_public_evidence_payload(self.model_dump(mode="python"))
+        return self
+
+
+class PublicEvidenceLaneRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    lane_key: PublicEvidenceLaneKey
+    requirement: PublicEvidenceLaneRequirement
+    availability: SavedEvidenceAvailability
+    caveat_codes: tuple[PublicEvidenceReadinessCaveatCode, ...] = ()
+
+    @model_validator(mode="after")
+    def lane_readiness_must_be_safe(self) -> "PublicEvidenceLaneRead":
+        validate_saved_review_artifact_payload(self.model_dump(mode="python"))
+        return self
+
+
+class PublicEvidencePreparationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    resolved_instrument_kind: Literal["operating_company_equity", "etf_or_fund", "unknown"]
+    resolution_status: Literal["confirmed", "declared_only", "mismatch_reconciled", "unresolved"]
+    readiness: PublicEvidenceReadiness
+    evidence_state: PublicEvidenceState
+    lanes: tuple[PublicEvidenceLaneRead, ...]
+
+    @model_validator(mode="after")
+    def preparation_readiness_must_be_safe(self) -> "PublicEvidencePreparationRead":
+        lane_keys = tuple(lane.lane_key for lane in self.lanes)
+        if len(lane_keys) != len(set(lane_keys)):
+            raise ValueError("public evidence readiness contains duplicate lanes")
+        lanes = {lane.lane_key: lane for lane in self.lanes}
+        for lane in self.lanes:
+            if lane.requirement == "not_applicable":
+                if lane.availability != "not_applicable" or lane.caveat_codes:
+                    raise ValueError("not-applicable readiness lanes must not carry availability or caveats")
+            elif lane.availability == "not_applicable":
+                raise ValueError("applicable readiness lanes must not use not-applicable availability")
+            if lane.lane_key in {
+                "eod_history",
+                "company_profile",
+                "company_recent_filings",
+                "company_fundamentals",
+            } and lane.requirement != "not_applicable":
+                expected_caveats = {
+                    "available": (),
+                    "limited": ("evidence_limited",),
+                    "not_available": ("evidence_not_available",),
+                    "not_reviewed": ("evidence_not_reviewed",),
+                }.get(lane.availability)
+                if expected_caveats is None or lane.caveat_codes != expected_caveats:
+                    raise ValueError("source readiness caveats must match the provider-neutral availability state")
+
+        if self.resolution_status in {"declared_only", "unresolved"}:
+            expected_caveat = (
+                "instrument_kind_not_confirmed"
+                if self.resolution_status == "declared_only"
+                else "instrument_kind_unresolved"
+            )
+            identity_lane = lanes.get("instrument_identity")
+            if (
+                set(lanes) != {"instrument_identity"}
+                or identity_lane is None
+                or identity_lane.requirement != "required"
+                or identity_lane.availability != "not_available"
+                or identity_lane.caveat_codes != (expected_caveat,)
+                or self.readiness != "not_ready"
+            ):
+                raise ValueError("unconfirmed instrument readiness must use the reviewed identity gap")
+            if self.resolution_status == "unresolved" and self.resolved_instrument_kind != "unknown":
+                raise ValueError("unresolved readiness must use unknown instrument kind")
+            if self.resolution_status == "declared_only" and self.resolved_instrument_kind == "unknown":
+                raise ValueError("declared readiness requires a submitted instrument kind")
+        elif self.resolved_instrument_kind == "operating_company_equity":
+            required_keys = {
+                "eod_history",
+                "company_profile",
+                "company_recent_filings",
+                "company_fundamentals",
+            }
+            not_applicable_keys = {"etf_profile", "etf_holdings", "etf_fund_events"}
+            if set(lanes) != required_keys | not_applicable_keys:
+                raise ValueError("operating-company readiness requires the complete reviewed lane matrix")
+            if any(lanes[key].requirement != "required" for key in required_keys):
+                raise ValueError("operating-company source lanes must be required")
+            if any(lanes[key].requirement != "not_applicable" for key in not_applicable_keys):
+                raise ValueError("ETF lanes must be not applicable for an operating company")
+            available_count = sum(
+                lanes[key].availability in {"available", "limited"} for key in required_keys
+            )
+            expected_readiness = (
+                "ready"
+                if available_count == len(required_keys)
+                else "partial"
+                if available_count
+                else "not_ready"
+            )
+            if self.readiness != expected_readiness:
+                raise ValueError("operating-company readiness must be derived from required lane availability")
+        elif self.resolved_instrument_kind == "etf_or_fund":
+            expected_keys = {
+                "eod_history",
+                "company_profile",
+                "company_recent_filings",
+                "company_fundamentals",
+                "etf_profile",
+                "etf_holdings",
+                "etf_fund_events",
+            }
+            if set(lanes) != expected_keys:
+                raise ValueError("ETF readiness requires the complete reviewed lane matrix")
+            if lanes["eod_history"].requirement != "required":
+                raise ValueError("ETF end-of-day evidence must remain required")
+            if any(
+                lanes[key].requirement != "not_applicable"
+                for key in {"company_profile", "company_recent_filings", "company_fundamentals"}
+            ):
+                raise ValueError("operating-company lanes must be not applicable for an ETF")
+            if any(lanes[key].requirement != "required" for key in {"etf_profile", "etf_holdings"}):
+                raise ValueError("ETF profile and holdings evidence must remain required")
+            if lanes["etf_fund_events"].requirement != "optional":
+                raise ValueError("ETF fund-event evidence must remain optional")
+            for key in {"etf_profile", "etf_holdings", "etf_fund_events"}:
+                if (
+                    lanes[key].availability != "not_reviewed"
+                    or lanes[key].caveat_codes != ("etf_evidence_contract_not_available",)
+                ):
+                    raise ValueError("ETF-specific evidence remains unavailable until its contract is implemented")
+            if self.readiness != "not_ready":
+                raise ValueError("ETF readiness remains not ready until its evidence contract is implemented")
+        else:
+            raise ValueError("confirmed readiness requires a reviewed instrument kind")
+        validate_saved_review_artifact_payload(self.model_dump(mode="python"))
         return self
 
 

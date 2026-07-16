@@ -1,7 +1,10 @@
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import UTC, date, datetime, timedelta
 import json
-from uuid import UUID
+from threading import Event, Lock
+from time import sleep
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.api.routes import reports as report_routes
 from app.api.routes.trade_reviews import _saved_review_safe_caveat_code_tuple
 from app.config import Settings
+from app.db.session import SessionLocal
 from app.models.broker_account import BrokerAccount
 from app.models.broker_connection import BrokerConnection
 from app.models.report_message import ReportMessage
@@ -19,7 +23,12 @@ from app.models.saved_review_source import SavedReviewSource
 from app.schemas.reports import SavedEvidencePackageRead, SavedReviewArtifactCreateRequest, SavedReviewArtifactRead
 from app.schemas.trade_review_workspace import validate_trade_review_saved_source_reference
 from app.services.agent_team import tool_mediated_report
-from app.services.agent_team.llm_clients.contracts import LLMProviderRequest, LLMProviderResponse, LLMProviderStatus
+from app.services.agent_team.llm_clients.contracts import (
+    LLMProviderRequest,
+    LLMProviderResponse,
+    LLMProviderStatus,
+    find_secret_like_values,
+)
 from app.services.agent_team.llm_clients.factory import LLMProviderResolution
 from app.services.agent_team.orchestration.models import LIVE_PROMPT_VERSION
 from app.services.market_data.eod_history import (
@@ -293,6 +302,466 @@ def test_generate_agent_team_report_route_ignores_client_requested_tool_mode(
     saved = response.json()
     assert saved["agent_summary"]["provider_mode"] == "deterministic_template"
     assert saved["agent_summary"]["tool_run_artifact"] is None
+
+
+def test_prepare_evidence_operating_company_freezes_all_lanes_and_reuses_them_without_llm_or_source_calls(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email="prepare-ready@example.com",
+        source_reference="workspace_prepareready1",
+        deterministic_summary=_deterministic_summary_for_identity(
+            resolved_instrument_kind="operating_company_equity",
+            resolution_status="confirmed",
+        ),
+    )
+    profile_client = _CountingEdgarProfileClient()
+    filings_client = _CountingEdgarRecentFilingsClient()
+    fundamentals_client = _CountingFmpFundamentalsClient()
+    eod_client = _CountingFmpEodClient()
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_edgar_report_evidence_generation_context",
+        lambda: (
+            EdgarCompanyProfileSourcePolicy(enabled=True),
+            profile_client,
+            EdgarRecentFilingsSourcePolicy(enabled=True),
+            filings_client,
+        ),
+    )
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_fmp_fundamentals_generation_context",
+        lambda: (
+            FmpFundamentalsSourcePolicy(enabled=True),
+            fmp_fundamentals_execution_context_for_client(
+                fundamentals_client,
+                collected_at=datetime(2026, 7, 16, 12, tzinfo=UTC),
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_fmp_eod_history_generation_context",
+        lambda: (
+            MarketContextPolicy(mode="live"),
+            market_context_execution_context_for_client(
+                eod_client,
+                collected_at=datetime(2026, 7, 16, 12, tzinfo=UTC),
+            ),
+        ),
+    )
+
+    def _unexpected_provider_resolution(*_: object, **__: object) -> LLMProviderResolution:
+        raise AssertionError("prepare-evidence must not resolve an LLM provider")
+
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_agent_team_report_provider_resolution",
+        _unexpected_provider_resolution,
+    )
+    prepared_response = client.post(f"/users/{user_id}/reports/{thread_id}/prepare-evidence")
+
+    assert prepared_response.status_code == 200
+    prepared = prepared_response.json()
+    assert set(prepared) == {
+        "resolved_instrument_kind",
+        "resolution_status",
+        "readiness",
+        "evidence_state",
+        "lanes",
+    }
+    assert prepared["resolved_instrument_kind"] == "operating_company_equity"
+    assert prepared["resolution_status"] == "confirmed"
+    assert prepared["readiness"] == "ready"
+    assert prepared["evidence_state"] == "prepared"
+    assert {lane["lane_key"]: lane["availability"] for lane in prepared["lanes"]} == {
+        "eod_history": "available",
+        "company_profile": "available",
+        "company_recent_filings": "available",
+        "company_fundamentals": "available",
+        "etf_profile": "not_applicable",
+        "etf_holdings": "not_applicable",
+        "etf_fund_events": "not_applicable",
+    }
+    assert all(set(lane) == {"lane_key", "requirement", "availability", "caveat_codes"} for lane in prepared["lanes"])
+    assert profile_client.calls == ("fetch_company_tickers", "fetch_submissions:CIK 0000123456")
+    assert filings_client.calls == ("fetch_company_tickers", "fetch_submissions:CIK 0000123456")
+    assert fundamentals_client.calls == ("income", "balance", "cash_flow")
+    assert eod_client.calls == (("HOOD", 260),)
+    assert not find_forbidden_keys(prepared, forbidden_keys=FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS)
+    assert not find_secret_like_values(prepared)
+    rendered_readiness = repr(prepared).lower()
+    for forbidden in (
+        "hood",
+            "source_label",
+            "fact_key",
+            "value_label",
+            "account",
+            "http",
+        "prompt",
+        "provider",
+    ):
+        assert forbidden not in rendered_readiness
+
+    report_thread = report_service.get_report_thread(db_session, UUID(user_id), UUID(thread_id))
+    assert report_thread is not None
+    frozen_before = deepcopy(report_thread.saved_artifact_json["public_evidence"])
+    raising_profile = _CountingEdgarProfileClient(raise_on_call=True)
+    raising_filings = _CountingEdgarRecentFilingsClient(raise_on_call=True)
+    raising_fundamentals = _CountingFmpFundamentalsClient(raise_on_call=True)
+    raising_eod = _CountingFmpEodClient(raise_on_call=True)
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_edgar_report_evidence_generation_context",
+        lambda: (
+            EdgarCompanyProfileSourcePolicy(enabled=True),
+            raising_profile,
+            EdgarRecentFilingsSourcePolicy(enabled=True),
+            raising_filings,
+        ),
+    )
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_fmp_fundamentals_generation_context",
+        lambda: (
+            FmpFundamentalsSourcePolicy(enabled=True),
+            fmp_fundamentals_execution_context_for_client(raising_fundamentals),
+        ),
+    )
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_fmp_eod_history_generation_context",
+        lambda: (
+            MarketContextPolicy(mode="live"),
+            market_context_execution_context_for_client(raising_eod),
+        ),
+    )
+
+    frozen_response = client.post(f"/users/{user_id}/reports/{thread_id}/prepare-evidence")
+    assert frozen_response.status_code == 200
+    assert frozen_response.json()["evidence_state"] == "frozen"
+    assert client.get(f"/users/{user_id}/reports/{thread_id}").status_code == 200
+    generated_response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
+    assert generated_response.status_code == 201
+    assert raising_profile.calls == ()
+    assert raising_filings.calls == ()
+    assert raising_fundamentals.calls == ()
+    assert raising_eod.calls == ()
+    db_session.expire_all()
+    refreshed_thread = report_service.get_report_thread(db_session, UUID(user_id), UUID(thread_id))
+    assert refreshed_thread is not None
+    assert refreshed_thread.saved_artifact_json["public_evidence"] == frozen_before
+
+
+def test_prepare_evidence_and_generation_serialize_first_freeze_without_lost_artifact_fields(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email="prepare-concurrent@example.com",
+        source_reference="workspace_prepareconcurrent1",
+        deterministic_summary=_deterministic_summary_for_identity(
+            resolved_instrument_kind="operating_company_equity",
+            resolution_status="confirmed",
+        ),
+    )
+    profile_client = _BlockingEdgarProfileClient()
+    profile_policy = EdgarCompanyProfileSourcePolicy(enabled=True)
+    generation_started = Event()
+
+    def _prepare() -> object:
+        with SessionLocal() as session:
+            return agent_team_report_service.prepare_public_evidence_for_thread(
+                session,
+                UUID(user_id),
+                UUID(thread_id),
+                edgar_policy=profile_policy,
+                edgar_client=profile_client,
+            )
+
+    def _generate() -> object:
+        generation_started.set()
+        with SessionLocal() as session:
+            return agent_team_report_service.generate_agent_team_report_for_thread(
+                session,
+                UUID(user_id),
+                UUID(thread_id),
+                edgar_policy=profile_policy,
+                edgar_client=profile_client,
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        prepared_future = executor.submit(_prepare)
+        assert profile_client.first_source_call.wait(timeout=5)
+        generated_future = executor.submit(_generate)
+        assert generation_started.wait(timeout=5)
+        # Give the second session time to reach the row lock while the first
+        # source call is intentionally held open.
+        sleep(0.1)
+        profile_client.release_source_call.set()
+        prepared = prepared_future.result(timeout=10)
+        generated = generated_future.result(timeout=10)
+
+    assert prepared is not None
+    assert prepared.evidence_state == "prepared"
+    assert generated is not None
+    assert profile_client.calls == ("fetch_company_tickers", "fetch_submissions:CIK 0000123456")
+    db_session.expire_all()
+    report_thread = report_service.get_report_thread(db_session, UUID(user_id), UUID(thread_id))
+    assert report_thread is not None
+    artifact = report_service.saved_review_artifact_for_thread(report_thread)
+    assert artifact.public_evidence is not None
+    assert artifact.agent_summary is not None
+
+
+def test_prepare_evidence_operating_company_reports_partial_and_not_ready_without_fabrication(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    partial_user_id, partial_thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email="prepare-partial@example.com",
+        source_reference="workspace_preparepartial1",
+        deterministic_summary=_deterministic_summary_for_identity(
+            resolved_instrument_kind="operating_company_equity",
+            resolution_status="mismatch_reconciled",
+        ),
+    )
+    profile_client = _CountingEdgarProfileClient()
+    unavailable_filings = _CountingEdgarRecentFilingsClient(raise_on_call=True)
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_edgar_report_evidence_generation_context",
+        lambda: (
+            EdgarCompanyProfileSourcePolicy(enabled=True),
+            profile_client,
+            EdgarRecentFilingsSourcePolicy(enabled=True),
+            unavailable_filings,
+        ),
+    )
+    monkeypatch.setattr(report_routes, "_resolve_fmp_fundamentals_generation_context", lambda: (None, None))
+    monkeypatch.setattr(report_routes, "_resolve_fmp_eod_history_generation_context", lambda: (None, None))
+
+    partial_response = client.post(
+        f"/users/{partial_user_id}/reports/{partial_thread_id}/prepare-evidence"
+    )
+    assert partial_response.status_code == 200
+    assert partial_response.json()["readiness"] == "partial"
+    assert partial_response.json()["resolution_status"] == "mismatch_reconciled"
+    partial_lanes = {lane["lane_key"]: lane for lane in partial_response.json()["lanes"]}
+    assert partial_lanes["company_recent_filings"]["caveat_codes"] == ["evidence_not_available"]
+    assert "edgar" not in repr(partial_response.json()).lower()
+    assert "fmp" not in repr(partial_response.json()).lower()
+    assert sum(
+        lane["availability"] in {"available", "limited"}
+        for lane in partial_response.json()["lanes"]
+    ) == 1
+
+    none_user_id, none_thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email="prepare-none@example.com",
+        source_reference="workspace_preparenone1",
+        deterministic_summary=_deterministic_summary_for_identity(
+            resolved_instrument_kind="operating_company_equity",
+            resolution_status="confirmed",
+        ),
+    )
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_edgar_report_evidence_generation_context",
+        lambda: (None, None, None, None),
+    )
+    none_response = client.post(f"/users/{none_user_id}/reports/{none_thread_id}/prepare-evidence")
+    assert none_response.status_code == 200
+    assert none_response.json()["readiness"] == "not_ready"
+    none_lanes = {lane["lane_key"]: lane for lane in none_response.json()["lanes"]}
+    for lane_key in ("eod_history", "company_profile", "company_recent_filings", "company_fundamentals"):
+        assert none_lanes[lane_key]["availability"] == "not_reviewed"
+        assert none_lanes[lane_key]["caveat_codes"] == ["evidence_not_reviewed"]
+    for lane_key in ("etf_profile", "etf_holdings", "etf_fund_events"):
+        assert none_lanes[lane_key]["availability"] == "not_applicable"
+
+
+def test_prepare_evidence_etf_calls_only_eod_and_keeps_etf_contract_not_ready(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email="prepare-etf@example.com",
+        source_reference="workspace_prepareetf1",
+        deterministic_summary=_deterministic_summary_for_identity(
+            resolved_instrument_kind="etf_or_fund",
+            resolution_status="confirmed",
+            symbol="QQQ",
+        ),
+    )
+    profile_client = _CountingEdgarProfileClient(raise_on_call=True)
+    filings_client = _CountingEdgarRecentFilingsClient(raise_on_call=True)
+    fundamentals_client = _CountingFmpFundamentalsClient(raise_on_call=True)
+    eod_client = _CountingFmpEodClient()
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_edgar_report_evidence_generation_context",
+        lambda: (
+            EdgarCompanyProfileSourcePolicy(enabled=True),
+            profile_client,
+            EdgarRecentFilingsSourcePolicy(enabled=True),
+            filings_client,
+        ),
+    )
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_fmp_fundamentals_generation_context",
+        lambda: (
+            FmpFundamentalsSourcePolicy(enabled=True),
+            fmp_fundamentals_execution_context_for_client(fundamentals_client),
+        ),
+    )
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_fmp_eod_history_generation_context",
+        lambda: (
+            MarketContextPolicy(mode="live"),
+            market_context_execution_context_for_client(eod_client),
+        ),
+    )
+
+    response = client.post(f"/users/{user_id}/reports/{thread_id}/prepare-evidence")
+    assert response.status_code == 200
+    readiness = response.json()
+    assert readiness["readiness"] == "not_ready"
+    by_lane = {lane["lane_key"]: lane for lane in readiness["lanes"]}
+    assert by_lane["eod_history"]["availability"] == "available"
+    for lane_key in ("company_profile", "company_recent_filings", "company_fundamentals"):
+        assert by_lane[lane_key]["requirement"] == "not_applicable"
+        assert by_lane[lane_key]["availability"] == "not_applicable"
+    for lane_key in ("etf_profile", "etf_holdings"):
+        assert by_lane[lane_key]["requirement"] == "required"
+        assert by_lane[lane_key]["caveat_codes"] == ["etf_evidence_contract_not_available"]
+    assert by_lane["etf_fund_events"]["requirement"] == "optional"
+    assert by_lane["etf_fund_events"]["caveat_codes"] == ["etf_evidence_contract_not_available"]
+    assert eod_client.calls == (("QQQ", 260),)
+    assert profile_client.calls == ()
+    assert filings_client.calls == ()
+    assert fundamentals_client.calls == ()
+
+
+@pytest.mark.parametrize(
+    ("kind", "resolution_status", "source_reference", "email", "expected_caveat"),
+    (
+        (
+            "operating_company_equity",
+            "declared_only",
+            "workspace_preparedeclared1",
+            "prepare-declared@example.com",
+            "instrument_kind_not_confirmed",
+        ),
+        (
+            "unknown",
+            "unresolved",
+            "workspace_prepareunknown1",
+            "prepare-unknown@example.com",
+            "instrument_kind_unresolved",
+        ),
+    ),
+)
+def test_prepare_evidence_unconfirmed_identity_makes_no_source_calls(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+    resolution_status: str,
+    source_reference: str,
+    email: str,
+    expected_caveat: str,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email=email,
+        source_reference=source_reference,
+        deterministic_summary=_deterministic_summary_for_identity(
+            resolved_instrument_kind=kind,
+            resolution_status=resolution_status,
+        ),
+    )
+    profile_client = _CountingEdgarProfileClient(raise_on_call=True)
+    filings_client = _CountingEdgarRecentFilingsClient(raise_on_call=True)
+    fundamentals_client = _CountingFmpFundamentalsClient(raise_on_call=True)
+    eod_client = _CountingFmpEodClient(raise_on_call=True)
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_edgar_report_evidence_generation_context",
+        lambda: (
+            EdgarCompanyProfileSourcePolicy(enabled=True),
+            profile_client,
+            EdgarRecentFilingsSourcePolicy(enabled=True),
+            filings_client,
+        ),
+    )
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_fmp_fundamentals_generation_context",
+        lambda: (
+            FmpFundamentalsSourcePolicy(enabled=True),
+            fmp_fundamentals_execution_context_for_client(fundamentals_client),
+        ),
+    )
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_fmp_eod_history_generation_context",
+        lambda: (
+            MarketContextPolicy(mode="live"),
+            market_context_execution_context_for_client(eod_client),
+        ),
+    )
+
+    response = client.post(f"/users/{user_id}/reports/{thread_id}/prepare-evidence")
+    assert response.status_code == 200
+    prepared = response.json()
+    assert prepared["readiness"] == "not_ready"
+    assert prepared["lanes"] == [
+        {
+            "lane_key": "instrument_identity",
+            "requirement": "required",
+            "availability": "not_available",
+            "caveat_codes": [expected_caveat],
+        }
+    ]
+    assert profile_client.calls == ()
+    assert filings_client.calls == ()
+    assert fundamentals_client.calls == ()
+    assert eod_client.calls == ()
+
+
+def test_prepare_evidence_missing_user_or_thread_returns_404(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(report_routes, "_resolve_fmp_eod_history_generation_context", lambda: (None, None))
+    monkeypatch.setattr(report_routes, "_resolve_fmp_fundamentals_generation_context", lambda: (None, None))
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_edgar_report_evidence_generation_context",
+        lambda: (None, None, None, None),
+    )
+    response = client.post(f"/users/{uuid4()}/reports/{uuid4()}/prepare-evidence")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Saved review artifact not found"}
 
 
 def test_generate_agent_team_report_route_wires_live_fmp_eod_history_context(
@@ -1774,6 +2243,36 @@ def _deterministic_summary_payload() -> dict:
     }
 
 
+def _deterministic_summary_for_identity(
+    *,
+    resolved_instrument_kind: str,
+    resolution_status: str,
+    symbol: str = "HOOD",
+) -> dict:
+    summary = _deterministic_summary_payload()
+    if resolved_instrument_kind == "etf_or_fund":
+        summary.update(supported_flow="etf_buy", review_flow_label="ETF buy")
+    elif resolved_instrument_kind == "operating_company_equity":
+        summary.update(supported_flow="stock_buy", review_flow_label="Stock buy")
+    summary["symbol_or_underlying"] = symbol
+    if resolution_status == "declared_only":
+        source_label = "Submitted trade-review flow"
+        as_of_label = "Declared for this saved review"
+    elif resolution_status == "unresolved":
+        source_label = "Instrument identity unavailable"
+        as_of_label = "Instrument identity as-of unavailable"
+    else:
+        source_label = "Nasdaq Symbol Directory"
+        as_of_label = "Nasdaq Symbol Directory as-of unavailable"
+    summary["instrument_identity"] = {
+        "resolved_instrument_kind": resolved_instrument_kind,
+        "resolution_status": resolution_status,
+        "source_label": source_label,
+        "as_of_label": as_of_label,
+    }
+    return summary
+
+
 def _create_connected_broker_account_reference(client: TestClient, db_session: Session) -> tuple[str, str]:
     user_response = client.post(
         "/users",
@@ -1867,6 +2366,40 @@ def _assert_saved_scope_preserves_review_selection_with_safe_caveats(
             or "account_level_feasibility_not_evaluated" in saved_caveats
             or "account_level_feasibility_not_evaluated" in saved_portfolio_caveats
         )
+
+
+class _BlockingEdgarProfileClient:
+    def __init__(self) -> None:
+        self.first_source_call = Event()
+        self.release_source_call = Event()
+        self._lock = Lock()
+        self._calls: list[str] = []
+
+    @property
+    def calls(self) -> tuple[str, ...]:
+        with self._lock:
+            return tuple(self._calls)
+
+    def fetch_company_tickers(self) -> dict:
+        with self._lock:
+            self._calls.append("fetch_company_tickers")
+            is_first_call = self._calls.count("fetch_company_tickers") == 1
+        if is_first_call:
+            self.first_source_call.set()
+            if not self.release_source_call.wait(timeout=5):
+                raise AssertionError("timed out waiting to release the synthetic source call")
+        return {"0": {"cik_str": 123456, "ticker": "HOOD", "title": "Hood Example Markets, Inc."}}
+
+    def fetch_submissions(self, cik_reference: str) -> dict:
+        with self._lock:
+            self._calls.append(f"fetch_submissions:{cik_reference}")
+        return {
+            "name": "Hood Example Markets, Inc.",
+            "tickers": ["HOOD"],
+            "exchanges": ["Nasdaq"],
+            "sicDescription": "Security Brokers, Dealers & Flotation Companies",
+            "fiscalYearEnd": "1231",
+        }
 
 
 class _CountingEdgarProfileClient:

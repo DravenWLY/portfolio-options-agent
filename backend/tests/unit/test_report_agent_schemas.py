@@ -11,6 +11,8 @@ from app.schemas.reports import (
     AgentTeamReportRead,
     AgentTeamReportRoleSectionRead,
     AgentTeamReportSynthesisRead,
+    PublicEvidenceLaneRead,
+    PublicEvidencePreparationRead,
     ReportMessageCreate,
     ReportThreadCreate,
     ReportThreadRead,
@@ -76,6 +78,146 @@ def test_report_thread_create_schema() -> None:
     assert payload.title == "Synthetic report"
     assert payload.report_type == "portfolio_review"
     assert payload.status == "draft"
+
+
+def test_public_evidence_preparation_schema_exposes_only_reviewed_readiness_metadata() -> None:
+    payload = PublicEvidencePreparationRead(
+        resolved_instrument_kind="operating_company_equity",
+        resolution_status="confirmed",
+        readiness="partial",
+        evidence_state="prepared",
+        lanes=(
+            PublicEvidenceLaneRead(
+                lane_key="eod_history",
+                requirement="required",
+                availability="not_available",
+                caveat_codes=("evidence_not_available",),
+            ),
+            PublicEvidenceLaneRead(
+                lane_key="company_profile",
+                requirement="required",
+                availability="limited",
+                caveat_codes=("evidence_limited",),
+            ),
+            PublicEvidenceLaneRead(
+                lane_key="company_recent_filings",
+                requirement="required",
+                availability="not_reviewed",
+                caveat_codes=("evidence_not_reviewed",),
+            ),
+            PublicEvidenceLaneRead(
+                lane_key="company_fundamentals",
+                requirement="required",
+                availability="not_reviewed",
+                caveat_codes=("evidence_not_reviewed",),
+            ),
+            PublicEvidenceLaneRead(
+                lane_key="etf_profile",
+                requirement="not_applicable",
+                availability="not_applicable",
+            ),
+            PublicEvidenceLaneRead(
+                lane_key="etf_holdings",
+                requirement="not_applicable",
+                availability="not_applicable",
+            ),
+            PublicEvidenceLaneRead(
+                lane_key="etf_fund_events",
+                requirement="not_applicable",
+                availability="not_applicable",
+            ),
+        ),
+    )
+
+    assert set(payload.model_dump(mode="json")) == {
+        "resolved_instrument_kind",
+        "resolution_status",
+        "readiness",
+        "evidence_state",
+        "lanes",
+    }
+    assert set(payload.model_dump(mode="json")["lanes"][0]) == {
+        "lane_key",
+        "requirement",
+        "availability",
+        "caveat_codes",
+    }
+
+
+def test_public_evidence_preparation_schema_rejects_duplicate_lanes_and_extra_fields() -> None:
+    lanes = (
+        {"lane_key": "eod_history", "requirement": "required", "availability": "available"},
+        {"lane_key": "company_profile", "requirement": "required", "availability": "available"},
+        {
+            "lane_key": "company_recent_filings",
+            "requirement": "required",
+            "availability": "available",
+        },
+        {
+            "lane_key": "company_fundamentals",
+            "requirement": "required",
+            "availability": "available",
+        },
+        {"lane_key": "etf_profile", "requirement": "not_applicable", "availability": "not_applicable"},
+        {"lane_key": "etf_holdings", "requirement": "not_applicable", "availability": "not_applicable"},
+        {
+            "lane_key": "etf_fund_events",
+            "requirement": "not_applicable",
+            "availability": "not_applicable",
+        },
+    )
+    base = {
+        "resolved_instrument_kind": "operating_company_equity",
+        "resolution_status": "confirmed",
+        "readiness": "ready",
+        "evidence_state": "prepared",
+        "lanes": lanes,
+    }
+
+    with pytest.raises(ValidationError):
+        PublicEvidencePreparationRead.model_validate({**base, "symbol": "EXMP"})
+    with pytest.raises(ValidationError):
+        PublicEvidencePreparationRead.model_validate({**base, "lanes": (*lanes, lanes[0])})
+    with pytest.raises(ValidationError):
+        PublicEvidenceLaneRead(
+            lane_key="eod_history",
+            requirement="required",
+            availability="available",
+            caveat_codes=("HOOD",),
+        )
+
+
+def test_public_evidence_preparation_schema_rejects_etf_lane_availability_before_contract() -> None:
+    lanes = (
+        {"lane_key": "eod_history", "requirement": "required", "availability": "available"},
+        {
+            "lane_key": "company_profile",
+            "requirement": "not_applicable",
+            "availability": "not_applicable",
+        },
+        {
+            "lane_key": "company_recent_filings",
+            "requirement": "not_applicable",
+            "availability": "not_applicable",
+        },
+        {
+            "lane_key": "company_fundamentals",
+            "requirement": "not_applicable",
+            "availability": "not_applicable",
+        },
+        {"lane_key": "etf_profile", "requirement": "required", "availability": "available"},
+        {"lane_key": "etf_holdings", "requirement": "required", "availability": "available"},
+        {"lane_key": "etf_fund_events", "requirement": "optional", "availability": "available"},
+    )
+
+    with pytest.raises(ValidationError):
+        PublicEvidencePreparationRead(
+            resolved_instrument_kind="etf_or_fund",
+            resolution_status="confirmed",
+            readiness="not_ready",
+            evidence_state="prepared",
+            lanes=lanes,
+        )
 
 
 def test_report_thread_read_exposes_nullable_saved_scope_metadata() -> None:

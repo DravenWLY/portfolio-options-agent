@@ -1286,7 +1286,7 @@ def test_p34a_t9b_live_overlay_preserves_all_deterministic_findings_and_adds_at_
             assert role_set.live_report_markdown is None
 
 
-def test_p34a_t17_pm_digest_uses_first_deterministic_finding_and_embeds_live_sections() -> None:
+def test_p36_t7_composer_keeps_risk_live_note_out_of_synthesis() -> None:
     provider = _FakeLiveProvider(
         content_by_role={
             "technical_analyst": _valid_live_report("technical_analyst"),
@@ -1305,7 +1305,10 @@ def test_p34a_t17_pm_digest_uses_first_deterministic_finding_and_embeds_live_sec
     assert "## Market context" in synthesis
     assert "## Risk and scope notes" in synthesis
     assert _valid_live_report("technical_analyst") in synthesis
-    assert _valid_live_report("risk_management_agent") in synthesis
+    assert _valid_live_report("risk_management_agent") not in synthesis
+    assert _role_summary(summary, "risk_management_agent").live_report_markdown == _valid_live_report(
+        "risk_management_agent"
+    )
     assert "Audited live role sections:" not in synthesis
     assert "###" not in synthesis
     assert synthesis.index("Saved end-of-day market context was not available") < synthesis.index(
@@ -1901,6 +1904,26 @@ def test_p36_t7_a2g_document_does_not_project_reviewed_account_nickname() -> Non
     assert "for reviewed account using frozen evidence only." in fallback_document
 
 
+def test_p36_t7_composer_title_uses_frozen_review_snapshot_date() -> None:
+    base_evidence = _evidence_package()
+    evidence = base_evidence.model_copy(
+        update={
+            "source_snapshot": base_evidence.source_snapshot.model_copy(
+                update={"generated_at": datetime(2026, 7, 14, 22, 3, tzinfo=UTC)}
+            )
+        }
+    )
+
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 7, 15, 0, 30, tzinfo=UTC),
+    )
+
+    document = summary.final_synthesis_markdown or ""
+    assert "- reviewed account - July 14, 2026" in document
+    assert "- reviewed account - July 15, 2026" not in document
+
+
 def test_p35_t7a_document_uses_freshness_labels_without_duplicate_prefixes() -> None:
     summary = build_tool_mediated_agent_team_summary(
         _evidence_package(), report_generated_at=datetime(2026, 6, 1, tzinfo=UTC)
@@ -1951,7 +1974,7 @@ def test_p35_t9_market_context_display_rows_use_reviewed_labels_and_dedupe_metad
     assert "| Omitted indicator |" in rendered
 
 
-def test_p35_t9_composer_uses_clean_flow_copy_and_live_note_attribution() -> None:
+def test_p36_t7_composer_keeps_risk_live_note_in_role_section_only() -> None:
     provider = _FakeLiveProvider()
     base_evidence = _evidence_package()
     evidence = base_evidence.model_copy(
@@ -1973,7 +1996,8 @@ def test_p35_t9_composer_uses_clean_flow_copy_and_live_note_attribution() -> Non
     assert "reviews stock buy review" not in document
     assert "covers the saved stock buy" in document
     assert "**Technical Analyst**" in document
-    assert "**Risk Manager**" in document
+    assert "**Risk Manager**" not in document
+    assert _role_summary(summary, "risk_management_agent").live_report_markdown is not None
 
 
 def test_p35_t9_composer_names_missing_live_note_when_live_mode_ran() -> None:
@@ -1988,7 +2012,7 @@ def test_p35_t9_composer_names_missing_live_note_when_live_mode_ran() -> None:
 
     document = summary.final_synthesis_markdown or ""
     assert "No Technical Analyst note is available in this saved report." in document
-    assert "**Risk Manager**" in document
+    assert "**Risk Manager**" not in document
 
 
 def test_p35_t9_risk_note_plain_topic_vocabulary_survives_but_disclosures_stay_blocked() -> None:
@@ -2009,7 +2033,8 @@ def test_p35_t9_risk_note_plain_topic_vocabulary_survives_but_disclosures_stay_b
 
     risk = _role_summary(summary, "risk_management_agent")
     assert risk.live_report_markdown is not None
-    assert "Cash, holdings, and positions" in (summary.final_synthesis_markdown or "")
+    assert "Cash, holdings, and positions" in risk.live_report_markdown
+    assert "Cash, holdings, and positions" not in (summary.final_synthesis_markdown or "")
 
     for unsafe_note in (
         "cash_balance is present in this report. Re-verify the saved evidence.",

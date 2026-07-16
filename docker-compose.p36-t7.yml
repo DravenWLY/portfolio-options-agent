@@ -1,0 +1,15 @@
+# P36-T7 launch overlay. Layer after docker-compose.yml and
+# docker-compose.live-llm.yml for an explicitly authorized local run.
+#
+# This file contains only backend-controlled mode selection. All values are
+# interpolated at runtime; do not add keys, tokens, secrets, or per-run values.
+
+services:
+  backend:
+    environment:
+      POA_P36_LIVE_LANES: ${POA_P36_LIVE_LANES:-}
+      POA_AGENT_TEAM_REPORT_GENERATION_MODE: ${POA_AGENT_TEAM_REPORT_GENERATION_MODE:-}
+      POA_LLM_MODE: ${POA_LLM_MODE:-}
+      POA_LLM_PROVIDER: ${POA_LLM_PROVIDER:-}
+      POA_MARKET_CONTEXT_MODE: ${POA_MARKET_CONTEXT_MODE:-}
+      POA_EDGAR_REPORT_EVIDENCE_MODE: ${POA_EDGAR_REPORT_EVIDENCE_MODE:-}

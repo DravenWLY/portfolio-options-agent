@@ -1770,6 +1770,53 @@ exercise their own judgment within this frame.
   with a tracked documented t7 overlay + T7 runbook (launch recipe,
   preflight, per-run artifact archiving, teardown checks). Start with ONE
   new agent; split an ops agent out later only if D saturates.
+  **P36-T7-H3 - Tracked T7 launch overlay and runbook (Codex D):** implemented
+  2026-07-15; Codex B review PASS; Claude G architecture/runtime-boundary
+  review PASS (2026-07-16); Claude H operational-wording review pending
+  (non-gating for the mock run). Adds a tracked, interpolation-only P36-T7 overlay and a
+  local launch/preflight/metadata-only archive/teardown runbook. A separate
+  tracked inert-validation overlay removes the base service env file so
+  `docker compose config` never loads private runtime configuration. It does
+  not run generation or alter agent-team code, gates, or routes.
+  Claude G verified: overlay carries exactly the six approved knobs as pure
+  interpolation; materialized empty values resolve to
+  legacy/deterministic/mock/off by code (never toward live; unknown lane
+  names still fail loud); the documented inert check is structurally unable
+  to load the private runtime file (env_file !reset closes the container-env
+  vector, the mandatory --env-file flag closes the interpolation vector;
+  rendered four-layer config shows no env_file entry and empty provider
+  keys). Deferred polish: add a boolean sec_edgar_user_agent_declared
+  (True/False only, never the value) to the preflight print.
+  **P36-T7-H1 - Report-schema cold import cycle (Codex C):** implemented
+  2026-07-15; Codex B review PASS; Claude G architecture review PASS
+  (2026-07-16). Defers only
+  schema-dependent safety-package report-validator re-exports and adds cold
+  import plus re-export regression coverage; no schema or validation-rule
+  change. Claude G verified: the lazy split lands exactly on the recorded
+  FINDING P36-T6-1 cycle edge (legacy_console.run_state pulls the safety
+  package init during schemas initialization); __all__ unchanged; re-export
+  identity and cold interpreter import locked by regression tests; zero
+  package-level or star imports of the safety package exist in app/, so no
+  consumer can re-trigger the cycle. FINDING P36-T6-1 is CLOSED by this
+  slice.
+  **P36-T7-H2 - Composer polish: risk-note dedup + frozen title date (Codex
+  D):** implemented 2026-07-15. Claude G review (2026-07-16): title fix PASS
+  - the title now uses the required frozen source_snapshot.generated_at
+  (pure formatting, no current-state recomputation, A2G reviewed-account
+  containment intact; test encodes the T6 UTC-next-day repro). Risk-note
+  dedup was initially BLOCKED (G-H2-1): with the synthesis embed removed, no
+  product frontend surface renders live_report_markdown (role cards render
+  summary_markdown only; the frontend read contract omits the field per the
+  P33A-T6B safe-subset decision), so the risk agent's live note would be
+  invisible in the app UI. **RULING-T7-1 (2026-07-16, founder-adopted on
+  Claude G recommendation): the saved report artifact/payload is the
+  official report surface for the T7 interim, so payload-plus-projection
+  visibility satisfies availability and H2 is PASS as implemented.**
+  Recorded backlog consequences: (a) frontend read-contract extension +
+  role-card rendering of each role's live note - the UI half of per-agent
+  availability; (b) apply the same ownership rule to the Technical note
+  synthesis embed; (c) drop the now-dead report_generated_at parameter on
+  _synthesis_markdown.
 - `P36-T5B` - Live PM synthesis: typed PmSynthesis (four verdict-incapable
   fields), whole-block fail-closed, composer rendering, PM calc
   verification access. Owner: Codex C (implementation). Status: DESIGN PHASE

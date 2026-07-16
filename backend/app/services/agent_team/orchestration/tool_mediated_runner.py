@@ -2309,16 +2309,11 @@ def _synthesis_markdown(
     proceed_statements = groups.proceed_statements if groups is not None else ()
     not_reviewed_statement = groups.not_reviewed_statement if groups is not None else None
     verify_statement = groups.verify_statement if groups is not None else None
-    title = _trade_review_title(evidence, report_generated_at=report_generated_at)
+    title = _trade_review_title(evidence)
     headline = _summary_headline(proceed_statements, before_after)
     technical_note_lines = _live_note_lines(
         audited_findings,
         "technical_analyst",
-        live_provider_mode=live_provider_mode,
-    )
-    risk_note_lines = _live_note_lines(
-        audited_findings,
-        "risk_management_agent",
         live_provider_mode=live_provider_mode,
     )
     sections = (
@@ -2351,7 +2346,6 @@ def _synthesis_markdown(
         "",
         "## Risk and scope notes",
         *_risk_scope_lines(evidence, cited_refs=evidence_refs),
-        *risk_note_lines,
         "",
         *(("## Open questions", *open_questions, "") if open_questions else ()),
         "## What was not reviewed",
@@ -2420,10 +2414,10 @@ def _pm_synthesis_lines(
     )
 
 
-def _trade_review_title(evidence: SavedEvidencePackageRead, *, report_generated_at: datetime) -> str:
+def _trade_review_title(evidence: SavedEvidencePackageRead) -> str:
     action = _trade_action_label(evidence)
     # The frozen nickname remains scope metadata only; summaries never project it.
-    return f"# Trade review: {action} - reviewed account - {_long_date(report_generated_at)}"
+    return f"# Trade review: {action} - reviewed account - {_long_date(evidence.source_snapshot.generated_at)}"
 
 
 def _trade_action_label(evidence: SavedEvidencePackageRead) -> str:

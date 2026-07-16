@@ -12,6 +12,8 @@ The old module paths (``agent_team.output_safety``, ``report_output_safety``,
 These are validators only — no behavior change was made in the move.
 """
 
+from typing import Any
+
 from app.services.agent_team.safety.output_safety import (
     GENERATED_METRIC_PATTERNS,
     validate_llm_provider_output,
@@ -20,13 +22,29 @@ from app.services.agent_team.safety.prompt_safety import (
     validate_agent_team_text,
     validate_prompt_input_payload,
 )
-from app.services.agent_team.safety.report_output_safety import (
-    INVENTED_LEVEL_PATTERNS,
-    REPORT_PROHIBITED_PHRASES,
-    ROLE_ALLOWED_EVIDENCE_KEYS,
-    SOURCE_LEAK_PATTERNS,
-    validate_agent_team_report_output,
+_REPORT_OUTPUT_SAFETY_EXPORTS = frozenset(
+    {
+        "INVENTED_LEVEL_PATTERNS",
+        "REPORT_PROHIBITED_PHRASES",
+        "ROLE_ALLOWED_EVIDENCE_KEYS",
+        "SOURCE_LEAK_PATTERNS",
+        "validate_agent_team_report_output",
+    }
 )
+
+
+def __getattr__(name: str) -> Any:
+    """Defer report-schema-dependent exports until they are requested.
+
+    ``report_output_safety`` imports report schemas, while light-weight agent
+    safety validators are needed during those schemas' initialization.
+    """
+
+    if name in _REPORT_OUTPUT_SAFETY_EXPORTS:
+        from app.services.agent_team.safety import report_output_safety
+
+        return getattr(report_output_safety, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
     "GENERATED_METRIC_PATTERNS",

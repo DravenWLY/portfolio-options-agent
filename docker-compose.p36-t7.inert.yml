@@ -1,0 +1,9 @@
+# Test-only companion to docker-compose.p36-t7.yml.
+#
+# It removes the base backend env_file so `docker compose config` can validate
+# the P36-T7 overlays with placeholders and never load a private runtime file.
+# Do not include this file in an authorized launch.
+
+services:
+  backend:
+    env_file: !reset []

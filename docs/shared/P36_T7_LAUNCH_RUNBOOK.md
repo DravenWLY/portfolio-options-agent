@@ -26,7 +26,8 @@ gate.
 
 ## Compose Files
 
-Use this exact order:
+Every command below uses this exact file order. The block below is the shared
+prefix shown for reference; it is not a runnable step by itself:
 
 ```bash
 docker compose \
@@ -45,8 +46,10 @@ paths remain unchanged.
 
 1. Confirm written founder authorization for one run, including the approved
    live lane and any approved public-evidence mode.
-2. Confirm the local runtime environment contains only the approved backend
-   configuration. Do not inspect or print its contents.
+2. Confirm with the environment owner that the private runtime environment
+   was prepared with only the approved configuration; the step-3 preflight
+   metadata output is the only permitted verification of its effect. Do not
+   open, inspect, or print the environment file.
 3. Run the inert Compose check and preflight below. Stop on a failed or
    unexpected result.
 4. Check ports before starting services. Do not stop an unknown listener.
@@ -72,6 +75,9 @@ docker compose --env-file <inert-env-file> \
   -f docker-compose.p36-t7.inert.yml \
   config --quiet
 ```
+
+Delete the temporary inert environment file after the check. Never reuse it
+for a launch.
 
 ## Preflight
 
@@ -131,8 +137,8 @@ lsof -nP -iTCP:5173 -sTCP:LISTEN
 lsof -nP -iTCP:5432 -sTCP:LISTEN
 ```
 
-If a port is occupied by an unknown process, stop and resolve ownership before
-continuing. Do not kill it from this runbook.
+If a port is occupied by an unknown process, pause this runbook and resolve
+ownership before continuing. Do not kill it from this runbook.
 
 After authorization and a passing preflight, build and start the local stack:
 
@@ -143,6 +149,13 @@ docker compose \
   -f docker-compose.p36-t7.yml \
   up -d --build postgres backend frontend
 ```
+
+Record the UTC start time at launch; the metadata archive requires it.
+
+Confirm the backend is healthy with `curl -i http://localhost:8000/health`
+only. Do not probe data routes (for example `/users`) from this runbook; the
+stack may hold real synced account data, and health is the only confirmation
+this step needs.
 
 Confirm service state with:
 
@@ -165,11 +178,22 @@ artifacts: UTC start/end time, task/run label, git revision, image tag or digest
 Compose file names, selected lane names, safe mode/status categories, exit code,
 and duration.
 
+Task/run labels must be generic - a task id plus a sequence number - never
+symbols, account nicknames, or trade descriptions. Archive categorized error
+codes only, never provider error message strings, which can echo request
+fragments.
+
 Never archive report text, prompts, role outputs, request or response bodies,
-raw logs, account or report identifiers, symbols, trade details, provider payloads,
+raw logs, account or report identifiers, user identifiers, symbols, trade
+details, provider payloads,
 environment dumps, keys, tokens, or secrets. If a needed record cannot be made
 without one of those fields, do not archive it; request a reviewed safe metadata
 shape instead.
+
+Record the archived metadata in the run's `implementation_plan.md`
+execution-log entry - the established redacted pattern. Full private run
+artifacts remain under the gitignored `reports/` folder; do not create ad hoc
+archive locations.
 
 ## Teardown And Port Confirmation
 

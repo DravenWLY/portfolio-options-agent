@@ -1772,8 +1772,17 @@ exercise their own judgment within this frame.
   new agent; split an ops agent out later only if D saturates.
   **P36-T7-H3 - Tracked T7 launch overlay and runbook (Codex D):** implemented
   2026-07-15; Codex B review PASS; Claude G architecture/runtime-boundary
-  review PASS (2026-07-16); Claude H operational-wording review pending
-  (non-gating for the mock run). Adds a tracked, interpolation-only P36-T7 overlay and a
+  review PASS (2026-07-16); Claude H operational-wording review PASS
+  (2026-07-16) with four wording findings plus polish, all folded into the
+  runbook verbatim by Claude G per Claude H's own wording (checklist step 2
+  indirect-confirmation reword; compose prefix labeled non-runnable; generic
+  run labels + error-codes-not-strings rule; user identifiers added to the
+  archive denylist; inert-file cleanup; health-check-only launch probe with
+  UTC start-time capture; "pause this runbook" port wording; archive
+  destination pinned to the plan execution-log pattern). Claude H requires
+  no re-review unless the archive allow/deny lists change materially. The
+  sec_edgar_user_agent_declared preflight boolean also landed (pre-approved
+  step-0 wording, applied verbatim). Adds a tracked, interpolation-only P36-T7 overlay and a
   local launch/preflight/metadata-only archive/teardown runbook. A separate
   tracked inert-validation overlay removes the base service env file so
   `docker compose config` never loads private runtime configuration. It does

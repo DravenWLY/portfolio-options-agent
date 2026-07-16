@@ -1894,6 +1894,15 @@ exercise their own judgment within this frame.
   save, never in-place re-resolution. Codex B contract/privacy review PASS;
   Claude G architecture/privacy review PASS 2026-07-16 with zero required
   fixes. `P36-T7-J4C-backend` is unblocked after this checkpoint lands.
+  **P36-T7-J4C contract amendment (Codex B, 2026-07-16): RECORDED.** J4C is
+  split into `J4C-backend` and `J4C-frontend`. Founder acceptance generation
+  requires frozen readiness=`ready`; `partial` and `not_ready` stop before
+  provider resolution, source access, or report generation. The ordinary-user
+  explicit continue-with-`partial` workflow and display-only readiness surface
+  are deferred to `J4C-frontend` until after the live five-agent milestone.
+  Owner now: Codex C for J4C-backend implementation, followed by Codex B
+  contract/privacy review and Claude G architecture/privacy review. J4C-
+  frontend remains owned by Claude A or Claude F with Claude B visual review.
   **External API runtime-guardrail backlog (OPEN, non-gating, 2026-07-16):**
   `docs/shared/EXTERNAL_API_LIMITS.md` records provider-documented limits,
   current app-owned budgets, and five enforcement gaps confirmed during the

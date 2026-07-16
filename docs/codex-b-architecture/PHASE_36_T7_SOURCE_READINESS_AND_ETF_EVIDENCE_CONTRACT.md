@@ -201,15 +201,36 @@ Owner: Codex C
 Acceptance: readiness is available before generation, preparation never calls
 an LLM, and a repeated call or report readback makes zero source calls.
 
-### P36-T7-J4C - Generation gate and presentation contract
+### P36-T7-J4C-backend - Generation gate
 
-Owners: Codex B contract, Claude A or Claude F frontend
+Owners: Codex B contract, Codex C implementation
 
-- Define whether founder acceptance runs require `ready` while ordinary users
-  may explicitly continue with `partial` evidence.
-- Present source readiness and role availability without exposing raw codes or
+- Founder acceptance runs require frozen readiness=`ready`. `partial` and
+  `not_ready` do not enter five-role generation.
+- Consult the thread's frozen readiness before provider resolution or any
+  generation work. Generation does not acquire, refresh, or replace evidence.
+- Refuse every Section 7 stop condition with a closed-enum, privacy-safe
+  response containing no source facts, values, labels, raw references, URLs,
+  payloads, prompts, or free-form provider prose.
+- Keep deterministic Trade Review available and honest when five-role
+  generation is refused.
+
+Acceptance: every refusal path resolves zero LLM providers, makes zero source
+calls, writes no Agent Team summary, and leaves the frozen artifact unchanged;
+the `ready` path preserves the existing generation behavior.
+
+### P36-T7-J4C-frontend - Readiness presentation (deferred)
+
+Owners: Claude A or Claude F frontend, Claude B visual/accessibility review
+
+- Present readiness and role availability without exposing raw codes or
   financial values.
 - Keep frontend logic display-only.
+- Design the ordinary-user explicit continue-with-`partial` workflow under a
+  separate contract review; no partial override exists in J4C-backend.
+
+This surface is deferred until after the live five-agent milestone and does not
+gate the founder acceptance run.
 
 ### P36-T7-J4D - ETF source-rights and tool pack
 
@@ -235,7 +256,7 @@ Owner: Codex B coordination
 - Claude H: ETF evidence sufficiency and role-domain review before J4D closes.
 - Claude E: Agent Team role/eval review only when ETF ToolResult envelopes or
   role behavior change.
-- Claude B: visual/accessibility review for J4C.
+- Claude B: visual/accessibility review for the deferred J4C-frontend surface.
 - Founder: separate authorization for any external-source or live-LLM run on a
   private saved review.
 

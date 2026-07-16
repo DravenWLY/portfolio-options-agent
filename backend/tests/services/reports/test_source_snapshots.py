@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+import json
 
 import pytest
 from pydantic import ValidationError
@@ -12,6 +13,7 @@ from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_for
 from app.services.reports.source_snapshots import (
     FRED_MACRO_SERIES,
     FmpEodHistorySnapshotProvider,
+    FmpFundamentalsHttpClient,
     FmpFundamentalsSnapshotProvider,
     FmpFundamentalsSourcePolicy,
     FredMacroSeriesSnapshotProvider,
@@ -123,6 +125,26 @@ class _ReplayFmpFundamentalsClient:
     def _raise_if_needed(self) -> None:
         if self.failure is not None:
             raise self.failure
+
+
+def test_fmp_fundamentals_http_client_uses_only_the_three_approved_statement_endpoints() -> None:
+    requested_urls: list[str] = []
+
+    def _fake_fetch(url: str) -> str:
+        requested_urls.append(url)
+        return json.dumps([{"period": "Q1", "acceptedDate": "2026-05-01", "reportedCurrency": "USD"}])
+
+    client = FmpFundamentalsHttpClient(api_key="test-key-not-real", fetch_text=_fake_fetch)
+
+    assert client.fetch_income_statement(symbol="XYZ")
+    assert client.fetch_balance_sheet(symbol="XYZ")
+    assert client.fetch_cash_flow(symbol="XYZ")
+    assert [url.split("?", 1)[0] for url in requested_urls] == [
+        "https://financialmodelingprep.com/stable/income-statement",
+        "https://financialmodelingprep.com/stable/balance-sheet-statement",
+        "https://financialmodelingprep.com/stable/cash-flow-statement",
+    ]
+    assert all("symbol=XYZ" in url and "limit=2" in url for url in requested_urls)
 
 
 class _ReplayFredClient:

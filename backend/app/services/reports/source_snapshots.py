@@ -10,8 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
+import json
 import threading
 from typing import Any, Callable, Mapping, Protocol, Sequence
+from urllib.error import HTTPError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from app.config import Settings
 from app.schemas.reports import SavedPublicEvidenceFactRead, SavedPublicEvidenceSectionRead
@@ -28,6 +32,11 @@ from app.services.market_data.eod_history import (
 
 P36_FMP_FUNDAMENTALS_DAILY_REQUEST_BUDGET = 10
 P36_FRED_SERIES_DAILY_REQUEST_BUDGET = 18
+FMP_INCOME_STATEMENT_URL = "https://financialmodelingprep.com/stable/income-statement"
+FMP_BALANCE_SHEET_URL = "https://financialmodelingprep.com/stable/balance-sheet-statement"
+FMP_CASH_FLOW_URL = "https://financialmodelingprep.com/stable/cash-flow-statement"
+FMP_FUNDAMENTALS_REQUEST_TIMEOUT_SECONDS = 30
+FMP_FUNDAMENTALS_RESPONSE_SIZE_CAP_BYTES = 1_000_000
 FMP_FUNDAMENTALS_SOURCE_KEY = "fmp_reported_statement_facts"
 FMP_FUNDAMENTALS_SOURCE_LABEL = "FMP normalized reported statement facts"
 FRED_MACRO_SERIES_SOURCE_KEY = "fred_macro_series"
@@ -143,7 +152,7 @@ class FredMacroSeriesSourcePolicy:
 
 
 class FmpFundamentalsClient(Protocol):
-    """Injected only; T4B deliberately does not assume a live FMP endpoint."""
+    """Approved boundary for normalized FMP statement acquisition or replay."""
 
     def fetch_income_statement(self, *, symbol: str) -> Sequence[Mapping[str, Any]] | Mapping[str, Any]:
         """Return replayed income-statement rows."""
@@ -153,6 +162,75 @@ class FmpFundamentalsClient(Protocol):
 
     def fetch_cash_flow(self, *, symbol: str) -> Sequence[Mapping[str, Any]] | Mapping[str, Any]:
         """Return replayed cash-flow rows."""
+
+
+class FmpFundamentalsHttpClient:
+    """Small opt-in client for the three approved FMP statement endpoints."""
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        fetch_text: Callable[[str], str] | None = None,
+        timeout_seconds: int = FMP_FUNDAMENTALS_REQUEST_TIMEOUT_SECONDS,
+        response_size_cap_bytes: int = FMP_FUNDAMENTALS_RESPONSE_SIZE_CAP_BYTES,
+    ) -> None:
+        key = api_key.strip()
+        if not key:
+            raise SourceSnapshotUnavailableError("FMP reported-statement source is not configured")
+        self._api_key = key
+        self._fetch_text = fetch_text or self._fetch_public_text_url
+        self._timeout_seconds = timeout_seconds
+        self._response_size_cap_bytes = response_size_cap_bytes
+
+    def fetch_income_statement(self, *, symbol: str) -> Sequence[Mapping[str, Any]] | Mapping[str, Any]:
+        return self._fetch_statement(FMP_INCOME_STATEMENT_URL, symbol=symbol)
+
+    def fetch_balance_sheet(self, *, symbol: str) -> Sequence[Mapping[str, Any]] | Mapping[str, Any]:
+        return self._fetch_statement(FMP_BALANCE_SHEET_URL, symbol=symbol)
+
+    def fetch_cash_flow(self, *, symbol: str) -> Sequence[Mapping[str, Any]] | Mapping[str, Any]:
+        return self._fetch_statement(FMP_CASH_FLOW_URL, symbol=symbol)
+
+    def _fetch_statement(self, endpoint_url: str, *, symbol: str) -> Sequence[Mapping[str, Any]] | Mapping[str, Any]:
+        normalized_symbol = _normalized_symbol(symbol)
+        if normalized_symbol is None:
+            raise SourceSnapshotUnavailableError("FMP reported-statement symbol was invalid")
+        query = urlencode(
+            {
+                "symbol": normalized_symbol,
+                "limit": FMP_STATEMENT_FREEZE_PERIOD_COUNT,
+                "apikey": self._api_key,
+            }
+        )
+        try:
+            payload = json.loads(self._fetch_text(f"{endpoint_url}?{query}"))
+        except HTTPError as exc:
+            if exc.code == 429:
+                raise SourceSnapshotRateLimitedError("FMP reported-statement source rate limit was reached") from None
+            if exc.code in {402, 403, 404}:
+                raise SourceSnapshotEndpointUnavailableError(
+                    "FMP reported-statement endpoint was unavailable"
+                ) from None
+            raise SourceSnapshotUnavailableError("FMP reported-statement fetch failed") from None
+        except Exception:
+            raise SourceSnapshotUnavailableError("FMP reported-statement fetch failed") from None
+        if not isinstance(payload, (Mapping, Sequence)) or isinstance(payload, (str, bytes)):
+            raise SourceSnapshotUnavailableError("FMP reported-statement response was unavailable")
+        return payload
+
+    def _fetch_public_text_url(self, url: str) -> str:
+        request = Request(url, headers={"User-Agent": "portfolio-options-agent-fundamentals/0.1"})
+        try:
+            with urlopen(request, timeout=self._timeout_seconds) as response:  # nosec B310 - explicit opt-in API fetch
+                raw = response.read(self._response_size_cap_bytes + 1)
+        except HTTPError:
+            raise
+        except Exception:
+            raise SourceSnapshotUnavailableError("FMP reported-statement fetch failed") from None
+        if len(raw) > self._response_size_cap_bytes:
+            raise SourceSnapshotUnavailableError("FMP reported-statement response exceeded size cap")
+        return raw.decode("utf-8", errors="replace")
 
 
 class FredMacroSeriesClient(Protocol):

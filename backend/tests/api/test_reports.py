@@ -1,5 +1,6 @@
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
+import json
 from uuid import UUID
 
 import pytest
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.routes import reports as report_routes
 from app.api.routes.trade_reviews import _saved_review_safe_caveat_code_tuple
+from app.config import Settings
 from app.models.broker_account import BrokerAccount
 from app.models.broker_connection import BrokerConnection
 from app.models.report_message import ReportMessage
@@ -20,7 +22,11 @@ from app.services.agent_team import tool_mediated_report
 from app.services.agent_team.llm_clients.contracts import LLMProviderRequest, LLMProviderResponse, LLMProviderStatus
 from app.services.agent_team.llm_clients.factory import LLMProviderResolution
 from app.services.agent_team.orchestration.models import LIVE_PROMPT_VERSION
-from app.services.market_data.eod_history import MarketContextExecutionContext, MarketContextPolicy
+from app.services.market_data.eod_history import (
+    MarketContextExecutionContext,
+    MarketContextPolicy,
+    market_context_execution_context_for_client,
+)
 from app.services.privacy import FORBIDDEN_TRADE_REVIEW_WORKSPACE_KEYS, find_forbidden_keys
 from app.services.reports import agent_team_report as agent_team_report_service
 from app.services.reports import crud as report_service
@@ -353,6 +359,94 @@ def test_generate_agent_team_report_route_leaves_fmp_eod_history_unconfigured_wh
     assert response.status_code == 201
     assert captured["fmp_eod_history_policy"] is None
     assert captured["fmp_eod_history_context"] is None
+
+
+def test_generate_agent_team_report_route_freezes_live_fmp_fundamentals_snapshot(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email="route-fundamentals@example.com",
+        source_reference="workspace_routefundamentals1",
+    )
+    fundamentals_client = _CountingFmpFundamentalsClient()
+    settings = Settings(
+        app_env="test",
+        fmp_api_key="test-key-not-real",
+        fmp_fundamentals_mode="live",
+    )
+    monkeypatch.setattr(report_routes, "get_settings", lambda: settings)
+    monkeypatch.setattr(report_routes, "FmpFundamentalsHttpClient", lambda **_: fundamentals_client)
+    monkeypatch.setattr(report_routes, "_resolve_fmp_eod_history_generation_context", lambda: (None, None))
+    monkeypatch.setattr(
+        report_routes,
+        "_resolve_edgar_report_evidence_generation_context",
+        lambda: (None, None, None, None),
+    )
+
+    response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
+
+    assert response.status_code == 201
+    saved = response.json()
+    fundamentals = saved["public_evidence"]["public_fundamentals_snapshot"]
+    assert fundamentals["availability"] == "available"
+    assert fundamentals["source_key"] == "fmp_reported_statement_facts"
+    assert fundamentals_client.calls == ("income", "balance", "cash_flow")
+
+
+@pytest.mark.parametrize(
+    ("mode", "api_key", "app_env"),
+    (
+        ("off", "test-key-not-real", "test"),
+        ("", "test-key-not-real", "test"),
+        ("live", "", "test"),
+        ("live", "test-key-not-real", "production"),
+    ),
+)
+def test_fmp_fundamentals_route_resolution_fails_closed_before_client_construction(
+    mode: str,
+    api_key: str,
+    app_env: str,
+) -> None:
+    construction_calls = 0
+
+    def _unexpected_factory(**_: object) -> _CountingFmpFundamentalsClient:
+        nonlocal construction_calls
+        construction_calls += 1
+        return _CountingFmpFundamentalsClient()
+
+    policy, context = report_routes._resolve_fmp_fundamentals_generation_context(
+        settings=Settings(
+            app_env=app_env,
+            fmp_api_key=api_key,
+            fmp_fundamentals_mode=mode,
+        ),
+        client_factory=_unexpected_factory,
+    )
+
+    assert policy is None
+    assert context is None
+    assert construction_calls == 0
+
+
+def test_fmp_fundamentals_route_resolution_fails_closed_on_client_construction_error() -> None:
+    def _failing_factory(**_: object) -> _CountingFmpFundamentalsClient:
+        raise RuntimeError("synthetic construction failure")
+
+    policy, context = report_routes._resolve_fmp_fundamentals_generation_context(
+        settings=Settings(
+            app_env="test",
+            fmp_api_key="test-key-not-real",
+            fmp_fundamentals_mode="live",
+        ),
+        client_factory=_failing_factory,
+    )
+
+    assert policy is None
+    assert context is None
 
 
 def test_generate_agent_team_report_route_threads_backend_p36_live_lane_flags(
@@ -1000,6 +1094,146 @@ def test_generate_agent_team_report_with_injected_edgar_profile_persists_and_reu
     assert refreshed_artifact.public_evidence == artifact.public_evidence
     assert refreshed_artifact.agent_summary is not None
     assert refreshed_artifact.agent_summary.report_generated_at == second_generated_at
+
+
+def test_fresh_report_thread_acquires_all_approved_public_evidence_once_and_preserves_historical_thread(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user_response = client.post(
+        "/users",
+        json={"display_name": "Fresh Frozen Source User", "email": "fresh-frozen-source@example.com"},
+    )
+    assert user_response.status_code == 201
+    user_id = user_response.json()["id"]
+    source_reference = "workspace_freshfrozen1"
+    source_payload = SavedReviewArtifactCreateRequest(
+        source_kind="trade_review_workspace",
+        source_reference=source_reference,
+        title="Saved frozen-source review",
+        report_type="trade_review",
+        scope_metadata=_scope_metadata_payload("Synthetic review account"),
+        deterministic_summary=_deterministic_summary_payload(),
+    )
+    assert report_service.record_saved_review_source(db_session, UUID(user_id), source_payload) is not None
+
+    historical_save = client.post(
+        f"/users/{user_id}/reports/from-trade-review",
+        json={
+            "source_kind": "trade_review_workspace",
+            "source_reference": source_reference,
+            "title": "Historical saved review",
+            "report_type": "trade_review",
+        },
+    )
+    assert historical_save.status_code == 201
+    assert historical_save.json()["public_evidence"] is None
+    historical_thread_id = client.get(f"/users/{user_id}/reports").json()[0]["id"]
+    historical_thread = db_session.get(ReportThread, UUID(historical_thread_id))
+    assert historical_thread is not None
+    historical_artifact_json = deepcopy(historical_thread.saved_artifact_json)
+
+    fresh_save = client.post(
+        f"/users/{user_id}/reports/from-trade-review",
+        json={
+            "source_kind": "trade_review_workspace",
+            "source_reference": source_reference,
+            "title": "Fresh saved review",
+            "report_type": "trade_review",
+        },
+    )
+    assert fresh_save.status_code == 201
+    assert fresh_save.json()["public_evidence"] is None
+    report_threads = client.get(f"/users/{user_id}/reports").json()
+    fresh_thread_id = report_threads[0]["id"]
+    assert fresh_thread_id != historical_thread_id
+    fresh_thread = db_session.get(ReportThread, UUID(fresh_thread_id))
+    assert fresh_thread is not None
+    assert fresh_thread.saved_artifact_json["public_evidence"] is None
+
+    profile_client = _CountingEdgarProfileClient()
+    filings_client = _CountingEdgarRecentFilingsClient()
+    fundamentals_client = _CountingFmpFundamentalsClient()
+    eod_client = _CountingFmpEodClient()
+    generated = agent_team_report_service.generate_agent_team_report_for_thread(
+        db_session,
+        UUID(user_id),
+        UUID(fresh_thread_id),
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=profile_client,
+        edgar_recent_filings_policy=EdgarRecentFilingsSourcePolicy(enabled=True),
+        edgar_recent_filings_client=filings_client,
+        fmp_fundamentals_policy=FmpFundamentalsSourcePolicy(enabled=True),
+        fmp_fundamentals_context=fmp_fundamentals_execution_context_for_client(
+            fundamentals_client,
+            collected_at=datetime(2026, 7, 16, 12, tzinfo=UTC),
+        ),
+        fmp_eod_history_policy=MarketContextPolicy(mode="live"),
+        fmp_eod_history_context=market_context_execution_context_for_client(
+            eod_client,
+            collected_at=datetime(2026, 7, 16, 12, tzinfo=UTC),
+        ),
+    )
+
+    assert generated is not None
+    assert profile_client.calls == ("fetch_company_tickers", "fetch_submissions:CIK 0000123456")
+    assert filings_client.calls == ("fetch_company_tickers", "fetch_submissions:CIK 0000123456")
+    assert fundamentals_client.calls == ("income", "balance", "cash_flow")
+    assert eod_client.calls == (("HOOD", 260),)
+    generated_thread = report_service.get_report_thread(db_session, UUID(user_id), UUID(fresh_thread_id))
+    assert generated_thread is not None
+    generated_artifact = report_service.saved_review_artifact_for_thread(generated_thread)
+    assert generated_artifact.public_evidence is not None
+    public_evidence = generated_artifact.public_evidence
+    assert public_evidence.public_company_profile.availability == "available"
+    assert public_evidence.public_events_calendar.availability == "available"
+    assert public_evidence.public_fundamentals_snapshot.availability == "available"
+    assert public_evidence.public_market_context.availability == "available"
+    assert public_evidence.fred_macro_series_snapshot is not None
+    assert public_evidence.fred_macro_series_snapshot.availability == "not_reviewed"
+    frozen_public_evidence_bytes = json.dumps(
+        public_evidence.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    raising_profile_client = _CountingEdgarProfileClient(raise_on_call=True)
+    raising_filings_client = _CountingEdgarRecentFilingsClient(raise_on_call=True)
+    raising_fundamentals_client = _CountingFmpFundamentalsClient(raise_on_call=True)
+    raising_eod_client = _CountingFmpEodClient(raise_on_call=True)
+    regenerated = agent_team_report_service.generate_agent_team_report_for_thread(
+        db_session,
+        UUID(user_id),
+        UUID(fresh_thread_id),
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=raising_profile_client,
+        edgar_recent_filings_policy=EdgarRecentFilingsSourcePolicy(enabled=True),
+        edgar_recent_filings_client=raising_filings_client,
+        fmp_fundamentals_policy=FmpFundamentalsSourcePolicy(enabled=True),
+        fmp_fundamentals_context=fmp_fundamentals_execution_context_for_client(raising_fundamentals_client),
+        fmp_eod_history_policy=MarketContextPolicy(mode="live"),
+        fmp_eod_history_context=market_context_execution_context_for_client(raising_eod_client),
+    )
+
+    assert regenerated is not None
+    assert raising_profile_client.calls == ()
+    assert raising_filings_client.calls == ()
+    assert raising_fundamentals_client.calls == ()
+    assert raising_eod_client.calls == ()
+    regenerated_thread = report_service.get_report_thread(db_session, UUID(user_id), UUID(fresh_thread_id))
+    assert regenerated_thread is not None
+    regenerated_artifact = report_service.saved_review_artifact_for_thread(regenerated_thread)
+    assert regenerated_artifact.public_evidence is not None
+    assert json.dumps(
+        regenerated_artifact.public_evidence.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8") == frozen_public_evidence_bytes
+
+    db_session.expire_all()
+    unchanged_historical_thread = db_session.get(ReportThread, UUID(historical_thread_id))
+    assert unchanged_historical_thread is not None
+    assert unchanged_historical_thread.saved_artifact_json == historical_artifact_json
 
 
 def test_generate_agent_team_report_freezes_fmp_and_fred_snapshots_without_regeneration_refetch(
@@ -1758,6 +1992,33 @@ class _CountingFmpFundamentalsClient:
     def _raise_if_needed(self) -> None:
         if self.raise_on_call:
             raise AssertionError("frozen public evidence must not re-fetch FMP statement facts")
+
+
+class _CountingFmpEodClient:
+    def __init__(self, *, raise_on_call: bool = False) -> None:
+        self.raise_on_call = raise_on_call
+        self._calls: list[tuple[str, int]] = []
+
+    @property
+    def calls(self) -> tuple[tuple[str, int], ...]:
+        return tuple(self._calls)
+
+    def fetch_eod_history(self, *, symbol: str, limit: int = 260) -> tuple[dict[str, object], ...]:
+        self._calls.append((symbol, limit))
+        if self.raise_on_call:
+            raise AssertionError("frozen public evidence must not re-fetch FMP EOD history")
+        start = date(2025, 1, 1)
+        return tuple(
+            {
+                "date": (start + timedelta(days=index)).isoformat(),
+                "open": str(index + 1),
+                "high": str(index + 2),
+                "low": str(index),
+                "close": str(index + 1),
+                "volume": 1000 + index,
+            }
+            for index in reversed(range(limit))
+        )
 
 
 class _CountingFredMacroSeriesClient:

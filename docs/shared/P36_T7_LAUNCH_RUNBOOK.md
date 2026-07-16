@@ -127,6 +127,49 @@ environment values, keys, account data, symbols, prompts, report content, raw
 provider payloads, or request/response bodies. It does not call an LLM, market
 provider, EDGAR, broker, or report-generation route.
 
+## Fresh Report Thread From A Saved Review Source
+
+Use this procedure only when the approved run requires a new frozen public-
+evidence package. An older report remains historical evidence and must not be
+modified or treated as a place to acquire newly enabled source lanes.
+
+1. Resolve the existing `source_reference` through an already reviewed,
+   app-owned saved-review selection path. Keep the user, source, artifact, and
+   thread references in process memory only. Do not print, list, or archive
+   them.
+2. Record the current report-thread identifiers in process memory, then call
+   `POST /users/<user-id>/reports/from-trade-review` with synthetic-shaped
+   request fields:
+
+   ```json
+   {
+     "source_kind": "trade_review_workspace",
+     "source_reference": "<approved-saved-source-reference>",
+     "title": "<generic-run-label>",
+     "report_type": "trade_review"
+   }
+   ```
+
+   This creates a new DB-backed artifact and report thread with
+   `public_evidence=null`. It is a save operation, not Agent Team generation,
+   and does not consume the separately authorized generation attempt.
+3. Require HTTP `201`, `status=saved`, and `public_evidence_is_none=true`.
+   Identify the new thread in-process by taking the single set difference
+   between the reviewed report list before and after the save. Emit only the
+   safe metadata `new_thread_count=1`; never print or archive the thread,
+   artifact, source, user, account, or report references.
+4. Leave the older report and its frozen evidence unchanged. Do not recompute
+   from current Account Details or selectors, and do not acquire any source
+   evidence during this save step.
+5. Stop after the save and request explicit founder authorization for exactly
+   one generation attempt on the new thread. Creating the thread does not
+   authorize generation.
+
+Any helper used for this procedure must pass the local access token through
+in-container environment expansion only. It must not read or print `.env`,
+response bodies, report content, account data, or identifiers. The metadata
+archive may record only the approved booleans and counts above.
+
 ## Port Checks And Launch
 
 Before launch, inspect only listening processes on the loopback ports:

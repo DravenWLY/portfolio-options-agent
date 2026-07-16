@@ -1,9 +1,10 @@
+from collections.abc import Callable
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.config import ConfigurationError
+from app.config import ConfigurationError, Settings, get_settings
 from app.db.session import get_db
 from app.schemas.reports import (
     ReportThreadCreate,
@@ -27,6 +28,15 @@ from app.services.market_data.eod_history import (
     default_market_context_execution_context,
     market_context_policy_from_environment,
 )
+from app.services.reports.source_snapshots import (
+    FmpFundamentalsClient,
+    FmpFundamentalsExecutionContext,
+    FmpFundamentalsHttpClient,
+    FmpFundamentalsSourcePolicy,
+    UtcDayRequestBudget,
+    fmp_fundamentals_execution_context_for_client,
+    fmp_fundamentals_policy_from_settings,
+)
 
 router = APIRouter(tags=["reports"])
 
@@ -49,6 +59,35 @@ def _resolve_fmp_eod_history_generation_context() -> tuple[
     except ConfigurationError:
         # A live mode without the backend-only FMP credential remains disabled.
         return None, None
+
+
+def _resolve_fmp_fundamentals_generation_context(
+    *,
+    settings: Settings | None = None,
+    client_factory: Callable[..., FmpFundamentalsClient] | None = None,
+) -> tuple[FmpFundamentalsSourcePolicy | None, FmpFundamentalsExecutionContext | None]:
+    """Resolve the approved fundamentals lane only for complete live config."""
+
+    try:
+        active_settings = settings or get_settings()
+        policy = fmp_fundamentals_policy_from_settings(active_settings)
+    except (ConfigurationError, TypeError, ValueError):
+        return None, None
+    if not policy.live_client_ready():
+        return None, None
+
+    factory = client_factory or FmpFundamentalsHttpClient
+    try:
+        client = factory(api_key=active_settings.require_fmp_api_key())
+        context = fmp_fundamentals_execution_context_for_client(
+            client,
+            daily_budget=UtcDayRequestBudget(policy.daily_request_budget),
+        )
+    except Exception:
+        # Client construction is configuration-only here. Fail closed before
+        # the report builder can make a source request.
+        return None, None
+    return policy, context
 
 
 def _resolve_edgar_report_evidence_generation_context() -> tuple[
@@ -114,6 +153,7 @@ def generate_report_agent_team_summary(
         p36_public_live_enabled = False
         p36_pm_live_enabled = False
     fmp_eod_history_policy, fmp_eod_history_context = _resolve_fmp_eod_history_generation_context()
+    fmp_fundamentals_policy, fmp_fundamentals_context = _resolve_fmp_fundamentals_generation_context()
     (
         edgar_policy,
         edgar_client,
@@ -135,6 +175,8 @@ def generate_report_agent_team_summary(
         edgar_recent_filings_client=edgar_recent_filings_client,
         fmp_eod_history_policy=fmp_eod_history_policy,
         fmp_eod_history_context=fmp_eod_history_context,
+        fmp_fundamentals_policy=fmp_fundamentals_policy,
+        fmp_fundamentals_context=fmp_fundamentals_context,
     )
     if agent_summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved review artifact not found")

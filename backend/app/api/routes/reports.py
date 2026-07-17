@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.config import ConfigurationError, Settings, get_settings
 from app.db.session import get_db
 from app.schemas.reports import (
+    AgentTeamGenerationNotReadyResponseRead,
     PublicEvidencePreparationRead,
     ReportThreadCreate,
     ReportThreadDetailRead,
@@ -180,41 +181,70 @@ def generate_report_agent_team_summary(
 ) -> SavedReviewArtifactRead:
     generation_mode = agent_team_report_service.resolve_backend_agent_team_report_generation_mode()
     if generation_mode == "tool_mediated":
+        gate = agent_team_report_service.evaluate_tool_mediated_generation_readiness_for_thread(
+            db,
+            user_id,
+            thread_id,
+        )
+        if gate is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved review artifact not found")
+        if not gate.allowed:
+            assert gate.refusal is not None
+            refusal = AgentTeamGenerationNotReadyResponseRead(detail=gate.refusal)
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=refusal.detail.model_dump(mode="json"),
+            )
         provider_resolution = agent_team_report_service.resolve_agent_team_report_provider_resolution()
         p36_risk_live_enabled, p36_public_live_enabled, p36_pm_live_enabled = (
             agent_team_report_service.resolve_p36_live_lane_flags()
         )
+        fmp_eod_history_policy = None
+        fmp_eod_history_context = None
+        fmp_fundamentals_policy = None
+        fmp_fundamentals_context = None
+        edgar_policy = None
+        edgar_client = None
+        edgar_recent_filings_policy = None
+        edgar_recent_filings_client = None
     else:
         provider_resolution = None
         p36_risk_live_enabled = False
         p36_public_live_enabled = False
         p36_pm_live_enabled = False
-    fmp_eod_history_policy, fmp_eod_history_context = _resolve_fmp_eod_history_generation_context()
-    fmp_fundamentals_policy, fmp_fundamentals_context = _resolve_fmp_fundamentals_generation_context()
-    (
-        edgar_policy,
-        edgar_client,
-        edgar_recent_filings_policy,
-        edgar_recent_filings_client,
-    ) = _resolve_edgar_report_evidence_generation_context()
-    agent_summary = agent_team_report_service.generate_agent_team_report_for_thread(
-        db,
-        user_id,
-        thread_id,
-        mode=generation_mode,
-        provider_resolution=provider_resolution,
-        p36_risk_live_enabled=p36_risk_live_enabled,
-        p36_public_live_enabled=p36_public_live_enabled,
-        p36_pm_live_enabled=p36_pm_live_enabled,
-        edgar_policy=edgar_policy,
-        edgar_client=edgar_client,
-        edgar_recent_filings_policy=edgar_recent_filings_policy,
-        edgar_recent_filings_client=edgar_recent_filings_client,
-        fmp_eod_history_policy=fmp_eod_history_policy,
-        fmp_eod_history_context=fmp_eod_history_context,
-        fmp_fundamentals_policy=fmp_fundamentals_policy,
-        fmp_fundamentals_context=fmp_fundamentals_context,
-    )
+        fmp_eod_history_policy, fmp_eod_history_context = _resolve_fmp_eod_history_generation_context()
+        fmp_fundamentals_policy, fmp_fundamentals_context = _resolve_fmp_fundamentals_generation_context()
+        (
+            edgar_policy,
+            edgar_client,
+            edgar_recent_filings_policy,
+            edgar_recent_filings_client,
+        ) = _resolve_edgar_report_evidence_generation_context()
+    try:
+        agent_summary = agent_team_report_service.generate_agent_team_report_for_thread(
+            db,
+            user_id,
+            thread_id,
+            mode=generation_mode,
+            provider_resolution=provider_resolution,
+            p36_risk_live_enabled=p36_risk_live_enabled,
+            p36_public_live_enabled=p36_public_live_enabled,
+            p36_pm_live_enabled=p36_pm_live_enabled,
+            edgar_policy=edgar_policy,
+            edgar_client=edgar_client,
+            edgar_recent_filings_policy=edgar_recent_filings_policy,
+            edgar_recent_filings_client=edgar_recent_filings_client,
+            fmp_eod_history_policy=fmp_eod_history_policy,
+            fmp_eod_history_context=fmp_eod_history_context,
+            fmp_fundamentals_policy=fmp_fundamentals_policy,
+            fmp_fundamentals_context=fmp_fundamentals_context,
+        )
+    except agent_team_report_service.AgentTeamGenerationNotReadyError as exc:
+        refusal = AgentTeamGenerationNotReadyResponseRead(detail=exc.detail)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=refusal.detail.model_dump(mode="json"),
+        ) from None
     if agent_summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved review artifact not found")
     report_thread = report_service.get_report_thread(db, user_id, thread_id)

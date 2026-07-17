@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 import os
 from typing import TYPE_CHECKING, Literal
@@ -14,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.config import ConfigurationError
 from app.models.report_thread import ReportThread
 from app.schemas.reports import (
+    AgentTeamGenerationNotReadyDetailRead,
     PublicEvidenceLaneRead,
     PublicEvidencePreparationRead,
     SavedAgentTeamRoleSummaryRead,
@@ -99,6 +101,24 @@ _PUBLIC_ROLE_LIMITED_CAVEAT = (
 )
 
 
+@dataclass(frozen=True)
+class ToolMediatedGenerationGateDecision:
+    allowed: bool
+    refusal: AgentTeamGenerationNotReadyDetailRead | None = None
+
+    def __post_init__(self) -> None:
+        if self.allowed == (self.refusal is not None):
+            raise ValueError("tool-mediated generation gate decision is inconsistent")
+
+
+class AgentTeamGenerationNotReadyError(RuntimeError):
+    """Closed-contract refusal raised by the service boundary."""
+
+    def __init__(self, detail: AgentTeamGenerationNotReadyDetailRead) -> None:
+        super().__init__(detail.code)
+        self.detail = detail
+
+
 def _now_utc() -> datetime:
     return datetime.now(UTC)
 
@@ -148,6 +168,83 @@ def _report_thread_for_update(db: Session, user_id: UUID, thread_id: UUID) -> Re
             ReportThread.deleted_at.is_(None),
         )
         .with_for_update()
+    )
+
+
+def evaluate_tool_mediated_generation_readiness_for_thread(
+    db: Session,
+    user_id: UUID,
+    thread_id: UUID,
+) -> ToolMediatedGenerationGateDecision | None:
+    """Evaluate only frozen saved evidence before route-level provider resolution."""
+
+    report_thread = _report_thread_for_update(db, user_id, thread_id)
+    if report_thread is None or not isinstance(report_thread.saved_artifact_json, dict):
+        return None
+    return _tool_mediated_generation_gate_decision(report_thread)
+
+
+def _tool_mediated_generation_gate_decision(
+    report_thread: ReportThread,
+    *,
+    source_replacement_attempted: bool = False,
+) -> ToolMediatedGenerationGateDecision:
+    try:
+        artifact = saved_review_artifact_for_thread(report_thread)
+        evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
+    except (TypeError, ValidationError, ValueError):
+        return _not_ready_generation_decision("evidence_privacy_validation_failed")
+
+    if source_replacement_attempted:
+        return _not_ready_generation_decision("frozen_evidence_replacement_forbidden")
+    if artifact.public_evidence is None or evidence.public_evidence is None:
+        return _not_ready_generation_decision("public_evidence_not_prepared")
+
+    identity = evidence.trade_intent_summary.instrument_identity
+    if identity.resolution_status == "declared_only":
+        return _not_ready_generation_decision("instrument_kind_not_confirmed")
+    if identity.resolution_status == "unresolved":
+        return _not_ready_generation_decision("instrument_kind_unresolved")
+    if identity.resolved_instrument_kind == "etf_or_fund":
+        return _not_ready_generation_decision("etf_evidence_contract_not_available")
+    if identity.resolved_instrument_kind != "operating_company_equity":
+        return _not_ready_generation_decision("instrument_kind_unresolved")
+
+    try:
+        readiness = _public_evidence_preparation_readiness(
+            identity=identity,
+            public_evidence=artifact.public_evidence,
+            evidence_state="frozen",
+        )
+    except (TypeError, ValidationError, ValueError):
+        return _not_ready_generation_decision("evidence_privacy_validation_failed")
+    if readiness.readiness == "ready":
+        return ToolMediatedGenerationGateDecision(allowed=True)
+    return ToolMediatedGenerationGateDecision(
+        allowed=False,
+        refusal=AgentTeamGenerationNotReadyDetailRead(
+            readiness=readiness.readiness,
+            reason_codes=("required_evidence_unavailable",),
+        ),
+    )
+
+
+def _not_ready_generation_decision(
+    reason_code: Literal[
+        "public_evidence_not_prepared",
+        "instrument_kind_not_confirmed",
+        "instrument_kind_unresolved",
+        "etf_evidence_contract_not_available",
+        "evidence_privacy_validation_failed",
+        "frozen_evidence_replacement_forbidden",
+    ],
+) -> ToolMediatedGenerationGateDecision:
+    return ToolMediatedGenerationGateDecision(
+        allowed=False,
+        refusal=AgentTeamGenerationNotReadyDetailRead(
+            readiness="not_ready",
+            reason_codes=(reason_code,),
+        ),
     )
 
 
@@ -447,10 +544,33 @@ def generate_agent_team_report_for_thread(
     if report_thread is None or not isinstance(report_thread.saved_artifact_json, dict):
         return None
 
+    if mode == "tool_mediated":
+        gate = _tool_mediated_generation_gate_decision(
+            report_thread,
+            source_replacement_attempted=any(
+                value is not None
+                for value in (
+                    edgar_policy,
+                    edgar_client,
+                    edgar_recent_filings_policy,
+                    edgar_recent_filings_client,
+                    fmp_fundamentals_policy,
+                    fmp_fundamentals_context,
+                    fmp_eod_history_policy,
+                    fmp_eod_history_context,
+                    fred_macro_series_policy,
+                    fred_macro_series_context,
+                )
+            ),
+        )
+        if not gate.allowed:
+            assert gate.refusal is not None
+            raise AgentTeamGenerationNotReadyError(gate.refusal)
+
     try:
         artifact = saved_review_artifact_for_thread(report_thread)
         evidence = SavedEvidencePackageRead.from_saved_review_artifact(artifact)
-        if artifact.public_evidence is None:
+        if mode != "tool_mediated" and artifact.public_evidence is None:
             evidence = evidence.model_copy(
                 update={
                     "public_evidence": build_public_evidence_projection(

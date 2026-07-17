@@ -8,6 +8,8 @@ from app.models.report_thread import ReportThread
 from app.models.saved_review_source import SavedReviewSource
 from app.schemas.agent_runs import AgentRunCreate, AgentStepCreate
 from app.schemas.reports import (
+    AgentTeamGenerationNotReadyDetailRead,
+    AgentTeamGenerationNotReadyResponseRead,
     AgentTeamReportRead,
     AgentTeamReportRoleSectionRead,
     AgentTeamReportSynthesisRead,
@@ -218,6 +220,72 @@ def test_public_evidence_preparation_schema_rejects_etf_lane_availability_before
             evidence_state="prepared",
             lanes=lanes,
         )
+
+
+def test_agent_team_generation_not_ready_schema_exposes_only_closed_metadata() -> None:
+    payload = AgentTeamGenerationNotReadyResponseRead(
+        detail=AgentTeamGenerationNotReadyDetailRead(
+            readiness="partial",
+            reason_codes=("required_evidence_unavailable",),
+        )
+    )
+
+    assert payload.model_dump(mode="json") == {
+        "detail": {
+            "code": "agent_team_generation_not_ready",
+            "readiness": "partial",
+            "reason_codes": ["required_evidence_unavailable"],
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {
+            "detail": {
+                "code": "agent_team_generation_not_ready",
+                "readiness": "not_ready",
+                "reason_codes": ["public_evidence_not_prepared"],
+            },
+            "symbol": "EXMP",
+        },
+        {
+            "detail": {
+                "code": "agent_team_generation_not_ready",
+                "readiness": "not_ready",
+                "reason_codes": ["public_evidence_not_prepared"],
+                "source_label": "unsafe source detail",
+            }
+        },
+        {
+            "detail": {
+                "code": "agent_team_generation_not_ready",
+                "readiness": "not_ready",
+                "reason_codes": ["raw_payload"],
+            }
+        },
+        {
+            "detail": {
+                "code": "agent_team_generation_not_ready",
+                "readiness": "partial",
+                "reason_codes": ["instrument_kind_unresolved"],
+            }
+        },
+        {
+            "detail": {
+                "code": "agent_team_generation_not_ready",
+                "readiness": "not_ready",
+                "reason_codes": ["instrument_kind_unresolved", "instrument_kind_unresolved"],
+            }
+        },
+    ),
+)
+def test_agent_team_generation_not_ready_schema_rejects_extra_or_unsafe_contract_fields(
+    payload: dict,
+) -> None:
+    with pytest.raises(ValidationError):
+        AgentTeamGenerationNotReadyResponseRead.model_validate(payload)
 
 
 def test_report_thread_read_exposes_nullable_saved_scope_metadata() -> None:

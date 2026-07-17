@@ -144,6 +144,10 @@ def test_route_backed_tool_mediated_live_report_freezes_and_reads_back_without_r
     assert save_response.status_code == 201
     thread_id = client.get(f"/users/{user_id}/reports").json()[0]["id"]
 
+    prepared_response = client.post(f"/users/{user_id}/reports/{thread_id}/prepare-evidence")
+    assert prepared_response.status_code == 200
+    assert prepared_response.json()["readiness"] == "ready"
+
     generated_response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
 
     assert generated_response.status_code == 201

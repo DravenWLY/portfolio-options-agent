@@ -20,7 +20,12 @@ from app.models.broker_connection import BrokerConnection
 from app.models.report_message import ReportMessage
 from app.models.report_thread import ReportThread
 from app.models.saved_review_source import SavedReviewSource
-from app.schemas.reports import SavedEvidencePackageRead, SavedReviewArtifactCreateRequest, SavedReviewArtifactRead
+from app.schemas.reports import (
+    AgentTeamGenerationNotReadyDetailRead,
+    SavedEvidencePackageRead,
+    SavedReviewArtifactCreateRequest,
+    SavedReviewArtifactRead,
+)
 from app.schemas.trade_review_workspace import validate_trade_review_saved_source_reference
 from app.services.agent_team import tool_mediated_report
 from app.services.agent_team.llm_clients.contracts import (
@@ -923,7 +928,7 @@ def test_generate_agent_team_report_route_threads_backend_p36_live_lane_flags(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    user_id, thread_id = _create_saved_agent_report_thread(
+    user_id, thread_id = _create_ready_saved_agent_report_thread(
         client,
         db_session,
         email="route-p36-lanes@example.com",
@@ -1022,7 +1027,7 @@ def test_generate_agent_team_report_route_tool_mediated_mock_opt_in_persists_fro
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    user_id, thread_id = _create_saved_agent_report_thread(
+    user_id, thread_id = _create_ready_saved_agent_report_thread(
         client,
         db_session,
         email="tool-mediated-mock@example.com",
@@ -1045,6 +1050,7 @@ def test_generate_agent_team_report_route_tool_mediated_mock_opt_in_persists_fro
             model=provider.model,
         ),
     )
+    _install_unexpected_generation_source_resolvers(monkeypatch)
 
     response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
 
@@ -1089,7 +1095,7 @@ def test_generate_agent_team_report_route_tool_mediated_live_opt_in_freezes_prov
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    user_id, thread_id = _create_saved_agent_report_thread(
+    user_id, thread_id = _create_ready_saved_agent_report_thread(
         client,
         db_session,
         email="tool-mediated-live@example.com",
@@ -1118,6 +1124,7 @@ def test_generate_agent_team_report_route_tool_mediated_live_opt_in_freezes_prov
             model=provider.model,
         ),
     )
+    _install_unexpected_generation_source_resolvers(monkeypatch)
 
     response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
 
@@ -1149,7 +1156,7 @@ def test_generate_agent_team_report_route_unsafe_live_provider_output_fails_clos
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    user_id, thread_id = _create_saved_agent_report_thread(
+    user_id, thread_id = _create_ready_saved_agent_report_thread(
         client,
         db_session,
         email="tool-mediated-unsafe@example.com",
@@ -1173,6 +1180,7 @@ def test_generate_agent_team_report_route_unsafe_live_provider_output_fails_clos
             model=provider.model,
         ),
     )
+    _install_unexpected_generation_source_resolvers(monkeypatch)
 
     response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
 
@@ -1185,6 +1193,348 @@ def test_generate_agent_team_report_route_unsafe_live_provider_output_fails_clos
     assert "you should" not in rendered
     assert "submit order" not in rendered
     assert "$123" not in rendered
+
+
+@pytest.mark.parametrize(
+    (
+        "case_name",
+        "resolved_instrument_kind",
+        "resolution_status",
+        "preparation_mode",
+        "expected_readiness",
+        "expected_reason",
+    ),
+    (
+        (
+            "not_prepared",
+            "operating_company_equity",
+            "confirmed",
+            "skip",
+            "not_ready",
+            "public_evidence_not_prepared",
+        ),
+        (
+            "declared_only",
+            "operating_company_equity",
+            "declared_only",
+            "empty",
+            "not_ready",
+            "instrument_kind_not_confirmed",
+        ),
+        (
+            "unresolved",
+            "unknown",
+            "unresolved",
+            "empty",
+            "not_ready",
+            "instrument_kind_unresolved",
+        ),
+        (
+            "partial",
+            "operating_company_equity",
+            "mismatch_reconciled",
+            "profile_only",
+            "partial",
+            "required_evidence_unavailable",
+        ),
+        (
+            "no_required_lanes",
+            "operating_company_equity",
+            "confirmed",
+            "empty",
+            "not_ready",
+            "required_evidence_unavailable",
+        ),
+        (
+            "etf_contract_missing",
+            "etf_or_fund",
+            "confirmed",
+            "empty",
+            "not_ready",
+            "etf_evidence_contract_not_available",
+        ),
+        (
+            "privacy_failure",
+            "operating_company_equity",
+            "confirmed",
+            "poisoned",
+            "not_ready",
+            "evidence_privacy_validation_failed",
+        ),
+    ),
+)
+def test_tool_mediated_route_refuses_every_frozen_readiness_stop_before_provider_or_sources(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    case_name: str,
+    resolved_instrument_kind: str,
+    resolution_status: str,
+    preparation_mode: str,
+    expected_readiness: str,
+    expected_reason: str,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email=f"generation-gate-{case_name}@example.com",
+        source_reference=f"workspace_generationgate{case_name.replace('_', '')}1",
+        deterministic_summary=_deterministic_summary_for_identity(
+            resolved_instrument_kind=resolved_instrument_kind,
+            resolution_status=resolution_status,
+            symbol="QQQ" if resolved_instrument_kind == "etf_or_fund" else "HOOD",
+        ),
+    )
+    if preparation_mode != "skip":
+        profile_client = _CountingEdgarProfileClient()
+        readiness = agent_team_report_service.prepare_public_evidence_for_thread(
+            db_session,
+            UUID(user_id),
+            UUID(thread_id),
+            edgar_policy=(
+                EdgarCompanyProfileSourcePolicy(enabled=True)
+                if preparation_mode == "profile_only"
+                else None
+            ),
+            edgar_client=profile_client if preparation_mode == "profile_only" else None,
+        )
+        assert readiness is not None
+        if preparation_mode == "profile_only":
+            assert profile_client.calls == (
+                "fetch_company_tickers",
+                "fetch_submissions:CIK 0000123456",
+            )
+        if preparation_mode == "poisoned":
+            report_thread = db_session.get(ReportThread, UUID(thread_id))
+            assert report_thread is not None
+            poisoned = deepcopy(report_thread.saved_artifact_json)
+            poisoned["public_evidence"]["public_company_profile"]["raw_payload"] = "synthetic-private-value"
+            report_thread.saved_artifact_json = poisoned
+            db_session.add(report_thread)
+            db_session.commit()
+
+    report_thread = db_session.get(ReportThread, UUID(thread_id))
+    assert report_thread is not None
+    frozen_before = json.dumps(
+        report_thread.saved_artifact_json,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_backend_agent_team_report_generation_mode",
+        lambda: "tool_mediated",
+    )
+
+    def _unexpected_provider_resolution(*_: object, **__: object) -> LLMProviderResolution:
+        raise AssertionError("readiness refusal must happen before provider resolution")
+
+    def _unexpected_lane_flags(*_: object, **__: object) -> tuple[bool, bool, bool]:
+        raise AssertionError("readiness refusal must happen before live-lane resolution")
+
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_agent_team_report_provider_resolution",
+        _unexpected_provider_resolution,
+    )
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_p36_live_lane_flags",
+        _unexpected_lane_flags,
+    )
+    _install_unexpected_generation_source_resolvers(monkeypatch)
+
+    response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {
+            "code": "agent_team_generation_not_ready",
+            "readiness": expected_readiness,
+            "reason_codes": [expected_reason],
+        }
+    }
+    assert set(response.json()["detail"]) == {"code", "readiness", "reason_codes"}
+    db_session.expire_all()
+    unchanged = db_session.get(ReportThread, UUID(thread_id))
+    assert unchanged is not None
+    assert json.dumps(
+        unchanged.saved_artifact_json,
+        sort_keys=True,
+        separators=(",", ":"),
+    ) == frozen_before
+    assert unchanged.saved_artifact_json.get("agent_summary") is None
+
+
+@pytest.mark.parametrize(
+    ("provider_name", "source_reference"),
+    (("mock", "workspace_servicegatemock1"), ("fake_live_provider", "workspace_servicegatelive1")),
+)
+def test_tool_mediated_service_gate_cannot_be_bypassed_by_mock_or_live_style_provider(
+    client: TestClient,
+    db_session: Session,
+    provider_name: str,
+    source_reference: str,
+) -> None:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email=f"service-generation-gate-{provider_name}@example.com",
+        source_reference=source_reference,
+        deterministic_summary=_deterministic_summary_for_identity(
+            resolved_instrument_kind="operating_company_equity",
+            resolution_status="confirmed",
+        ),
+    )
+    provider = _RouteFakeLiveProvider()
+
+    with pytest.raises(agent_team_report_service.AgentTeamGenerationNotReadyError) as exc_info:
+        agent_team_report_service.generate_agent_team_report_for_thread(
+            db_session,
+            UUID(user_id),
+            UUID(thread_id),
+            mode="tool_mediated",
+            provider_resolution=LLMProviderResolution(
+                provider=provider,
+                status="ok",
+                provider_name=provider_name,
+                model=provider.model,
+            ),
+        )
+
+    assert exc_info.value.detail.model_dump(mode="json") == {
+        "code": "agent_team_generation_not_ready",
+        "readiness": "not_ready",
+        "reason_codes": ["public_evidence_not_prepared"],
+    }
+    assert provider.calls == []
+
+
+def test_tool_mediated_service_rejects_source_arguments_without_replacing_frozen_evidence(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    user_id, thread_id = _create_ready_saved_agent_report_thread(
+        client,
+        db_session,
+        email="service-generation-replacement@example.com",
+        source_reference="workspace_servicereplacement1",
+    )
+    provider = _RouteFakeLiveProvider()
+    edgar_client = _CountingEdgarProfileClient(raise_on_call=True)
+    report_thread = db_session.get(ReportThread, UUID(thread_id))
+    assert report_thread is not None
+    frozen_before = deepcopy(report_thread.saved_artifact_json)
+
+    with pytest.raises(agent_team_report_service.AgentTeamGenerationNotReadyError) as exc_info:
+        agent_team_report_service.generate_agent_team_report_for_thread(
+            db_session,
+            UUID(user_id),
+            UUID(thread_id),
+            mode="tool_mediated",
+            provider_resolution=LLMProviderResolution(
+                provider=provider,
+                status="ok",
+                provider_name=provider.provider_name,
+                model=provider.model,
+            ),
+            edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+            edgar_client=edgar_client,
+        )
+
+    assert exc_info.value.detail.model_dump(mode="json") == {
+        "code": "agent_team_generation_not_ready",
+        "readiness": "not_ready",
+        "reason_codes": ["frozen_evidence_replacement_forbidden"],
+    }
+    assert provider.calls == []
+    assert edgar_client.calls == ()
+    db_session.expire_all()
+    unchanged = db_session.get(ReportThread, UUID(thread_id))
+    assert unchanged is not None
+    assert unchanged.saved_artifact_json == frozen_before
+
+
+def test_tool_mediated_route_translates_service_replacement_refusal_to_exact_409(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_id, thread_id = _create_ready_saved_agent_report_thread(
+        client,
+        db_session,
+        email="route-generation-replacement@example.com",
+        source_reference="workspace_routereplacement1",
+    )
+    provider = _RouteFakeLiveProvider()
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_backend_agent_team_report_generation_mode",
+        lambda: "tool_mediated",
+    )
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_agent_team_report_provider_resolution",
+        lambda: LLMProviderResolution(
+            provider=provider,
+            status="ok",
+            provider_name=provider.provider_name,
+            model=provider.model,
+        ),
+    )
+    monkeypatch.setattr(agent_team_report_service, "resolve_p36_live_lane_flags", lambda: (False, False, False))
+    _install_unexpected_generation_source_resolvers(monkeypatch)
+
+    def _replacement_refusal(*_: object, **__: object) -> object:
+        raise agent_team_report_service.AgentTeamGenerationNotReadyError(
+            AgentTeamGenerationNotReadyDetailRead(
+                readiness="not_ready",
+                reason_codes=("frozen_evidence_replacement_forbidden",),
+            )
+        )
+
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "generate_agent_team_report_for_thread",
+        _replacement_refusal,
+    )
+
+    response = client.post(f"/users/{user_id}/reports/{thread_id}/agent-team-report")
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "detail": {
+            "code": "agent_team_generation_not_ready",
+            "readiness": "not_ready",
+            "reason_codes": ["frozen_evidence_replacement_forbidden"],
+        }
+    }
+    assert provider.calls == []
+
+
+def test_tool_mediated_generation_missing_thread_preserves_existing_404_before_provider_or_sources(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        agent_team_report_service,
+        "resolve_backend_agent_team_report_generation_mode",
+        lambda: "tool_mediated",
+    )
+
+    def _unexpected(*_: object, **__: object) -> object:
+        raise AssertionError("missing-thread refusal must not resolve providers or source contexts")
+
+    monkeypatch.setattr(agent_team_report_service, "resolve_agent_team_report_provider_resolution", _unexpected)
+    monkeypatch.setattr(agent_team_report_service, "resolve_p36_live_lane_flags", _unexpected)
+    _install_unexpected_generation_source_resolvers(monkeypatch)
+
+    response = client.post(f"/users/{uuid4()}/reports/{uuid4()}/agent-team-report")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Saved review artifact not found"}
 
 
 @pytest.mark.parametrize(
@@ -2151,6 +2501,57 @@ def _create_saved_agent_report_thread(
     assert save_response.status_code == 201
     thread_id = client.get(f"/users/{user_id}/reports").json()[0]["id"]
     return user_id, thread_id
+
+
+def _create_ready_saved_agent_report_thread(
+    client: TestClient,
+    db_session: Session,
+    *,
+    email: str,
+    source_reference: str,
+) -> tuple[str, str]:
+    user_id, thread_id = _create_saved_agent_report_thread(
+        client,
+        db_session,
+        email=email,
+        source_reference=source_reference,
+        deterministic_summary=_deterministic_summary_for_identity(
+            resolved_instrument_kind="operating_company_equity",
+            resolution_status="confirmed",
+        ),
+    )
+    readiness = agent_team_report_service.prepare_public_evidence_for_thread(
+        db_session,
+        UUID(user_id),
+        UUID(thread_id),
+        edgar_policy=EdgarCompanyProfileSourcePolicy(enabled=True),
+        edgar_client=_CountingEdgarProfileClient(),
+        edgar_recent_filings_policy=EdgarRecentFilingsSourcePolicy(enabled=True),
+        edgar_recent_filings_client=_CountingEdgarRecentFilingsClient(),
+        fmp_fundamentals_policy=FmpFundamentalsSourcePolicy(enabled=True),
+        fmp_fundamentals_context=fmp_fundamentals_execution_context_for_client(
+            _CountingFmpFundamentalsClient(),
+            collected_at=datetime(2026, 7, 16, 12, tzinfo=UTC),
+        ),
+        fmp_eod_history_policy=MarketContextPolicy(mode="live"),
+        fmp_eod_history_context=market_context_execution_context_for_client(
+            _CountingFmpEodClient(),
+            collected_at=datetime(2026, 7, 16, 12, tzinfo=UTC),
+        ),
+    )
+    assert readiness is not None
+    assert readiness.readiness == "ready"
+    assert readiness.evidence_state == "prepared"
+    return user_id, thread_id
+
+
+def _install_unexpected_generation_source_resolvers(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _unexpected(*_: object, **__: object) -> object:
+        raise AssertionError("tool-mediated generation must not resolve source contexts")
+
+    monkeypatch.setattr(report_routes, "_resolve_fmp_eod_history_generation_context", _unexpected)
+    monkeypatch.setattr(report_routes, "_resolve_fmp_fundamentals_generation_context", _unexpected)
+    monkeypatch.setattr(report_routes, "_resolve_edgar_report_evidence_generation_context", _unexpected)
 
 
 class _RouteFakeLiveProvider:

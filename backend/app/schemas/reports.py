@@ -31,6 +31,16 @@ SavedPublicEvidenceFreshnessCategory = Literal["fresh", "stale", "unknown", "not
 SavedPublicEvidenceMode = Literal["not_reviewed", "synthetic_demo", "provider_reference"]
 PublicEvidenceReadiness = Literal["ready", "partial", "not_ready"]
 PublicEvidenceState = Literal["prepared", "frozen"]
+AgentTeamGenerationRefusalReadiness = Literal["partial", "not_ready"]
+AgentTeamGenerationNotReadyReasonCode = Literal[
+    "public_evidence_not_prepared",
+    "instrument_kind_not_confirmed",
+    "instrument_kind_unresolved",
+    "required_evidence_unavailable",
+    "etf_evidence_contract_not_available",
+    "evidence_privacy_validation_failed",
+    "frozen_evidence_replacement_forbidden",
+]
 PublicEvidenceLaneRequirement = Literal["required", "optional", "not_applicable"]
 PublicEvidenceReadinessCaveatCode = Literal[
     "instrument_kind_not_confirmed",
@@ -1344,6 +1354,28 @@ class PublicEvidencePreparationRead(BaseModel):
             raise ValueError("confirmed readiness requires a reviewed instrument kind")
         validate_saved_review_artifact_payload(self.model_dump(mode="python"))
         return self
+
+
+class AgentTeamGenerationNotReadyDetailRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    code: Literal["agent_team_generation_not_ready"] = "agent_team_generation_not_ready"
+    readiness: AgentTeamGenerationRefusalReadiness
+    reason_codes: tuple[AgentTeamGenerationNotReadyReasonCode, ...]
+
+    @model_validator(mode="after")
+    def refusal_must_use_closed_consistent_reasons(self) -> "AgentTeamGenerationNotReadyDetailRead":
+        if not self.reason_codes or len(self.reason_codes) != len(set(self.reason_codes)):
+            raise ValueError("generation readiness refusal requires unique closed reason codes")
+        if self.readiness == "partial" and self.reason_codes != ("required_evidence_unavailable",):
+            raise ValueError("partial readiness may only report unavailable required evidence")
+        return self
+
+
+class AgentTeamGenerationNotReadyResponseRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, extra="forbid")
+
+    detail: AgentTeamGenerationNotReadyDetailRead
 
 
 class SavedPublicRoleInstrumentContextRead(BaseModel):

@@ -1903,6 +1903,21 @@ exercise their own judgment within this frame.
   Owner now: Codex C for J4C-backend implementation, followed by Codex B
   contract/privacy review and Claude G architecture/privacy review. J4C-
   frontend remains owned by Claude A or Claude F with Claude B visual review.
+  **P36-T7-J4C-backend - frozen-readiness generation gate: DONE 2026-07-17 by
+  Codex C; Codex B contract/privacy review PASS.** Tool-mediated Agent Team
+  generation now requires frozen readiness=`ready` for a confirmed or
+  reconciled operating-company instrument. Every other state returns the
+  closed privacy-safe `409` contract before provider or source work;
+  direct-service enforcement, byte-stable refusal, deterministic-template
+  compatibility, and source-free frozen readback are verified. The inherited
+  missing-thread API test now receives `db_session`, skipping cleanly without
+  a safe database and passing against a disposable test database. Claude G
+  architecture/privacy review remains pending.
+  **DB-suite hygiene backlog (OPEN, non-gating, 2026-07-17):** Five inherited
+  DB-suite failures (golden-path seed, portfolio dashboard/summary, SnapTrade
+  normalization x2) - verified pre-Phase-36-T7 at `8c23391`; owner Codex D
+  verification-and-hygiene lane; goal: full disposable-DB suite returns to
+  zero failures.
   **External API runtime-guardrail backlog (OPEN, non-gating, 2026-07-16):**
   `docs/shared/EXTERNAL_API_LIMITS.md` records provider-documented limits,
   current app-owned budgets, and five enforcement gaps confirmed during the

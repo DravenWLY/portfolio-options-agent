@@ -1912,7 +1912,24 @@ exercise their own judgment within this frame.
   compatibility, and source-free frozen readback are verified. The inherited
   missing-thread API test now receives `db_session`, skipping cleanly without
   a safe database and passing against a disposable test database. Claude G
-  architecture/privacy review remains pending.
+  architecture/privacy review PASS (2026-07-17) on commit `2242a17`:
+  reviewed-tree-plus-F1 confirmed; offline suite restored to zero failures;
+  all gate confirmations carried over.
+  **P36-T7-J4E - synthetic readiness/generation acceptance loop: DONE
+  2026-07-17.** On an isolated disposable database, a synthetic
+  operating-company case prepared `ready`, generated with five terminal mock
+  roles, and reopened byte-stably. A synthetic ETF case prepared `not_ready`
+  and was refused before generation with the closed
+  `agent_team_generation_not_ready` contract and
+  `etf_evidence_contract_not_available`; its saved artifact was unchanged.
+  **Standing-case readiness probe: STOPPED 2026-07-17.** A fresh thread was
+  saved from the standing source and prepared once with the founder-approved
+  FMP and EDGAR lanes. It returned only the safe readiness state
+  `unknown` / `unresolved` / `not_ready` with
+  `instrument_kind_unresolved`; no LLM or report generation occurred. Per
+  the fork protocol, the live five-agent run requires a new founder decision:
+  save a review for a listed operating-company acceptance case, or investigate
+  the unresolved identity before any generation authorization.
   **DB-suite hygiene backlog (OPEN, non-gating, 2026-07-17):** Five inherited
   DB-suite failures (golden-path seed, portfolio dashboard/summary, SnapTrade
   normalization x2) - verified pre-Phase-36-T7 at `8c23391`; owner Codex D

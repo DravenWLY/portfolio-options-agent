@@ -141,6 +141,7 @@ CAVEAT_WARNING_DISPLAY_LABELS: dict[str, str] = {
     "freshness_inventory_not_available": "a role-visible freshness inventory was not available",
     "freshness_inventory_contains_unavailable_section": "some role-visible source sections were unavailable",
     "source_rights_not_approved": "the approved source snapshot was not attached to this saved report",
+    "source_subscription_required": "the configured source account does not include the required access",
     "public_market_context_unavailable": "public market context was unavailable",
     "public_news_context_unavailable": "public news context was unavailable",
     "public_news_snapshot_unavailable": "public news snapshot was unavailable",

@@ -20,13 +20,18 @@ from app.services.reports.source_snapshots import (
     FredMacroSeriesSourcePolicy,
     SourceSnapshotEndpointUnavailableError,
     SourceSnapshotRateLimitedError,
+    SourceSnapshotSubscriptionRequiredError,
     UtcDayRequestBudget,
     fmp_fundamentals_execution_context_for_client,
     fmp_fundamentals_policy_from_settings,
     fred_macro_series_execution_context_for_client,
     fred_macro_series_policy_from_settings,
 )
-from app.services.market_data.eod_history import MarketContextPolicy, market_context_execution_context_for_client
+from app.services.market_data.eod_history import (
+    FmpEodHistoryEndpointUnavailableError,
+    MarketContextPolicy,
+    market_context_execution_context_for_client,
+)
 from app.services.reports.public_evidence import (
     EdgarCompanyProfileHttpClient,
     EdgarCompanyProfileSourcePolicy,
@@ -193,6 +198,11 @@ class _ReplayFmpEodClient:
         )
 
 
+class _EndpointUnavailableFmpEodClient:
+    def fetch_eod_history(self, *, symbol: str, limit: int = 260):
+        raise FmpEodHistoryEndpointUnavailableError("provider endpoint unavailable")
+
+
 class _ReplayEdgarTransport:
     def __init__(self) -> None:
         self.calls = 0
@@ -311,6 +321,7 @@ def test_fmp_fundamentals_disabled_and_malformed_paths_fail_closed_without_sourc
     ("failure", "expected_code"),
     (
         (SourceSnapshotRateLimitedError("synthetic"), "source_rate_limited"),
+        (SourceSnapshotSubscriptionRequiredError("synthetic"), "source_subscription_required"),
         (SourceSnapshotEndpointUnavailableError("synthetic"), "source_endpoint_not_available"),
     ),
 )
@@ -426,6 +437,21 @@ def test_fmp_eod_history_freezes_one_normalized_window_per_saved_package() -> No
     restored = SavedPublicEvidencePackageRead.model_validate(frozen.model_dump(mode="json"))
     assert restored.public_market_context == section
     assert client.calls == [("XYZ", 260)]
+
+
+def test_fmp_eod_history_preserves_safe_endpoint_unavailable_caveat() -> None:
+    context = market_context_execution_context_for_client(
+        _EndpointUnavailableFmpEodClient(),
+        collected_at=NOW,
+    )
+    section = FmpEodHistorySnapshotProvider(
+        policy=MarketContextPolicy(mode="live"),
+        context=context,
+    ).section("XYZ")
+
+    assert section.availability == "not_available"
+    assert section.caveat_codes == ("source_endpoint_not_available",)
+    _assert_snapshot_is_safe(section.model_dump(mode="python"))
 
 
 def test_public_evidence_projection_attaches_eod_history_when_approved_policy_is_present() -> None:

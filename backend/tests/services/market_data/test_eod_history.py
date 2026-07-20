@@ -3,14 +3,18 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 import json
+from urllib.error import HTTPError
 from urllib.parse import parse_qsl, urlparse
 
 import pytest
 
 from app.services.market_data.eod_history import (
     FMP_EOD_HISTORY_URL,
+    FmpEodHistoryEndpointUnavailableError,
     FmpEodHistoryHttpClient,
     FmpEodHistoryError,
+    FmpEodHistoryRateLimitedError,
+    FmpEodHistorySubscriptionRequiredError,
     build_market_context_snapshot,
     market_context_execution_context_for_client,
     normalize_eod_history_rows,
@@ -179,6 +183,35 @@ def test_fmp_eod_http_client_rejects_unavailable_response_shape_safely() -> None
     assert "http" not in rendered_error
     assert "synthetic-test-key" not in rendered_error
     assert "unexpected" not in rendered_error
+
+
+@pytest.mark.parametrize(
+    ("status_code", "error_type", "caveat_code"),
+    (
+        (429, FmpEodHistoryRateLimitedError, "source_rate_limited"),
+        (402, FmpEodHistorySubscriptionRequiredError, "source_subscription_required"),
+        (403, FmpEodHistoryEndpointUnavailableError, "source_endpoint_not_available"),
+    ),
+)
+def test_fmp_eod_http_client_preserves_safe_http_failure_category(
+    status_code: int,
+    error_type: type[FmpEodHistoryError],
+    caveat_code: str,
+) -> None:
+    def _raise_http_error(_url: str) -> str:
+        raise HTTPError("https://example.invalid", status_code, "provider error", None, None)
+
+    client = FmpEodHistoryHttpClient(
+        api_key="synthetic-test-key",
+        fetch_text=_raise_http_error,
+    )
+
+    with pytest.raises(error_type) as exc_info:
+        client.fetch_eod_history(symbol="XYZ")
+
+    assert exc_info.value.caveat_code == caveat_code
+    assert "example.invalid" not in str(exc_info.value)
+    assert "synthetic-test-key" not in str(exc_info.value)
 
 
 def _linear_rows(count: int):

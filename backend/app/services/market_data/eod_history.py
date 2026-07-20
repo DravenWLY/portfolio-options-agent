@@ -16,6 +16,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import json
 import os
 from typing import Any, Mapping, Protocol, Sequence
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -34,6 +35,26 @@ DEFAULT_MARKET_CONTEXT_MODE = "off"
 
 class FmpEodHistoryError(RuntimeError):
     """Sanitized FMP EOD error that must not include URLs, keys, or payloads."""
+
+    caveat_code = FMP_EOD_UNAVAILABLE_CAVEAT_CODE
+
+
+class FmpEodHistoryRateLimitedError(FmpEodHistoryError):
+    """The approved FMP lane rejected a request because its quota was exhausted."""
+
+    caveat_code = "source_rate_limited"
+
+
+class FmpEodHistorySubscriptionRequiredError(FmpEodHistoryError):
+    """The configured FMP account does not include the approved EOD endpoint."""
+
+    caveat_code = "source_subscription_required"
+
+
+class FmpEodHistoryEndpointUnavailableError(FmpEodHistoryError):
+    """The approved FMP endpoint was unavailable for the configured account."""
+
+    caveat_code = "source_endpoint_not_available"
 
 
 class FmpEodHistoryClient(Protocol):
@@ -168,6 +189,18 @@ class FmpEodHistoryHttpClient:
         url = f"{self._endpoint_url}?{query}"
         try:
             payload = json.loads(self._fetch_text(url))
+        except HTTPError as exc:
+            if exc.code == 429:
+                raise FmpEodHistoryRateLimitedError("FMP EOD history rate limit was reached") from None
+            if exc.code == 402:
+                raise FmpEodHistorySubscriptionRequiredError(
+                    "FMP EOD history requires source access not included in the configured account"
+                ) from None
+            if exc.code in {403, 404}:
+                raise FmpEodHistoryEndpointUnavailableError(
+                    "FMP EOD history endpoint was unavailable"
+                ) from None
+            raise FmpEodHistoryError("FMP EOD history fetch failed") from None
         except Exception:
             raise FmpEodHistoryError("FMP EOD history fetch failed") from None
         return _extract_fmp_eod_rows(payload)

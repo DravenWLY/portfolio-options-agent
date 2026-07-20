@@ -75,6 +75,10 @@ class SourceSnapshotRateLimitedError(SourceSnapshotUnavailableError):
     caveat_code = "source_rate_limited"
 
 
+class SourceSnapshotSubscriptionRequiredError(SourceSnapshotUnavailableError):
+    caveat_code = "source_subscription_required"
+
+
 class SourceSnapshotEndpointUnavailableError(SourceSnapshotUnavailableError):
     caveat_code = "source_endpoint_not_available"
 
@@ -208,7 +212,11 @@ class FmpFundamentalsHttpClient:
         except HTTPError as exc:
             if exc.code == 429:
                 raise SourceSnapshotRateLimitedError("FMP reported-statement source rate limit was reached") from None
-            if exc.code in {402, 403, 404}:
+            if exc.code == 402:
+                raise SourceSnapshotSubscriptionRequiredError(
+                    "FMP reported-statement source requires access not included in the configured account"
+                ) from None
+            if exc.code in {403, 404}:
                 raise SourceSnapshotEndpointUnavailableError(
                     "FMP reported-statement endpoint was unavailable"
                 ) from None
@@ -289,10 +297,10 @@ class FmpEodHistorySnapshotProvider:
     def _fetch_and_normalize(self, symbol: str) -> SavedPublicEvidenceSectionRead:
         try:
             window = get_frozen_eod_history_window(symbol=symbol, context=self.context)
-        except FmpEodHistoryError:
+        except FmpEodHistoryError as exc:
             return _unavailable_eod_section(
                 "FMP end-of-day history was unavailable from the approved client.",
-                "fmp_eod_history_not_available",
+                exc.caveat_code,
             )
         return _normalize_eod_history_section(window)
 
@@ -864,6 +872,8 @@ def _plain_decimal(value: Decimal) -> str:
 def _unavailable_summary(source_name: str, caveat_code: str) -> str:
     if caveat_code == "source_rate_limited":
         return f"{source_name} is unavailable because the configured source request budget was exhausted."
+    if caveat_code == "source_subscription_required":
+        return f"{source_name} is unavailable because the configured source account does not include the required access."
     if caveat_code == "source_endpoint_not_available":
         return f"{source_name} is unavailable because the configured endpoint was not available."
     return f"{source_name} is unavailable from the approved client."

@@ -1922,6 +1922,27 @@ exercise their own judgment within this frame.
   and was refused before generation with the closed
   `agent_team_generation_not_ready` contract and
   `etf_evidence_contract_not_available`; its saved artifact was unchanged.
+  **P36-T7-J5A - NOW public-evidence source replacement investigation:
+  BLOCKED 2026-07-17 (Codex E research).** The configured FMP account returns
+  `402` for NOW EOD and all three statements. SEC Company Facts is a credible
+  primary-source fundamentals candidate only through a new EDGAR-XBRL contract;
+  Alpha Vantage free daily history is capped at 100 bars and Twelve Data Basic
+  is non-display, so neither is a rights-approved free-tier replacement for the
+  required frozen 260-bar technical evidence. No provider or implementation
+  change is authorized. Next: Codex B source-contract decision, then Claude G
+  architecture/privacy/source-retention review. Details:
+  `docs/codex-e-architecture/PHASE_36_NOW_PUBLIC_EVIDENCE_SOURCE_INVESTIGATION.md`.
+  **P36-T7-J5D - AAPL control-case preparation: DONE 2026-07-20.** A fresh
+  thread was saved from the founder-saved AAPL review and prepared once with
+  the approved FMP and EDGAR lanes. The metadata-only readiness response was
+  confirmed operating-company / `ready`, with EOD history, company profile,
+  recent-filings metadata, and statement fundamentals all available; no LLM or
+  Agent Team generation occurred, and the temporary stack was torn down.
+  Claude G J5D metadata safety review PASS (2026-07-17): AAPL prepared state
+  satisfies the operating-company gate; frozen reuse confirmed by committed
+  architecture; internal-evaluation scope affirmed; NOW remains open under
+  J5A; rider review of the error-taxonomy slice PASS; one live-generation
+  authorization request approved.
   **Standing-case readiness probe: STOPPED 2026-07-17.** A fresh thread was
   saved from the standing source and prepared once with the founder-approved
   FMP and EDGAR lanes. It returned only the safe readiness state

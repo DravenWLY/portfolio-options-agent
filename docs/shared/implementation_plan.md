@@ -2070,6 +2070,21 @@ exercise their own judgment within this frame.
   under the tuned prompts** — every K3E result is fake-provider prose shaped to
   the guidance; whether a real model follows it is exactly what the authorized
   run would establish.
+  **P36-T7-K4R launch preflight effective-lane display (2026-07-20): Claude G
+  review PASS, no required changes.** Documentation-only; the runbook preflight
+  now prints p36_effective_live_lanes (configured lane AND provider present
+  AND provider name not "mock"), mirroring tool_mediated_runner.py:1736 term
+  for term, alongside the unchanged configured flags and provider metadata.
+  Two-part stop rule added: any configured-but-not-effective lane is a hard
+  stop because that run would silently degrade to deterministic output; a
+  five-role validation additionally requires risk, public, and PM all
+  configured and effective, with a carve-out for a separately authorized
+  single-lane run. Reviewer verified the referenced attributes exist on
+  LLMProviderResolution, compile-checked the extracted snippet, and confirmed
+  no new external call or metadata exposure. Known snippet/runtime drift
+  recorded; the shared-helper-plus-parity-test fix is deferred to a
+  separately reviewed backend slice, where the parity test must assert a
+  shared function rather than equal sampled outputs.
   **Standing-case readiness probe: STOPPED 2026-07-17.** A fresh thread was
   saved from the standing source and prepared once with the founder-approved
   FMP and EDGAR lanes. It returned only the safe readiness state

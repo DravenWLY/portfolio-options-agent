@@ -51,7 +51,12 @@ paths remain unchanged.
    metadata output is the only permitted verification of its effect. Do not
    open, inspect, or print the environment file.
 3. Run the inert Compose check and preflight below. Stop on a failed or
-   unexpected result.
+   unexpected result. Every configured P36 lane must also be effective; a
+   configured-but-not-effective lane is a hard stop because that run would
+   silently fall back to deterministic output. For a five-role validation,
+   additionally require all three lanes to be both configured and effective.
+   This does not block a separately authorized single-lane run whose sole
+   configured lane is effective.
 4. Check ports before starting services. Do not stop an unknown listener.
 5. Build and start the local stack only after preflight passes.
 
@@ -105,6 +110,12 @@ from app.services.reports.agent_team_report import (
 )
 resolution = resolve_agent_team_report_provider_resolution()
 risk, public, pm = resolve_p36_live_lane_flags()
+provider_enables_live_lanes = resolution.provider is not None and resolution.provider_name != "mock"
+p36_effective_live_lanes = {
+    "risk": risk and provider_enables_live_lanes,
+    "public": public and provider_enables_live_lanes,
+    "pm": pm and provider_enables_live_lanes,
+}
 settings = get_settings()
 eod_policy, eod_context = report_routes._resolve_fmp_eod_history_generation_context()
 fundamentals_policy, fundamentals_context = report_routes._resolve_fmp_fundamentals_generation_context()
@@ -114,6 +125,7 @@ edgar_profile_policy, edgar_profile_client, edgar_filings_policy, edgar_filings_
 print({
     "report_generation_mode": resolve_backend_agent_team_report_generation_mode(),
     "p36_live_lanes": {"risk": risk, "public": public, "pm": pm},
+    "p36_effective_live_lanes": p36_effective_live_lanes,
     "provider": {
         "name": resolution.provider_name,
         "model": resolution.model,
@@ -142,6 +154,11 @@ This preflight may report only safe configuration metadata. It must not print
 environment values, keys, account data, symbols, prompts, report content, raw
 provider payloads, or request/response bodies. It does not call an LLM, market
 provider, EDGAR, broker, or report-generation route.
+
+`p36_effective_live_lanes` deliberately reimplements the runner's current
+provider-and-lane conjunction. It can drift if that runtime expression changes.
+The durable fix is a separate backend slice: export one shared helper for the
+runner and preflight, with a parity test, after Codex B and Claude G review.
 
 For a five-role acceptance run, all six `source_lane_resolution` booleans must
 be `true`. These booleans prove only that the reviewed clients are configured;

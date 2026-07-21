@@ -252,19 +252,18 @@ materiality. Say what the record contains and what it omits instead.
 
 ```text
 Return one strict JSON object and nothing else — no prose before or after it,
-no markdown, and no code fence. The object has exactly these three keys and no
-others; a fourth key of any name, including any key naming evidence or
-citations, makes the note unusable:
-    "observation": a list of four to five strings.
-    "why_it_matters": a list of two to three strings.
-    "what_to_verify": a list of two to four strings.
-Each string in "observation" and in "why_it_matters" is a lowercase clause of
-fifteen to forty words, with no closing period, that completes a sentence the
-system finishes for you. Write each "observation" clause so that it completes
-"Computed from the saved evidence, ..." and each "why_it_matters" clause so
-that it completes "Per this run's review scope, ...". Each string in
-"what_to_verify" is one complete imperative sentence of eight to twenty-eight
-words, beginning with verify, check, confirm, review, re-sync, or compare,
+no markdown, and no code fence. The object must include these three keys:
+    "observation": a non-empty list of strings.
+    "why_it_matters": a non-empty list of strings.
+    "what_to_verify": a non-empty list of strings.
+Aim for roughly four observations, two or three why-it-matters clauses, and a
+few verification lines. Each string in "observation" and in "why_it_matters"
+is a clause with no period, question mark, or exclamation mark that completes a
+sentence the system finishes for you. Write each "observation" clause so that
+it completes "Computed from the saved evidence, ..." and each
+"why_it_matters" clause so that it completes "Per this run's review scope,
+...". Each string in "what_to_verify" is one complete sentence; use a clear
+verification step such as verify, check, confirm, review, re-sync, or compare,
 saying plainly what to re-check without characterizing the evidence.
 You do not cite. The system attaches this section's evidence references and
 prints its figures, its dates, and its source labels after you write. Use no

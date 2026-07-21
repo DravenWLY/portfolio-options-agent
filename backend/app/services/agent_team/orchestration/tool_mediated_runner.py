@@ -100,12 +100,31 @@ from app.services.agent_team.auditing.analyst_note import (
     ANALYST_NOTE_NO_FACTS_FLAG,
     ANALYST_NOTE_STRUCTURE_FLAG,
     AnalystNote,
+    build_analyst_note_diagnostic,
     parse_analyst_note,
+    parse_analyst_note_diagnostic,
     validate_analyst_note,
+    validate_analyst_note_diagnostic,
 )
 from app.services.agent_team.orchestration.p36_risk_prompt import P36_RISK_SYSTEM_PROMPT
 from app.services.agent_team.orchestration.p36_public_prompts import P36_PUBLIC_SYSTEM_PROMPTS
 from app.services.agent_team.orchestration.p36_pm_prompt import P36_PM_SYSTEM_PROMPT
+
+_K3_RECOVERY_INSTRUCTIONS: dict[str, str] = {
+    "note_unparseable": "Return only one strict JSON object with the three required keys and no other text.",
+    "note_field_empty": "Each of the three keys must hold at least one entry. Return the complete object again.",
+    "note_clause_punctuation": "Write each observation and why-it-matters entry as a clause with no period, question mark, or exclamation mark inside it.",
+    "note_verify_form": "Write each verification entry as one single sentence.",
+    "no_facts_number": "Write no digits and no spelled quantities. The system supplies every figure.",
+    "no_facts_date": "Write no dates and no month, quarter, or fiscal-period names. The system supplies them.",
+    "no_facts_identity": "Do not name a company, symbol, exchange, agency, or data source. Refer to the reviewed symbol, the company, or the portfolio.",
+    "no_facts_internal_token": "Remove any link, path, code, or system field name.",
+    "no_facts_markup": "Write plain sentences with no markdown, list, or table syntax.",
+    "no_facts_vocabulary": "Rewrite without evaluative, forecasting, or recommending words.",
+    "advice_boundary": "Rewrite without evaluative, forecasting, or recommending words.",
+    "length_below_window": "Your note was too brief for this section. Write more fully in the same three fields.",
+    "length_above_window": "Your note was too long for this section. Write more briefly in the same three fields.",
+}
 
 LIVE_ROLE_SYSTEM_PROMPT_TEMPLATE = (
     "You are {role_display_name} on a read-only portfolio review team. A\n"
@@ -652,6 +671,7 @@ def _run_p36_risk_loop(
     provider_runs: list[ProviderRunMeta] = []
     consecutive_refusals = 0
     reserved_tokens = 0
+    recovery_instruction: str | None = None
     started_at = monotonic()
     provider_call_cap = min(P36_RISK_MAX_ITERATIONS, P36_LLM_CALLS_HARD_CAP)
     tool_request_cap = min(P36_RISK_MAX_TOOL_REQUESTS, P36_TOOL_REQUESTS_HARD_CAP)
@@ -666,7 +686,9 @@ def _run_p36_risk_loop(
                 evidence_refs=evidence_refs,
                 provider=provider,
                 iteration=iteration,
+                recovery_instruction=recovery_instruction,
             )
+            recovery_instruction = None
             reserved_tokens += request.max_tokens
             if reserved_tokens > P36_RISK_TOKEN_CEILING:
                 return _live_provider_fallback(deterministic, "safety_fallback"), tuple(loop_results), tuple(provider_runs)
@@ -674,33 +696,37 @@ def _run_p36_risk_loop(
             response_payload = _provider_response_payload(response)
             provider_runs.append(_provider_run_meta(response_payload, fallback_request=request))
             status = str(response_payload.get("status") or "failed")
-            if status != "ok" or response_payload.get("finish_reason") == "length":
+            if status != "ok":
                 return _live_provider_fallback(deterministic, "unavailable"), tuple(loop_results), tuple(provider_runs)
+            if response_payload.get("finish_reason") == "length":
+                return _k3_incomplete_response(deterministic), tuple(loop_results), tuple(provider_runs)
             content = str(response_payload.get("content_markdown") or "").strip()
-            parsed = _parse_p36_risk_response(content)
-            if parsed is None:
-                loop_results.append(
-                    blocked_tool_result(
-                        tool_name="calc_request_refused",
-                        role_name="risk_management_agent",
-                        evidence_tier="agent_safe",
-                    )
+            tool_requests, note, parse_failure = _parse_p36_analyst_response_with_failure(content)
+            if parse_failure is not None:
+                build_analyst_note_diagnostic(
+                    role_name=deterministic.role_name,
+                    attempt_index=iteration,
+                    outcome_code=parse_failure,
+                    sub_rule_id=parse_failure,
+                    note=None,
+                    composed_projected_words=None,
+                    window=None,
+                    provider_status=status,
+                    provider_finish_reason=response_payload.get("finish_reason"),
                 )
-                consecutive_refusals += 1
-                if consecutive_refusals >= 2:
-                    return _live_provider_fallback(
-                        deterministic,
-                        "safety_fallback",
-                        eval_flag="live_provider_validation_failed",
-                    ), tuple(loop_results), tuple(provider_runs)
-                continue
-            tool_requests, note = parsed
+                if iteration < provider_call_cap:
+                    recovery_instruction = _K3_RECOVERY_INSTRUCTIONS[parse_failure]
+                    continue
+                return _k3_note_withheld(deterministic, ANALYST_NOTE_STRUCTURE_FLAG), tuple(loop_results), tuple(provider_runs)
             if note is not None:
-                completed = _complete_k3_analyst_note(
+                completed, recovery_code = _complete_k3_analyst_note_with_outcome(
                     deterministic,
                     note,
                     role_results,
                 )
+                if recovery_code is not None and iteration < provider_call_cap:
+                    recovery_instruction = _K3_RECOVERY_INSTRUCTIONS[recovery_code]
+                    continue
                 return (
                     completed,
                     tuple(loop_results),
@@ -752,6 +778,7 @@ def _p36_risk_provider_request(
     evidence_refs: tuple[str, ...],
     provider: LLMProvider,
     iteration: int,
+    recovery_instruction: str | None = None,
 ) -> LLMProviderRequest:
     envelopes = tuple(_prompt_tool_result_envelope(result) for result in role_results)
     messages = (
@@ -772,6 +799,7 @@ def _p36_risk_provider_request(
                 }
             ),
         ),
+        *((LLMProviderMessage(role="user", content=recovery_instruction),) if recovery_instruction else ()),
     )
     return LLMProviderRequest(
         request_id=f"p36_risk_management_agent_iteration_{iteration}",
@@ -848,6 +876,7 @@ def _run_p36_public_role_loop(
     provider_runs: list[ProviderRunMeta] = []
     consecutive_refusals = 0
     reserved_tokens = 0
+    recovery_instruction: str | None = None
     started_at = monotonic()
     for iteration in range(1, P36_PUBLIC_MAX_PROVIDER_CALLS + 1):
         if monotonic() - started_at > P36_PUBLIC_WALL_CLOCK_SECONDS:
@@ -861,32 +890,47 @@ def _run_p36_public_role_loop(
                 evidence_refs=evidence_refs,
                 provider=provider,
                 iteration=iteration,
+                recovery_instruction=recovery_instruction,
             )
+            recovery_instruction = None
             reserved_tokens += request.max_tokens
             if reserved_tokens > P36_PUBLIC_TOKEN_CEILING:
                 return _live_provider_fallback(deterministic, "safety_fallback"), tuple(loop_results), tuple(provider_runs)
             response_payload = _provider_response_payload(provider.complete(request))
             provider_runs.append(_provider_run_meta(response_payload, fallback_request=request))
-            if str(response_payload.get("status") or "failed") != "ok" or response_payload.get("finish_reason") == "length":
+            status = str(response_payload.get("status") or "failed")
+            if status != "ok":
                 return _live_provider_fallback(deterministic, "unavailable"), tuple(loop_results), tuple(provider_runs)
-            parsed = _parse_p36_public_response(role_name, str(response_payload.get("content_markdown") or "").strip())
-            if parsed is None:
-                loop_results.append(blocked_tool_result(tool_name="calc_request_refused", role_name=role_name, evidence_tier="public"))
-                consecutive_refusals += 1
-                if consecutive_refusals >= 2:
-                    return _live_provider_fallback(
-                        deterministic,
-                        "safety_fallback",
-                        eval_flag="live_provider_validation_failed",
-                    ), tuple(loop_results), tuple(provider_runs)
-                continue
-            tool_requests, note = parsed
+            if response_payload.get("finish_reason") == "length":
+                return _k3_incomplete_response(deterministic), tuple(loop_results), tuple(provider_runs)
+            tool_requests, note, parse_failure = _parse_p36_analyst_response_with_failure(
+                str(response_payload.get("content_markdown") or "").strip()
+            )
+            if parse_failure is not None:
+                build_analyst_note_diagnostic(
+                    role_name=role_name,
+                    attempt_index=iteration,
+                    outcome_code=parse_failure,
+                    sub_rule_id=parse_failure,
+                    note=None,
+                    composed_projected_words=None,
+                    window=None,
+                    provider_status=status,
+                    provider_finish_reason=response_payload.get("finish_reason"),
+                )
+                if iteration < P36_PUBLIC_MAX_PROVIDER_CALLS:
+                    recovery_instruction = _K3_RECOVERY_INSTRUCTIONS[parse_failure]
+                    continue
+                return _k3_note_withheld(deterministic, ANALYST_NOTE_STRUCTURE_FLAG), tuple(loop_results), tuple(provider_runs)
             if note is not None:
-                completed = _complete_k3_analyst_note(
+                completed, recovery_code = _complete_k3_analyst_note_with_outcome(
                     deterministic,
                     note,
                     role_results,
                 )
+                if recovery_code is not None and iteration < P36_PUBLIC_MAX_PROVIDER_CALLS:
+                    recovery_instruction = _K3_RECOVERY_INSTRUCTIONS[recovery_code]
+                    continue
                 return (
                     completed,
                     tuple(loop_results),
@@ -941,6 +985,7 @@ def _p36_public_provider_request(
     evidence_refs: tuple[str, ...],
     provider: LLMProvider,
     iteration: int,
+    recovery_instruction: str | None = None,
 ) -> LLMProviderRequest:
     try:
         system_prompt = P36_PUBLIC_SYSTEM_PROMPTS[role_name]
@@ -965,6 +1010,7 @@ def _p36_public_provider_request(
                 }
             ),
         ),
+        *((LLMProviderMessage(role="user", content=recovery_instruction),) if recovery_instruction else ()),
     )
     return LLMProviderRequest(
         request_id=f"p36_{role_name}_iteration_{iteration}",
@@ -991,19 +1037,28 @@ def _parse_p36_public_response(
 def _parse_p36_analyst_response(content: str) -> tuple[tuple[dict[str, object], ...], AnalystNote | None] | None:
     """Parse one mediated calc request or the exact K3 AnalystNote shape."""
 
+    tool_requests, note, failure = _parse_p36_analyst_response_with_failure(content)
+    return None if failure is not None else (tool_requests, note)
+
+
+def _parse_p36_analyst_response_with_failure(
+    content: str,
+) -> tuple[tuple[dict[str, object], ...], AnalystNote | None, str | None]:
+    """Return either mediated requests, a parsed note, or a closed note failure."""
+
     if not content:
-        return None
+        return (), None, "note_unparseable"
     try:
         parsed = json.loads(content)
     except json.JSONDecodeError:
-        return None
+        return (), None, "note_unparseable"
     if isinstance(parsed, dict) and set(parsed) == {"tool_requests"}:
         requests = parsed.get("tool_requests")
         if isinstance(requests, list) and requests and all(isinstance(item, dict) for item in requests):
-            return tuple(requests), None
-        return None
-    note = parse_analyst_note(content)
-    return ((), note) if note is not None else None
+            return tuple(requests), None, None
+        return (), None, "note_unparseable"
+    parsed_note = parse_analyst_note_diagnostic(content)
+    return (), parsed_note.note, parsed_note.failure_code
 
 
 def _complete_k3_analyst_note(
@@ -1013,24 +1068,28 @@ def _complete_k3_analyst_note(
 ) -> RoleFindingSet:
     """Validate and compose one fact-free AnalystNote into the frozen section."""
 
-    supplied_labels = tuple(
-        str(row[field])
-        for result in role_results
-        for row in prompt_fact_labels_for_tool_result(result)
-        for field in ("fact_key", "value_label")
-        if isinstance(row.get(field), str)
-    )
-    flag = validate_analyst_note(
+    return _complete_k3_analyst_note_with_outcome(deterministic, note, role_results)[0]
+
+
+def _complete_k3_analyst_note_with_outcome(
+    deterministic: RoleFindingSet,
+    note: AnalystNote,
+    role_results: tuple[ToolResult, ...],
+) -> tuple[RoleFindingSet, str | None]:
+    """Complete a note or return its closed re-ask reason without exposing prose."""
+
+    flag, recovery_code = validate_analyst_note_diagnostic(
         note,
-        role_name=deterministic.role_name,
-        supplied_labels=supplied_labels,
         frozen_symbol=_k3_frozen_symbol(role_results),
     )
     if flag is not None:
-        return _k3_note_withheld(deterministic, flag)
+        return _k3_note_withheld(deterministic, flag), recovery_code
     markdown = _compose_k3_analyst_section(deterministic.role_name, note, role_results)
     if not _k3_composed_length_is_valid(deterministic.role_name, markdown):
-        return _k3_note_withheld(deterministic, ANALYST_NOTE_STRUCTURE_FLAG)
+        return _k3_note_withheld(deterministic, ANALYST_NOTE_STRUCTURE_FLAG), _k3_length_recovery_code(
+            deterministic.role_name,
+            markdown,
+        )
     flag = (
         validate_p36_risk_analysis_section(markdown=markdown, role_results=role_results)
         if deterministic.role_name == "risk_management_agent"
@@ -1041,7 +1100,7 @@ def _complete_k3_analyst_note(
         )
     )
     if flag is not None:
-        return _k3_note_withheld(deterministic, flag)
+        return _k3_note_withheld(deterministic, flag), None
     return RoleFindingSet(
         role_name=deterministic.role_name,
         role_status="completed",
@@ -1049,7 +1108,14 @@ def _complete_k3_analyst_note(
         warning_codes=tuple(dict.fromkeys((*deterministic.warning_codes, "live_provider_reasoning_used"))),
         live_report_markdown=markdown,
         analysis_status="accepted",
-    )
+    ), None
+
+
+def _k3_length_recovery_code(role_name: str, markdown: str) -> str:
+    prose = " ".join(line for line in markdown.splitlines() if not line.strip().startswith(("#", "|")))
+    count = len(re.findall(r"\b[\w'-]+\b", prose))
+    lower, upper = (125, 450) if role_name == "risk_management_agent" else P36_PUBLIC_WORD_BOUNDS[role_name]
+    return "length_below_window" if count < lower else "length_above_window"
 
 
 def _k3_note_withheld(deterministic: RoleFindingSet, flag: str) -> RoleFindingSet:
@@ -1098,7 +1164,7 @@ def _compose_k3_analyst_section(
             *(matters[1:]),
             P36_RISK_HEADINGS[4],
             verified,
-            *note.what_to_verify,
+            *tuple(f"Per the saved scope: {sentence}" for sentence in note.what_to_verify),
             *table,
         )
         return "\n\n".join(sections)
@@ -1136,7 +1202,14 @@ def _compose_k3_analyst_section(
     for index, heading in enumerate(headings):
         sections.append(heading)
         sections.extend(prose_groups[index] if index < len(prose_groups) else matters)
-    sections.extend(("##### What was verified", verified, *note.what_to_verify, *table))
+    sections.extend(
+        (
+            "##### What was verified",
+            verified,
+            *tuple(f"Per the saved scope: {sentence}" for sentence in note.what_to_verify),
+            *table,
+        )
+    )
     return "\n\n".join(sections)
 
 
@@ -1851,6 +1924,22 @@ def _live_provider_fallback(
             if status in {"unavailable", "provider_timeout", "provider_auth_error", "rate_limited", "quota_exceeded"}
             else "withheld_by_review"
         ),
+    )
+
+
+def _k3_incomplete_response(deterministic: RoleFindingSet) -> RoleFindingSet:
+    """Classify only a length-truncated K3 response as incomplete, never unavailable."""
+
+    warning_codes = tuple(
+        dict.fromkeys((*deterministic.warning_codes, "live_note_incomplete_response"))
+    )
+    return RoleFindingSet(
+        role_name=deterministic.role_name,
+        role_status="completed",
+        findings=deterministic.findings,
+        warning_codes=warning_codes,
+        unavailable_reason=None,
+        analysis_status="note_incomplete_response",
     )
 
 

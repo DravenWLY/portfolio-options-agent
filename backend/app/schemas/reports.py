@@ -528,7 +528,9 @@ class SavedAgentTeamRoleSummaryRead(BaseModel):
     provider_status: str
     summary_markdown: str | None = None
     live_report_markdown: str | None = None
-    analysis_status: Literal["accepted", "withheld_by_review", "provider_unavailable", "no_evidence"] | None = None
+    analysis_status: Literal[
+        "accepted", "withheld_by_review", "provider_unavailable", "note_incomplete_response", "no_evidence"
+    ] | None = None
     evidence_references: tuple[str, ...] = ()
     warning_codes: tuple[str, ...]
     unavailable_reason: str | None = None
@@ -643,7 +645,9 @@ class SavedToolMediatedRoleFindingSetRead(BaseModel):
     warning_codes: tuple[str, ...]
     unavailable_reason: str | None = None
     live_report_markdown: str | None = None
-    analysis_status: Literal["accepted", "withheld_by_review", "provider_unavailable", "no_evidence"] | None = None
+    analysis_status: Literal[
+        "accepted", "withheld_by_review", "provider_unavailable", "note_incomplete_response", "no_evidence"
+    ] | None = None
 
     @model_validator(mode="after")
     def role_finding_set_must_be_safe(self) -> "SavedToolMediatedRoleFindingSetRead":
@@ -1743,6 +1747,7 @@ def _agent_team_run_completeness(
 
 _LIVE_ANALYSIS_WITHHELD_LINE = "Live analysis was withheld by review safeguards."
 _LIVE_ANALYSIS_UNAVAILABLE_LINE = "Live analysis was unavailable for this saved report."
+_LIVE_ANALYSIS_INCOMPLETE_LINE = "Live analysis was incomplete for this saved report."
 _NO_FROZEN_ROLE_EVIDENCE_LINE = "Analysis was not available from the frozen evidence package."
 
 
@@ -1791,6 +1796,8 @@ def _role_analysis_availability_line(role: SavedAgentTeamRoleSummaryRead) -> str
         return _LIVE_ANALYSIS_WITHHELD_LINE
     if role.analysis_status == "provider_unavailable":
         return _LIVE_ANALYSIS_UNAVAILABLE_LINE
+    if role.analysis_status == "note_incomplete_response":
+        return _LIVE_ANALYSIS_INCOMPLETE_LINE
     if role.analysis_status == "no_evidence":
         return _NO_FROZEN_ROLE_EVIDENCE_LINE
     if role.role_status in {"gated", "validation_failed"}:

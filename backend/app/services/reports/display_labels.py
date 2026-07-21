@@ -117,6 +117,7 @@ CAVEAT_WARNING_DISPLAY_LABELS: dict[str, str] = {
     "live_provider_reasoning_used": "live provider reasoning was used",
     "live_provider_safety_fallback": "live provider output fell back to the deterministic floor",
     "live_provider_unavailable": "live provider was unavailable",
+    "live_note_incomplete_response": "live analysis was incomplete",
     "live_structure_contract_dropped": "live report structure was dropped",
     "market_data_manual_review_required": "market data requires manual review",
     "market_mood_snapshot_unavailable": "Market Mood snapshot was unavailable",

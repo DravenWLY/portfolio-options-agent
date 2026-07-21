@@ -198,3 +198,41 @@ pm_fallback_reason: Literal["unavailable", "gate_drop"] | None = None
 No other field, subsection, or projection behavior is expanded by K3. The
 binding rendering rule, cross-role separation rule, and privacy constraints of
 this contract remain in force unchanged.
+
+## Amendment — M2 truncation status (Codex B binding decision, M2-R1)
+
+Recorded by Claude E at Codex B's direction while resolving the P36-T7-M2
+design blockers. See
+`docs/claude-e-agentic/PHASE_36_T7_M2_ANALYST_CONSTRAINT_REMOVAL.md` §8.1.
+
+The L2 run classified a Fundamentals response as `provider_unavailable` while
+`provider_status` was `ok` — a **content** outcome reported as an
+**availability** outcome. M2 splits the two. The `analysis_status`
+enumeration above gains exactly one additive value:
+
+```python
+analysis_status: Literal[
+    "accepted", "withheld_by_review", "provider_unavailable",
+    "note_incomplete_response", "no_evidence"
+] | None = None
+```
+
+- `note_incomplete_response` is set **only** when the provider returned a
+  response whose finish reason is `length`. Every other outcome keeps its
+  current classification: transport failure, auth error, timeout, and
+  quota/rate-limit results remain `provider_unavailable`.
+- One additive closed warning code accompanies it:
+  `live_note_incomplete_response`.
+- The rendering table above gains exactly one row:
+
+| Condition | Visible analysis line |
+| --- | --- |
+| The live response arrived incomplete | `Live analysis was incomplete for this saved report.` |
+
+  The line follows the same rule as the others: an availability disclosure,
+  not an explanation, conclusion, or recommendation. It discloses no provider
+  detail, no internals, and no blame.
+- **Historical artifacts remain `analysis_status = None` with unchanged
+  behavior.** No migration, no backfill, no re-derivation.
+- No gate, threshold, source, provider, PM-prompt, or
+  no-facts/advice/privacy rule changes accompany this value.

@@ -2052,6 +2052,24 @@ exercise their own judgment within this frame.
   on Codex B review and Claude G final review both PASS). Its later active-lane
   label-audit stop is recorded above as P36-T7-K2C; that scoped contract now
   governs the required follow-up before K2B can resume.
+  **P36-T7-K3E offline gate-survival evaluation (2026-07-20): Claude E
+  gate/eval PASS; Claude G architecture/safety acknowledgment PASS.**
+  Test-only (zero diff across `backend/app` at `cfae75d`). Family A 32/32
+  guidance-compliant sections accepted at both role gate and document scan;
+  Family B 32/32 near-misses dropped at the exact expected flag (20
+  numeric-provenance / 4 attribution / 8 advice); document scan 12/12; Family
+  C 5/5 including the five-live coverage and branch-exclusivity canaries, K1R
+  projection both directions, byte-stable zero-rerun readback, and F3 locking
+  the T6 starved-package fail-closed shape. Reviewer independently reproduced
+  foundation 237, agent-team 645/2, full offline 1776/171/6; the previously
+  recorded "Agent Team + eval 700" was a mis-transcription and is corrected to
+  645. Required before any live run: preflight must print effective
+  (configured AND non-mock-provider) p36 lane flags, with all-three-true as a
+  stop condition. Live validation remains gated on a founder acceptance-case
+  decision and one-attempt authorization. **No live model has yet written
+  under the tuned prompts** — every K3E result is fake-provider prose shaped to
+  the guidance; whether a real model follows it is exactly what the authorized
+  run would establish.
   **Standing-case readiness probe: STOPPED 2026-07-17.** A fresh thread was
   saved from the standing source and prepared once with the founder-approved
   FMP and EDGAR lanes. It returned only the safe readiness state

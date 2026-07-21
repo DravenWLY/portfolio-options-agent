@@ -1483,6 +1483,251 @@ def test_p36_k2b_guidance_compliant_fixtures_survive_all_analyst_gates_and_fake_
     assert summary.tool_run_artifact is not None
 
 
+_K3E_ANALYST_ROLES = (
+    "risk_management_agent",
+    "technical_analyst",
+    "fundamentals_analyst",
+    "news_analyst",
+)
+
+
+def _k3e_role_results() -> dict[str, tuple[ToolResult, ...]]:
+    return {
+        "risk_management_agent": _p36_risk_gate_results(),
+        **_p36_public_role_results(),
+    }
+
+
+def _k3e_section(role_name: str) -> str:
+    return (
+        _p36_risk_section(include_values=True)
+        if role_name == "risk_management_agent"
+        else _p36_public_section(role_name)
+    )
+
+
+def _k3e_role_flag(
+    role_name: str,
+    markdown: str,
+    *,
+    role_results: dict[str, tuple[ToolResult, ...]],
+) -> str | None:
+    if role_name == "risk_management_agent":
+        return validate_p36_risk_analysis_section(
+            markdown=markdown,
+            role_results=role_results[role_name],
+        )
+    return validate_p36_public_analysis_section(
+        role_name=role_name,
+        markdown=markdown,
+        role_results=role_results[role_name],
+    )
+
+
+def _k3e_append(markdown: str, sentence: str) -> str:
+    """Keep variation prose outside headings and the required evidence table."""
+    marker = "\n\n##### What was verified"
+    before, after = markdown.split(marker, maxsplit=1)
+    return f"{before}\n\n{sentence}{marker}{after}"
+
+
+@pytest.mark.parametrize("role_name", _K3E_ANALYST_ROLES)
+@pytest.mark.parametrize(
+    "variation",
+    (
+        "Per this run's calculation, the saved record remains bounded by the frozen evidence package.",
+        "Computed from the saved snapshot, the dated inputs remain descriptive review context.",
+        "The saved freshness inventory identifies the dated context used in this section.",
+        "Per the saved scope, unavailable context remains a named gap rather than a replacement estimate.",
+        "The calculation labels remain tied to the reviewed package and its recorded dates.",
+        "Computed from the saved evidence, the section distinguishes reviewed context from current information.",
+        "The saved source labels remain the only basis for this uncertainty-qualified description.",
+        "Per this run's freshness inventory, the verified record remains limited to its frozen as-of context.",
+    ),
+)
+def test_p36_k3e_within_guidance_variations_survive_every_analyst_gate(
+    role_name: str,
+    variation: str,
+) -> None:
+    """Family A: eight ordinary prompt-following variations per analyst."""
+    results = _k3e_role_results()
+    markdown = _k3e_append(_k3e_section(role_name), variation)
+
+    assert _k3e_role_flag(role_name, markdown, role_results=results) is None
+    validate_agent_team_report_output(
+        {"final_synthesis_markdown": markdown, "evidence_references": ()},
+        label=f"p36 K3E accepted variation {role_name}",
+    )
+
+
+@pytest.mark.parametrize("role_name", _K3E_ANALYST_ROLES)
+@pytest.mark.parametrize(
+    ("variation", "expected_flag"),
+    (
+        ("Per this run's calculation, the frozen figure is 49.958.", NUMERIC_PROVENANCE_FLAG),
+        ("Computed from the saved evidence, the additional figure is 777.7.", NUMERIC_PROVENANCE_FLAG),
+        ("The 8-K record was included in this saved review.", NUMERIC_PROVENANCE_FLAG),
+        ("Form 10-Q metadata was included in this saved review.", NUMERIC_PROVENANCE_FLAG),
+        ("The saved snapshot is seven days old.", NUMERIC_PROVENANCE_FLAG),
+        ("The trend remains descriptive. Per the saved scope, the record is limited.", "attribution_required_blocked"),
+        ("This record is suitable for a long-term hold.", ADVICE_BOUNDARY_FLAG),
+        ("Consider trimming the position.", ADVICE_BOUNDARY_FLAG),
+    ),
+)
+def test_p36_k3e_near_miss_variations_drop_at_the_expected_role_gate(
+    role_name: str,
+    variation: str,
+    expected_flag: str,
+) -> None:
+    """Family B: one boundary violation at a time must fail closed."""
+    results = _k3e_role_results()
+    markdown = _k3e_append(_k3e_section(role_name), variation)
+
+    assert _k3e_role_flag(role_name, markdown, role_results=results) == expected_flag
+
+
+@pytest.mark.parametrize("role_name", _K3E_ANALYST_ROLES)
+@pytest.mark.parametrize("forbidden", ("annualized", "yield", "support"))
+def test_p36_k3e_document_scan_rejects_forbidden_words_after_role_acceptance(
+    role_name: str,
+    forbidden: str,
+) -> None:
+    """Family B's document-level boundary is intentionally after section gating."""
+    results = _k3e_role_results()
+    markdown = _k3e_append(
+        _k3e_section(role_name),
+        f"The saved record uses the word {forbidden} only for this scanner canary.",
+    )
+
+    assert _k3e_role_flag(role_name, markdown, role_results=results) is None
+    with pytest.raises(ValueError):
+        validate_agent_team_report_output(
+            {"final_synthesis_markdown": markdown, "evidence_references": ()},
+            label=f"p36 K3E document scan {role_name}",
+        )
+
+
+def test_p36_k3e_f1_five_role_dress_rehearsal_freezes_and_projects_without_rerun() -> None:
+    """Family C/F1: the offline twin of the enabled five-role run."""
+    from app.schemas.reports import _projected_final_synthesis_markdown, _render_frozen_role_section
+
+    provider = _P36GateSurvivalLoopProvider()
+    summary = build_tool_mediated_agent_team_summary(
+        _public_calculation_evidence(include_eod=True, include_statement_prior=True, include_macro_prior=True),
+        report_generated_at=datetime(2026, 7, 20, tzinfo=UTC),
+        llm_provider=provider,
+        p36_risk_live_enabled=True,
+        p36_public_live_enabled=True,
+        p36_pm_live_enabled=True,
+    )
+
+    roles = {item.role_name: item for item in summary.role_summaries}
+    assert all(roles[role_name].live_report_markdown for role_name in _K3E_ANALYST_ROLES)
+    assert summary.final_synthesis_authored_by == "portfolio_manager_agent"
+    assert summary.tool_run_artifact is not None
+    assert summary.tool_run_artifact.artifact_schema_version == "p36_tool_run_freeze_v1"
+    assert {item.role_name for item in summary.tool_run_artifact.provider_runs} == set(AGENT_TEAM_ROLES)
+    assert {item.prompt_version for item in summary.tool_run_artifact.provider_runs} <= {
+        "p36-role-analysis-v1",
+        "p36-pm-synthesis-v1",
+    }
+    assert "numeric_consistency_blocked" not in repr(summary)
+    assert "live_numeric_mismatch_dropped" not in repr(summary)
+
+    synthesis = summary.final_synthesis_markdown or ""
+    assert _projected_final_synthesis_markdown(summary) == synthesis
+    for role_name in _K3E_ANALYST_ROLES:
+        live_markdown = roles[role_name].live_report_markdown
+        assert live_markdown not in synthesis
+        analysis = _render_frozen_role_section(roles[role_name]).split(
+            "## Frozen debugging details", maxsplit=1
+        )[0]
+        assert live_markdown in analysis
+
+    calls_before_readback = len(provider.calls)
+    frozen = SavedToolMediatedRunArtifactRead.model_validate(summary.tool_run_artifact.model_dump(mode="json"))
+    assert frozen.model_dump(mode="json") == summary.tool_run_artifact.model_dump(mode="json")
+    assert len(provider.calls) == calls_before_readback
+
+
+@pytest.mark.parametrize("partial_lane", ("profile_only", "no_macro", "missing_technical_calc"))
+def test_p36_k3e_f2_partial_lanes_keep_honest_gap_variants_available(partial_lane: str) -> None:
+    """Family C/F2: partial frozen lanes do not fabricate a live fact."""
+    evidence = _public_calculation_evidence(include_eod=True)
+    assert evidence.public_evidence is not None
+    if partial_lane == "profile_only":
+        evidence = evidence.model_copy(
+            update={
+                "public_evidence": evidence.public_evidence.model_copy(
+                    update={
+                        "public_fundamentals_snapshot": evidence.public_evidence.public_fundamentals_snapshot.model_copy(
+                            update={"facts": (), "availability": "not_available"}
+                        )
+                    }
+                )
+            }
+        )
+    elif partial_lane == "no_macro":
+        evidence = evidence.model_copy(
+            update={
+                "public_evidence": evidence.public_evidence.model_copy(
+                    update={
+                        "fred_macro_series_snapshot": evidence.public_evidence.fred_macro_series_snapshot.model_copy(
+                            update={"facts": (), "availability": "not_available"}
+                        )
+                    }
+                )
+            }
+        )
+    provider = _P36GateSurvivalLoopProvider(
+        missing_technical_tool="C10" if partial_lane == "missing_technical_calc" else None
+    )
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 7, 20, tzinfo=UTC),
+        llm_provider=provider,
+        p36_risk_live_enabled=True,
+        p36_public_live_enabled=True,
+        p36_pm_live_enabled=True,
+    )
+
+    roles = {item.role_name: item for item in summary.role_summaries}
+    assert roles["technical_analyst"].live_report_markdown is not None
+    assert roles["fundamentals_analyst"].live_report_markdown is not None
+    assert roles["news_analyst"].live_report_markdown is not None
+    assert "##### What was reviewed" in roles["fundamentals_analyst"].live_report_markdown
+    assert "##### Macro backdrop" not in roles["news_analyst"].live_report_markdown
+    assert summary.tool_run_artifact is not None
+    if partial_lane == "missing_technical_calc":
+        assert "calc_moving_average_relationships" not in {
+            result.tool_name for result in summary.tool_run_artifact.tool_results
+        }
+
+
+def test_p36_k3e_f3_starved_package_drops_numbers_but_preserves_honest_absence() -> None:
+    """Family C/F3: the former thin-package failure shape remains fail-closed."""
+    provider = _P36StarvedPackageProvider()
+    summary = build_tool_mediated_agent_team_summary(
+        _public_calculation_evidence(include_eod=False),
+        report_generated_at=datetime(2026, 7, 20, tzinfo=UTC),
+        llm_provider=provider,
+        p36_risk_live_enabled=True,
+        p36_public_live_enabled=True,
+        p36_pm_live_enabled=True,
+    )
+
+    roles = {item.role_name: item for item in summary.role_summaries}
+    assert roles["risk_management_agent"].live_report_markdown is None
+    assert "numeric_provenance_blocked" in roles["risk_management_agent"].warning_codes
+    assert roles["technical_analyst"].live_report_markdown is None
+    assert "numeric_provenance_blocked" in roles["technical_analyst"].warning_codes
+    assert roles["fundamentals_analyst"].live_report_markdown is not None
+    assert roles["news_analyst"].live_report_markdown is not None
+    assert summary.final_synthesis_authored_by == "deterministic_template"
+    assert summary.tool_run_artifact is not None
+    assert summary.tool_run_artifact.pm_synthesis is None
+
+
 def test_p36_composed_document_does_not_embed_accepted_analyst_sections() -> None:
     from app.schemas.reports import _projected_final_synthesis_markdown, _render_frozen_role_section
 
@@ -2158,8 +2403,9 @@ class _P36GateSurvivalLoopProvider:
     provider_name = "p36-gate-survival-fake"
     model = "p36-gate-survival-model"
 
-    def __init__(self) -> None:
+    def __init__(self, *, missing_technical_tool: str | None = None) -> None:
         self.calls = []
+        self.missing_technical_tool = missing_technical_tool
 
     def complete(self, request):
         self.calls.append(request)
@@ -2174,6 +2420,8 @@ class _P36GateSurvivalLoopProvider:
                 "fundamentals_analyst": ("C11", "C12", "C15"),
                 "news_analyst": ("C13", "C14", "C15"),
             }[role_name]
+            if role_name == "technical_analyst" and self.missing_technical_tool is not None:
+                tool_ids = tuple(tool_id for tool_id in tool_ids if tool_id != self.missing_technical_tool)
             content = json.dumps({"tool_requests": [{"tool_id": tool_id, "args": {}} for tool_id in tool_ids]})
         elif role_name == "risk_management_agent":
             content = _p36_risk_section(include_values=True)
@@ -2326,7 +2574,9 @@ class _P36StarvedPackageProvider:
 
     def complete(self, request):
         self.calls.append(request)
-        if request.role_name == "technical_analyst":
+        if request.role_name == "risk_management_agent":
+            content = _p36_risk_section() + "\n\nThe unreviewed value is 999."
+        elif request.role_name == "technical_analyst":
             content = _p36_public_section("technical_analyst") + "\n\nThe frozen technical record includes 999."
         elif request.role_name in {"fundamentals_analyst", "news_analyst"}:
             content = _p36_public_section(request.role_name)

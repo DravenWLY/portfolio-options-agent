@@ -1943,6 +1943,95 @@ exercise their own judgment within this frame.
   architecture; internal-evaluation scope affirmed; NOW remains open under
   J5A; rider review of the error-taxonomy slice PASS; one live-generation
   authorization request approved.
+  **P36-T7 live five-agent run (2026-07-20): completed safely; founder
+  acceptance read: NOT accepted.** The one authorized generation used the
+  prepared AAPL package with frozen evidence and five completed live roles plus
+  a Portfolio-Manager-authored synthesis. The four analyst live sections were
+  gate-dropped at the claim level (per-role codes are retained only in the
+  private metadata archive); only the PM synthesis survived. No retry was made,
+  no new authorization was consumed, and teardown completed. This opens the
+  Phase 36 tuning work below; it does not weaken any gate or establish a
+  founder-accepted working report.
+  **P36-T7 F-DIR-1 - Per-agent section content separation (OPEN 2026-07-20):**
+  Codex B contract is proposed in
+  `docs/codex-b-architecture/PHASE_36_T7_AGENT_SECTION_CONTENT_CONTRACT.md`;
+  Codex C implements
+  it; Claude G reviews architecture/privacy. Each user-facing agent section
+  contains only that role's analysis. Backend-deterministic status, freshness,
+  scope, and tool facts move to a clearly labeled per-agent debugging subsection
+  for the current stage. When a role's live analysis is withheld, its section
+  renders one closed-vocabulary honest availability line, never a status wall.
+  The composer, Markdown projection, and later frontend rendering must share
+  this rule. This slice changes no gate, prompt, provider, source, or frozen
+  evidence behavior.
+  **P36-T7 F-DIR-2 - Analyst gate-survival tuning (OPEN 2026-07-20):** Claude E
+  owns offline prompt and evaluation design; Codex C implements approved prompt
+  changes; Claude G alone reviews any gate-threshold proposal. Tune prompts to
+  meet the existing gates, never the reverse: Fundamentals and News must use the
+  approved provenance-attached value form; Technical must use F-4.6 attribution
+  phrasing; Risk must maintain advice-boundary distance and satisfy the same
+  provenance and attribution constraints. The PM synthesis prompt is explicitly
+  out of scope because it passed. Iterate only with offline eval suites and mock
+  providers; one later live validation needs fresh founder authorization.
+  **P36-T7-K2B - analyst gate-survival implementation: BLOCKED 2026-07-20.**
+  Its mandatory synthetic active-lane label audit stopped on the existing
+  `annualized_volatility_percent` display path before any remediation. No
+  prompt, gate, validator, source, projection, or schema change was made.
+  `P36-T7-K2C` now owns the one-key display decision in
+  `docs/codex-b-architecture/PHASE_36_T7_VOLATILITY_DISPLAY_LABEL_CONTRACT.md`:
+  keep the approved technical calculation and map its sole user-visible label
+  to `Realized volatility (annual basis)`. Claude G reviews the contract before
+  Codex C implements; K2B resumes only after the full-document label-audit
+  canary passes.
+  **P36-T7-K2C volatility display-label contract review (2026-07-20): Claude G
+  PASS, no required changes.** Verified against code: the sole conflict source
+  is FACT_DISPLAY_LABELS["annualized_volatility_percent"] = "annualized
+  volatility" (display_labels.py:241); the replacement "Realized volatility
+  (annual basis)" passes every output scanner and cannot register as an
+  internal token; F-5 allowed-number sets derive from fact keys/value labels,
+  never display labels, so numeric provenance is unchanged; the
+  annualized-bearing method label is never projected (the runner substitutes
+  the generic label at tool_mediated_runner.py:1055); readback rendering stays
+  a pure dict lookup with zero fetch/recompute. Scope discipline affirmed: one
+  key, no scanner change, no broad exception, stop rule re-fires per key.
+  Deferred to the next reviewed section 3.1 wording revision: add `acceptable`
+  and a never-write rule for internal underscore-joined tokens; guard note
+  recorded that projecting specific method labels in the future requires a
+  fresh label audit. Codex C implements the mapping + focused tests, then K2B
+  resumes its label-audit canary; Codex B contract/readback review and Claude G
+  final K2B+K2C review follow together.
+  **P36-T7-K2B/K2C final review (2026-07-20): Claude G PASS.** Independently reproduced: full offline suite
+  1684/171/6; PM SHA-256 recomputed and matched (pin covers shared-core drift
+  because the PM render joins the frozen cores); protected modules
+  (auditing/, safety/, llm_clients/, schemas, p36_pm_prompt.py) zero-diff by
+  git; K2A-R2 byte-parity enforced by a doc-reading test; registration holds
+  exactly the four new rendered prompts; the one-key volatility label change
+  verified; active-lane label audit passes through the real
+  prompt_fact_labels_for_tool_result path; literal annualized/yield/support
+  prose remains document-fatal; guidance-compliant fixtures for all four
+  analysts survive their full gate stacks end-to-end with PM-authored
+  synthesis and frozen artifact. The F-5 long-date bigram and spelled-magnitude
+  canaries now pass with numeric-provenance blocking, completing the required
+  section 4.2 coverage. K2B/K2C is ready for its single local checkpoint;
+  no live validation was run.
+  **P36-T7-K2A-G static-prompt review (2026-07-20): PASS — K2B cleared.**
+  Claude E's K2A-R1 design (Codex B design review resolved) passed Claude G
+  static-prompt review with three required design edits, all applied in place
+  (now K2A-R2): precision-canary corrected to Decimal-equality semantics;
+  section 3.1 never-list extended with document-fatal vocabulary —
+  probability, odds, target, support, resistance, entry point, pivot,
+  breakout, breakdown, level(s) — with matching document-scan canary;
+  section 4.4 label-audit fixtures pinned to the real
+  prompt_fact_labels_for_tool_result path. Verified against code: cores
+  shared with PM (p36_pm_prompt.py:9,74-81) making the rendered-PM SHA-256
+  pin sufficient for direct and indirect drift; registration/exemption
+  exact-match chain (contracts.py:429-440,569-617; runner:747/949/1205);
+  the v1 version string confirmed as a pure v3 gate-family key
+  (v3_value_gates.py:408-424). No gate, schema, provider, PM, or live-run
+  change. Codex C was cleared to start P36-T7-K2B (offline only; commit gated
+  on Codex B review and Claude G final review both PASS). Its later active-lane
+  label-audit stop is recorded above as P36-T7-K2C; that scoped contract now
+  governs the required follow-up before K2B can resume.
   **Standing-case readiness probe: STOPPED 2026-07-17.** A fresh thread was
   saved from the standing source and prepared once with the founder-approved
   FMP and EDGAR lanes. It returned only the safe readiness state

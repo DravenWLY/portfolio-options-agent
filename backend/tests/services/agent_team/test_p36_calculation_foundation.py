@@ -1,5 +1,7 @@
 from datetime import UTC, date, datetime, timedelta
+from hashlib import sha256
 import json
+from pathlib import Path
 
 import pytest
 
@@ -24,6 +26,7 @@ from app.services.agent_team.auditing.v3_value_gates import (
     validate_v3_value_bearing_markdown,
     validate_p36_risk_analysis_section,
 )
+from app.services.agent_team.auditing.live_report_gates import prompt_fact_labels_for_tool_result
 from app.services.agent_team.auditing.p36_constants import P36_F6_VOCABULARY_ONLY_TOKENS
 from app.services.agent_team.orchestration.deterministic_standalone import (
     build_deterministic_standalone_summary_check,
@@ -32,8 +35,18 @@ from app.services.agent_team.orchestration.deterministic_standalone import (
 from app.services.agent_team.llm_clients.contracts import AGENT_TEAM_ROLES, LLMProviderResponse
 from app.services.agent_team.llm_clients.contracts import registered_static_system_prompts
 from app.services.agent_team.orchestration import tool_mediated_runner as runner
-from app.services.agent_team.orchestration.p36_public_prompts import P36_PUBLIC_SYSTEM_PROMPTS
+from app.services.agent_team.orchestration.p36_public_prompts import (
+    P36_PUBLIC_ROLE_BLOCKS,
+    P36_PUBLIC_SYSTEM_PROMPTS,
+    render_p36_public_system_prompt,
+)
 from app.services.agent_team.orchestration.p36_pm_prompt import P36_PM_SYSTEM_PROMPT
+from app.services.agent_team.orchestration.p36_risk_prompt import (
+    P36_ANALYST_GATE_DISCIPLINE,
+    P36_RISK_ROLE_BLOCK,
+    P36_RISK_SYSTEM_PROMPT,
+    render_p36_risk_system_prompt,
+)
 from app.services.agent_team.orchestration.tool_mediated_runner import (
     build_tool_mediated_agent_team_summary,
     run_tool_mediated_agent_team,
@@ -1298,6 +1311,178 @@ def test_p36_public_prompts_are_exact_reviewed_static_entries() -> None:
     assert "Your section stops at the dated record and its recency." in P36_PUBLIC_SYSTEM_PROMPTS["news_analyst"]
 
 
+def _k2a_r2_verbatim_block(heading: str) -> str:
+    design_path = (
+        Path(__file__).resolve().parents[4]
+        / "docs"
+        / "claude-e-agentic"
+        / "PHASE_36_T7_ANALYST_GATE_SURVIVAL_TUNING_DESIGN.md"
+    )
+    design = design_path.read_text(encoding="utf-8")
+    section = design.split(heading, 1)[1]
+    return section.split("```text\n", 1)[1].split("\n```", 1)[0]
+
+
+def test_p36_k2b_analyst_prompt_constants_match_the_reviewed_k2a_r2_document() -> None:
+    risk_delta = _k2a_r2_verbatim_block("### 3.4 Risk (all three families)")
+    fundamentals_delta = _k2a_r2_verbatim_block("Fundamentals:\n")
+    news_delta = _k2a_r2_verbatim_block("News:\n")
+    technical_delta = _k2a_r2_verbatim_block("### 3.3 Technical (F-4.6 survivor)")
+
+    assert P36_ANALYST_GATE_DISCIPLINE == _k2a_r2_verbatim_block(
+        "### 3.1 New shared constant — `P36_ANALYST_GATE_DISCIPLINE` (analysts only)"
+    )
+    assert risk_delta in P36_RISK_ROLE_BLOCK
+    assert fundamentals_delta in P36_PUBLIC_ROLE_BLOCKS["fundamentals_analyst"]
+    assert news_delta in P36_PUBLIC_ROLE_BLOCKS["news_analyst"]
+    assert technical_delta in P36_PUBLIC_ROLE_BLOCKS["technical_analyst"]
+    assert render_p36_risk_system_prompt().endswith(P36_ANALYST_GATE_DISCIPLINE)
+    assert all(
+        render_p36_public_system_prompt(role_name).endswith(P36_ANALYST_GATE_DISCIPLINE)
+        for role_name in P36_PUBLIC_SYSTEM_PROMPTS
+    )
+
+
+def test_p36_k2b_registration_is_exact_and_leaves_the_pm_prompt_byte_identical() -> None:
+    expected_pm_digest = "7869fb9216b1722160406bab0bbe4f55188011606a498bcc0ea777e91962b4a7"
+    analyst_prompts = frozenset((P36_RISK_SYSTEM_PROMPT, *P36_PUBLIC_SYSTEM_PROMPTS.values()))
+    superseded_prompts = frozenset(
+        prompt.removesuffix(f"\n\n{P36_ANALYST_GATE_DISCIPLINE}") for prompt in analyst_prompts
+    )
+
+    assert sha256(P36_PM_SYSTEM_PROMPT.encode()).hexdigest() == expected_pm_digest
+    assert P36_ANALYST_GATE_DISCIPLINE not in P36_PM_SYSTEM_PROMPT
+    assert P36_RISK_SYSTEM_PROMPT == render_p36_risk_system_prompt()
+    assert analyst_prompts.issubset(registered_static_system_prompts())
+    assert not superseded_prompts & registered_static_system_prompts()
+
+
+def test_p36_k2b_precision_canary_allows_decimal_equality_but_not_added_precision() -> None:
+    result = _calc_result(value_label="49.9")
+
+    assert validate_v3_value_bearing_markdown(
+        markdown="Per this run's calculation, the frozen result is 49.90.",
+        role_results=(result,),
+    ) is None
+    assert validate_v3_value_bearing_markdown(
+        markdown="Per this run's calculation, the frozen result is 49.958.",
+        role_results=(result,),
+    ) == NUMERIC_PROVENANCE_FLAG
+
+
+def test_p36_k2b_long_date_bigram_and_spelled_magnitude_fail_numeric_provenance() -> None:
+    result = _calc_result(value_label="49.9")
+
+    assert validate_v3_value_bearing_markdown(
+        markdown="The 8-K filing arrived per this run's calculation.",
+        role_results=(result,),
+    ) == NUMERIC_PROVENANCE_FLAG
+    assert validate_v3_value_bearing_markdown(
+        markdown="Form 10-Q metadata was reviewed per this run's calculation.",
+        role_results=(result,),
+    ) == NUMERIC_PROVENANCE_FLAG
+    assert validate_v3_value_bearing_markdown(
+        markdown="The snapshot is two days stale per this run's calculation.",
+        role_results=(result,),
+    ) == NUMERIC_PROVENANCE_FLAG
+
+
+@pytest.mark.parametrize("forbidden", ("annualized", "yield", "support"))
+def test_p36_k2b_document_scan_rejects_forbidden_prose_inside_an_accepted_section(forbidden: str) -> None:
+    with pytest.raises(ValueError):
+        validate_agent_team_report_output(
+            {
+                "final_synthesis_markdown": f"An accepted analyst section used {forbidden} in rendered prose.",
+                "evidence_references": (),
+            },
+            label="p36 K2B document scan",
+        )
+
+
+def test_p36_k2b_active_lane_prompt_labels_stay_safe_for_document_rendering() -> None:
+    evidence = _public_calculation_evidence(
+        include_eod=True,
+        include_statement_prior=True,
+        include_macro_prior=True,
+    )
+    public_state = run_tool_mediated_agent_team(
+        evidence,
+        registry=default_tool_registry(),
+        llm_provider=_P36PublicLoopProvider(),
+        p36_public_live_enabled=True,
+    )
+    risk_state = run_tool_mediated_agent_team(
+        evidence,
+        registry=default_tool_registry(),
+        llm_provider=_P36RiskLoopProvider(),
+        p36_risk_live_enabled=True,
+    )
+    fact_labels = tuple(
+        label
+        for result in (*public_state.tool_results, *risk_state.tool_results)
+        for label in prompt_fact_labels_for_tool_result(result)
+    )
+    display_labels = tuple(label["display_label"] for label in fact_labels)
+
+    assert display_labels
+    validate_agent_team_report_output(
+        {
+            "final_synthesis_markdown": "Reviewed prompt labels: " + "; ".join(display_labels),
+            "evidence_references": (),
+        },
+        label="p36 K2B active-lane label audit",
+    )
+
+
+def test_p36_k2c_volatility_prompt_projection_uses_the_approved_display_label() -> None:
+    result = execute_tool_request(
+        ToolRequest(tool_name="calc_volatility_stats", requesting_role="technical_analyst"),
+        evidence=_public_calculation_evidence(include_eod=True),
+        registry=default_tool_registry(),
+    )
+    projected = prompt_fact_labels_for_tool_result(result)
+    volatility_label = next(item for item in projected if item["fact_key"] == "annualized_volatility_percent")
+
+    assert volatility_label["display_label"] == "Realized volatility (annual basis)"
+    assert volatility_label["fact_key"] == "annualized_volatility_percent"
+
+
+def test_p36_k2b_guidance_compliant_fixtures_survive_all_analyst_gates_and_fake_loops() -> None:
+    evidence = _public_calculation_evidence(include_eod=True)
+    risk_results = _p36_risk_gate_results()
+    public_results = _p36_public_role_results()
+
+    assert validate_p36_risk_analysis_section(
+        markdown=_p36_risk_section(include_values=True),
+        role_results=risk_results,
+    ) is None
+    for role_name in P36_PUBLIC_SYSTEM_PROMPTS:
+        assert validate_p36_public_analysis_section(
+            role_name=role_name,
+            markdown=_p36_public_section(role_name),
+            role_results=public_results[role_name],
+        ) is None
+
+    provider = _P36GateSurvivalLoopProvider()
+    summary = build_tool_mediated_agent_team_summary(
+        evidence,
+        report_generated_at=datetime(2026, 7, 20, tzinfo=UTC),
+        llm_provider=provider,
+        p36_risk_live_enabled=True,
+        p36_public_live_enabled=True,
+        p36_pm_live_enabled=True,
+    )
+    live_sections = {
+        role.role_name: role.live_report_markdown
+        for role in summary.role_summaries
+        if role.role_name != "portfolio_manager_agent"
+    }
+
+    assert all(live_sections.values())
+    assert summary.final_synthesis_authored_by == "portfolio_manager_agent"
+    assert summary.tool_run_artifact is not None
+
+
 def test_p36_public_loops_are_sequential_and_freeze_without_pending_source_lanes() -> None:
     provider = _P36PublicLoopProvider()
     evidence = _public_calculation_evidence(include_eod=True, include_statement_prior=True, include_macro_prior=True)
@@ -1920,6 +2105,44 @@ class _P36PmWithRiskProvider:
         return LLMProviderResponse(
             request_id=request.request_id,
             role_name=request.role_name,
+            status="ok",
+            provider=self.provider_name,
+            model=self.model,
+            prompt_version=request.prompt_version,
+            content_markdown=content,
+            is_mock=True,
+            finish_reason="stop",
+        )
+
+
+class _P36GateSurvivalLoopProvider:
+    provider_name = "p36-gate-survival-fake"
+    model = "p36-gate-survival-model"
+
+    def __init__(self) -> None:
+        self.calls = []
+
+    def complete(self, request):
+        self.calls.append(request)
+        role_name = request.role_name
+        call_count = sum(item.role_name == role_name for item in self.calls)
+        if role_name == "portfolio_manager_agent":
+            content = json.dumps(_p36_pm_synthesis_payload())
+        elif call_count == 1:
+            tool_ids = {
+                "risk_management_agent": ("C1", "C2", "C3", "C15"),
+                "technical_analyst": ("C6", "C7", "C8", "C9", "C10", "C15"),
+                "fundamentals_analyst": ("C11", "C12", "C15"),
+                "news_analyst": ("C13", "C14", "C15"),
+            }[role_name]
+            content = json.dumps({"tool_requests": [{"tool_id": tool_id, "args": {}} for tool_id in tool_ids]})
+        elif role_name == "risk_management_agent":
+            content = _p36_risk_section(include_values=True)
+        else:
+            content = _p36_public_section(role_name)
+        return LLMProviderResponse(
+            request_id=request.request_id,
+            role_name=role_name,
             status="ok",
             provider=self.provider_name,
             model=self.model,

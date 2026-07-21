@@ -238,7 +238,7 @@ FACT_DISPLAY_LABELS: dict[str, str] = {
     "trade_delta_value": "trade value change",
     "position_count": "position count",
     "current_ratio": "current ratio",
-    "annualized_volatility_percent": "annualized volatility",
+    "annualized_volatility_percent": "Realized volatility (annual basis)",
     "drawdown_peak_date": "drawdown peak date",
     "drawdown_trough_date": "drawdown trough date",
     "macro_absolute_change": "macro absolute change",

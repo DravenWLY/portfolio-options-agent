@@ -6,7 +6,11 @@ from app.services.agent_team.llm_clients.contracts import (
     ReviewedStaticSystemPrompt,
     register_static_system_prompts,
 )
-from app.services.agent_team.orchestration.p36_risk_prompt import P36_CORE_A, P36_CORE_B
+from app.services.agent_team.orchestration.p36_risk_prompt import (
+    P36_ANALYST_GATE_DISCIPLINE,
+    P36_CORE_A,
+    P36_CORE_B,
+)
 
 
 # Claude E owns these verbatim blocks. Keep wording and line breaks aligned
@@ -40,6 +44,14 @@ with attribution as a description of saved data. Third, gaps: the one or two
 freshness or coverage caveats that most limit the very figures you reported,
 said in plain words.
 
+Treat attribution as a per-sentence rule, not a section-level one: every
+sentence that uses a state word — trend, drawdown, elevated, compressed,
+overbought, oversold, or their kin — must itself contain the phrase that
+names its basis, and the simplest reliable form is to name the calculation
+in that sentence. A sentence you cannot attribute is a sentence you do not
+write. Describe realized volatility only by the figure and window the
+volatility calculation returned, and never with the annualization word.
+
 Your section describes saved history and nothing past it. Two things are never
 yours to write: any sentence whose subject is future price — where it is
 headed, whether a move will continue, what happens next — and any specific
@@ -72,6 +84,13 @@ never judges the company and never judges the trade. You never estimate a
 number: whenever you need a margin, a leverage or liquidity ratio, or a change
 in a reported figure between two saved periods, you request the matching
 calculation and use only the value it returns.
+
+Every figure you write must be one the ratio, period-change, or freshness
+calculations returned to you in this run, restated at the same or fewer
+decimal places. When only the profile was reviewed, your section carries no
+figures at all beyond supplied dates — the missing statement record, named
+plainly, is the finding. Never describe a payout or income rate with the
+banned word for it; name the figure by its ratio calculation instead.
 
 Your evidence lanes are the saved company profile and, when it was reviewed for
 this report, the saved reported-statement facts with their fiscal periods and
@@ -128,6 +147,14 @@ time and says plainly what it is and how current it is. You never estimate a
 number: whenever you need the days between a filing or release date and the
 snapshot, or a change in a saved macro series, you request the matching
 calculation and use only the value it returns.
+
+Every figure you write is either a supplied date, a day count returned by
+the event-window calculation, or a macro-series change returned by the
+series calculation, kept in the same sentence as that series' exact name.
+Refer to filings as "the 8-K filing" or "form type 10-Q" — a lowercase word
+always sits directly before the number. Filing dates and form types come
+only from the supplied metadata, and a missing macro lane is named as a gap,
+never approximated.
 
 Your evidence lanes are the saved filing metadata — form types and dates, not
 filing contents — the saved economic-release calendar, and, when it was
@@ -207,7 +234,15 @@ def render_p36_public_system_prompt(role_name: str) -> str:
     except KeyError as exc:
         raise ValueError(f"unmapped p36 public analyst prompt: {role_name}") from exc
     role = role_definition(role_name)  # type: ignore[arg-type]
-    return "\n\n".join((P36_CORE_A.format(role_display_name=role.display_name), role_block, shape, P36_CORE_B))
+    return "\n\n".join(
+        (
+            P36_CORE_A.format(role_display_name=role.display_name),
+            role_block,
+            shape,
+            P36_CORE_B,
+            P36_ANALYST_GATE_DISCIPLINE,
+        )
+    )
 
 
 P36_PUBLIC_SYSTEM_PROMPTS: dict[str, str] = {

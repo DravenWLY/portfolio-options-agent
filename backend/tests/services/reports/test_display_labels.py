@@ -43,6 +43,7 @@ def test_display_label_map_covers_current_report_vocabularies() -> None:
         "a money market core position was treated as cash"
     )
     assert display_label_for_code("atr14_usd") == "ATR fourteen"
+    assert display_label_for_code("annualized_volatility_percent") == "Realized volatility (annual basis)"
     assert display_label_for_code("unknown_future_code") == "Unlabeled review detail."
 
 

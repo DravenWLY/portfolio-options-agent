@@ -2058,6 +2058,280 @@ def test_agent_team_report_read_projects_source_snapshot_without_current_state()
     assert "ctx_reportscope1" not in rendered
 
 
+def test_agent_team_report_read_separates_live_analysis_from_frozen_debugging_details() -> None:
+    live_analysis = "Live risk analysis is grounded in this saved report."
+    deterministic_summary = "Deterministic risk details remain frozen for this role."
+    artifact = _saved_review_artifact().model_copy(
+        update={
+            "agent_summary": SavedAgentTeamSummaryRead(
+                run_status="completed",
+                provider_mode="tool_mediated_live",
+                role_summaries=(
+                    SavedAgentTeamRoleSummaryRead(
+                        role_name="risk_management_agent",
+                        display_name="Risk Manager",
+                        role_status="completed",
+                        provider_status="ok",
+                        summary_markdown=deterministic_summary,
+                        live_report_markdown=live_analysis,
+                        evidence_references=("trade_intent_summary",),
+                        warning_codes=("live_provider_reasoning_used",),
+                    ),
+                ),
+                warning_codes=(),
+                report_status="full_agent_report",
+                final_synthesis_markdown="Saved Portfolio Manager synthesis.",
+                final_synthesis_authored_by="portfolio_manager_agent",
+                evidence_schema_version="p36_evidence_v1",
+                evidence_references=("trade_intent_summary",),
+            )
+        }
+    )
+
+    report = AgentTeamReportRead.from_saved_review_artifact(artifact)
+    section = report.role_sections[0].section_markdown
+
+    assert section is not None
+    analysis, debugging = section.split("## Frozen debugging details", maxsplit=1)
+    assert analysis.startswith("## Analysis\n\n")
+    assert live_analysis in analysis
+    assert deterministic_summary not in analysis
+    assert deterministic_summary in debugging
+    assert live_analysis not in debugging
+    assert "trade intent summary" in debugging
+    assert "live provider reasoning was used" in debugging
+
+
+@pytest.mark.parametrize("role_status", ("gated", "validation_failed"))
+def test_agent_team_report_read_never_projects_retained_live_prose_for_gated_roles(role_status: str) -> None:
+    retained_live_analysis = "Retained live text must not reach this read projection."
+    artifact = _saved_review_artifact().model_copy(
+        update={
+            "agent_summary": SavedAgentTeamSummaryRead(
+                run_status="partially_completed",
+                provider_mode="tool_mediated_live",
+                role_summaries=(
+                    SavedAgentTeamRoleSummaryRead(
+                        role_name="risk_management_agent",
+                        display_name="Risk Manager",
+                        role_status=role_status,  # type: ignore[arg-type]
+                        provider_status="safety_validation_failed",
+                        summary_markdown="Frozen deterministic risk details.",
+                        live_report_markdown=retained_live_analysis,
+                        warning_codes=(),
+                    ),
+                ),
+                warning_codes=(),
+                report_status="validation_failed",
+                evidence_schema_version="p36_evidence_v1",
+            )
+        }
+    )
+
+    section = AgentTeamReportRead.from_saved_review_artifact(artifact).role_sections[0].section_markdown
+
+    assert section is not None
+    analysis, debugging = section.split("## Frozen debugging details", maxsplit=1)
+    assert analysis == "## Analysis\n\nLive analysis was withheld by review safeguards.\n\n"
+    assert retained_live_analysis not in analysis
+    assert retained_live_analysis not in debugging
+
+
+@pytest.mark.parametrize(
+    ("role", "expected_line"),
+    (
+        (
+            SavedAgentTeamRoleSummaryRead(
+                role_name="risk_management_agent",
+                display_name="Risk Manager",
+                role_status="completed",
+                provider_status="ok",
+                summary_markdown="Frozen deterministic risk details.",
+                warning_codes=("numeric_provenance_blocked",),
+            ),
+            "Live analysis was withheld by review safeguards.",
+        ),
+        (
+            SavedAgentTeamRoleSummaryRead(
+                role_name="risk_management_agent",
+                display_name="Risk Manager",
+                role_status="completed",
+                provider_status="provider_unavailable",
+                summary_markdown="Frozen deterministic risk details.",
+                warning_codes=("live_provider_unavailable",),
+            ),
+            "Live analysis was unavailable for this saved report.",
+        ),
+        (
+            SavedAgentTeamRoleSummaryRead(
+                role_name="news_analyst",
+                display_name="News Analyst",
+                role_status="skipped",
+                provider_status="skipped",
+                summary_markdown=None,
+                warning_codes=("public_news_context_unavailable",),
+                unavailable_reason="public_news_context_unavailable",
+            ),
+            "Analysis was not available from the frozen evidence package.",
+        ),
+    ),
+)
+def test_agent_team_report_read_uses_exact_closed_analysis_availability_lines(
+    role: SavedAgentTeamRoleSummaryRead,
+    expected_line: str,
+) -> None:
+    artifact = _saved_review_artifact().model_copy(
+        update={
+            "agent_summary": SavedAgentTeamSummaryRead(
+                run_status="completed",
+                provider_mode="tool_mediated_live",
+                role_summaries=(role,),
+                warning_codes=(),
+                report_status="full_agent_report",
+                evidence_schema_version="p36_evidence_v1",
+            )
+        }
+    )
+
+    section = AgentTeamReportRead.from_saved_review_artifact(artifact).role_sections[0].section_markdown
+
+    assert section is not None
+    assert section.count(expected_line) == 1
+    assert section.split("## Frozen debugging details", maxsplit=1)[0] == f"## Analysis\n\n{expected_line}\n\n"
+    assert "numeric_provenance_blocked" not in section
+    assert "public_news_context_unavailable" not in section
+
+
+def test_agent_team_report_read_keeps_portfolio_manager_and_analyst_sections_separate() -> None:
+    analyst_analysis = "Technical analysis from the saved technical record."
+    manager_analysis = "Portfolio Manager synthesis from the saved evidence package."
+    artifact = _saved_review_artifact().model_copy(
+        update={
+            "agent_summary": SavedAgentTeamSummaryRead(
+                run_status="completed",
+                provider_mode="tool_mediated_live",
+                role_summaries=(
+                    SavedAgentTeamRoleSummaryRead(
+                        role_name="technical_analyst",
+                        display_name="Technical Analyst",
+                        role_status="completed",
+                        provider_status="ok",
+                        summary_markdown="Frozen technical details.",
+                        live_report_markdown=analyst_analysis,
+                        warning_codes=(),
+                    ),
+                    SavedAgentTeamRoleSummaryRead(
+                        role_name="portfolio_manager_agent",
+                        display_name="Portfolio Manager",
+                        role_status="completed",
+                        provider_status="ok",
+                        summary_markdown="Frozen Portfolio Manager details.",
+                        live_report_markdown=manager_analysis,
+                        warning_codes=(),
+                    ),
+                ),
+                warning_codes=(),
+                report_status="full_agent_report",
+                final_synthesis_markdown=analyst_analysis,
+                final_synthesis_authored_by="portfolio_manager_agent",
+                evidence_schema_version="p36_evidence_v1",
+            )
+        }
+    )
+
+    report = AgentTeamReportRead.from_saved_review_artifact(artifact)
+    by_role = {section.role_name: section.section_markdown or "" for section in report.role_sections}
+
+    assert analyst_analysis in by_role["technical_analyst"]
+    assert analyst_analysis not in by_role["portfolio_manager_agent"]
+    assert manager_analysis in by_role["portfolio_manager_agent"]
+    assert manager_analysis not in by_role["technical_analyst"]
+    assert report.final_synthesis is not None
+    assert report.final_synthesis.synthesis_markdown == analyst_analysis
+
+
+def test_agent_team_report_read_projection_is_frozen_and_byte_stable(monkeypatch: pytest.MonkeyPatch) -> None:
+    artifact = _saved_review_artifact().model_copy(
+        update={
+            "agent_summary": SavedAgentTeamSummaryRead(
+                run_status="completed",
+                provider_mode="tool_mediated_live",
+                role_summaries=(
+                    SavedAgentTeamRoleSummaryRead(
+                        role_name="risk_management_agent",
+                        display_name="Risk Manager",
+                        role_status="completed",
+                        provider_status="ok",
+                        summary_markdown="Frozen deterministic risk details.",
+                        warning_codes=(),
+                    ),
+                ),
+                warning_codes=(),
+                report_status="full_agent_report",
+                evidence_schema_version="p36_evidence_v1",
+            )
+        }
+    )
+
+    import app.services.agent_team.orchestration.tool_mediated_runner as runner
+    import app.services.reports.public_evidence as public_evidence
+
+    monkeypatch.setattr(runner, "build_tool_mediated_agent_team_summary", lambda *_args, **_kwargs: pytest.fail("readback reran provider"))
+    monkeypatch.setattr(public_evidence, "build_public_evidence_projection", lambda *_args, **_kwargs: pytest.fail("readback reran source"))
+
+    first = AgentTeamReportRead.from_saved_review_artifact(artifact)
+    second = AgentTeamReportRead.from_saved_review_artifact(artifact)
+
+    assert first.role_sections == second.role_sections
+    assert first.final_synthesis == second.final_synthesis
+
+
+def test_agent_team_report_read_preserves_historical_embedded_analyst_text_without_rerun(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    technical_note = "Technical analysis from this historical frozen report."
+    saved_document = f"# Historical saved report\n\n## Market context\n\n{technical_note}"
+    artifact = _saved_review_artifact().model_copy(
+        update={
+            "agent_summary": SavedAgentTeamSummaryRead(
+                run_status="completed",
+                provider_mode="tool_mediated_live",
+                role_summaries=(
+                    SavedAgentTeamRoleSummaryRead(
+                        role_name="technical_analyst",
+                        display_name="Technical Analyst",
+                        role_status="completed",
+                        provider_status="ok",
+                        summary_markdown="Frozen technical details.",
+                        live_report_markdown=technical_note,
+                        warning_codes=(),
+                    ),
+                ),
+                warning_codes=(),
+                report_status="full_agent_report",
+                final_synthesis_markdown=saved_document,
+                final_synthesis_authored_by="deterministic_template",
+                evidence_schema_version="p36_evidence_v1",
+            )
+        }
+    )
+
+    import app.services.agent_team.orchestration.tool_mediated_runner as runner
+    import app.services.reports.public_evidence as public_evidence
+
+    monkeypatch.setattr(runner, "build_tool_mediated_agent_team_summary", lambda *_args, **_kwargs: pytest.fail("readback reran provider"))
+    monkeypatch.setattr(public_evidence, "build_public_evidence_projection", lambda *_args, **_kwargs: pytest.fail("readback reran source"))
+
+    report = AgentTeamReportRead.from_saved_review_artifact(artifact)
+
+    assert report.final_synthesis is not None
+    assert report.final_synthesis.synthesis_markdown == saved_document
+    section = report.role_sections[0].section_markdown or ""
+    analysis, debugging = section.split("## Frozen debugging details", maxsplit=1)
+    assert technical_note in analysis
+    assert technical_note not in debugging
+
+
 def test_agent_team_report_read_source_snapshot_has_no_report_generated_at() -> None:
     artifact = _saved_review_artifact().model_copy(update={"agent_summary": None})
 

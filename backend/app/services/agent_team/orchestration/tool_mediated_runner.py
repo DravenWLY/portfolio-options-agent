@@ -2122,7 +2122,6 @@ def _summary_payload_from_run_state(
         run_state.open_questions,
         tool_results=run_state.tool_results,
         report_generated_at=report_generated_at,
-        live_provider_mode=run_state.provider_mode == LIVE_PROVIDER_MODE,
         pm_synthesis=run_state.pm_synthesis,
         pm_fallback_reason=run_state.pm_fallback_reason,
     )
@@ -2299,7 +2298,6 @@ def _synthesis_markdown(
     *,
     tool_results: tuple[ToolResult, ...],
     report_generated_at: datetime,
-    live_provider_mode: bool = False,
     pm_synthesis: PmSynthesis | None = None,
     pm_fallback_reason: str | None = None,
 ) -> str:
@@ -2311,11 +2309,6 @@ def _synthesis_markdown(
     verify_statement = groups.verify_statement if groups is not None else None
     title = _trade_review_title(evidence)
     headline = _summary_headline(proceed_statements, before_after)
-    technical_note_lines = _live_note_lines(
-        audited_findings,
-        "technical_analyst",
-        live_provider_mode=live_provider_mode,
-    )
     sections = (
         title,
         "",
@@ -2342,7 +2335,6 @@ def _synthesis_markdown(
         "",
         "## Market context",
         *_market_context_lines(tool_results),
-        *technical_note_lines,
         "",
         "## Risk and scope notes",
         *_risk_scope_lines(evidence, cited_refs=evidence_refs),
@@ -2603,29 +2595,6 @@ def _risk_scope_lines(
     if gaps:
         lines.append(f"Unavailable or not-reviewed context: {render_display_list(gaps)}.")
     return tuple(lines)
-
-
-def _live_note_for_role(audited_findings: tuple[RoleFindingSet, ...], role_name: str) -> str | None:
-    for finding_set in audited_findings:
-        if finding_set.role_name != role_name or not finding_set.live_report_markdown:
-            continue
-        return replace_internal_display_tokens(finding_set.live_report_markdown)
-    return None
-
-
-def _live_note_lines(
-    audited_findings: tuple[RoleFindingSet, ...],
-    role_name: str,
-    *,
-    live_provider_mode: bool,
-) -> tuple[str, ...]:
-    note = _live_note_for_role(audited_findings, role_name)
-    display_name = role_definition(role_name).display_name  # type: ignore[arg-type]
-    if note:
-        return (f"**{display_name}**", note)
-    if live_provider_mode:
-        return (f"No {display_name} note is available in this saved report.",)
-    return ()
 
 
 def _document_footer(evidence: SavedEvidencePackageRead) -> str:

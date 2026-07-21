@@ -1483,6 +1483,45 @@ def test_p36_k2b_guidance_compliant_fixtures_survive_all_analyst_gates_and_fake_
     assert summary.tool_run_artifact is not None
 
 
+def test_p36_composed_document_does_not_embed_accepted_analyst_sections() -> None:
+    from app.schemas.reports import _projected_final_synthesis_markdown, _render_frozen_role_section
+
+    provider = _P36GateSurvivalLoopProvider()
+    market_context = market_context_execution_context_for_client(
+        _FrozenOnlyEodClient(),
+        collected_at=datetime(2026, 7, 20, tzinfo=UTC),
+    )
+    summary = build_tool_mediated_agent_team_summary(
+        _public_calculation_evidence(include_eod=True),
+        report_generated_at=datetime(2026, 7, 20, tzinfo=UTC),
+        llm_provider=provider,
+        p36_risk_live_enabled=True,
+        p36_public_live_enabled=True,
+        p36_pm_live_enabled=True,
+        market_context=market_context,
+    )
+
+    synthesis = summary.final_synthesis_markdown or ""
+    analyst_sections = tuple(
+        role.live_report_markdown
+        for role in summary.role_summaries
+        if role.role_name != "portfolio_manager_agent"
+    )
+
+    assert all(section for section in analyst_sections)
+    assert all(section not in synthesis for section in analyst_sections)
+    assert "No Technical Analyst note is available in this saved report." not in synthesis
+    assert "| Indicator | Frozen value or category |" in synthesis
+    assert _projected_final_synthesis_markdown(summary) == synthesis
+    for role in summary.role_summaries:
+        if role.role_name == "portfolio_manager_agent":
+            continue
+        projected = _render_frozen_role_section(role)
+        analysis, debugging = projected.split("## Frozen debugging details", maxsplit=1)
+        assert role.live_report_markdown in analysis
+        assert role.live_report_markdown not in debugging
+
+
 def test_p36_public_loops_are_sequential_and_freeze_without_pending_source_lanes() -> None:
     provider = _P36PublicLoopProvider()
     evidence = _public_calculation_evidence(include_eod=True, include_statement_prior=True, include_macro_prior=True)

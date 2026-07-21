@@ -1672,7 +1672,7 @@ class AgentTeamReportRead(BaseModel):
                 display_name=role.display_name,
                 role_status=role.role_status,
                 provider_status=role.provider_status,
-                section_markdown=role.summary_markdown,
+                section_markdown=_render_frozen_role_section(role),
                 evidence_references=role.evidence_references,
                 warning_codes=role.warning_codes,
                 unavailable_reason=role.unavailable_reason,
@@ -1681,7 +1681,7 @@ class AgentTeamReportRead(BaseModel):
         )
         final_synthesis = (
             AgentTeamReportSynthesisRead(
-                synthesis_markdown=summary.final_synthesis_markdown,
+                synthesis_markdown=_projected_final_synthesis_markdown(summary),
                 authored_by=summary.final_synthesis_authored_by,
                 evidence_references=summary.evidence_references,
                 warning_codes=summary.warning_codes,
@@ -1736,6 +1736,73 @@ def _agent_team_run_completeness(
     if completed > 0:
         return "partial"
     return "none"
+
+
+_LIVE_ANALYSIS_WITHHELD_LINE = "Live analysis was withheld by review safeguards."
+_LIVE_ANALYSIS_UNAVAILABLE_LINE = "Live analysis was unavailable for this saved report."
+_NO_FROZEN_ROLE_EVIDENCE_LINE = "Analysis was not available from the frozen evidence package."
+
+
+def _render_frozen_role_section(role: SavedAgentTeamRoleSummaryRead) -> str:
+    """Project one frozen role into the read-only two-part report contract."""
+
+    from app.services.reports.display_labels import (
+        UNKNOWN_DISPLAY_LABEL,
+        display_label_for_code,
+        display_label_for_section,
+        display_labels_for_codes,
+        replace_internal_display_tokens,
+        render_display_list,
+    )
+
+    analysis = (
+        replace_internal_display_tokens(role.live_report_markdown)
+        if role.role_status == "completed"
+        else None
+    )
+    if not analysis:
+        analysis = _role_analysis_availability_line(role)
+
+    summary = replace_internal_display_tokens(role.summary_markdown)
+    details: list[str] = [summary or "No frozen deterministic details were available for this role."]
+    details.append(f"- Review status: {display_label_for_code(role.role_status)}")
+    details.append(f"- Provider status: {display_label_for_code(role.provider_status)}")
+    if role.evidence_references:
+        labels = tuple(display_label_for_section(reference) for reference in role.evidence_references)
+        details.append(f"- Evidence references: {render_display_list(labels)}")
+    if role.warning_codes:
+        labels = display_labels_for_codes(role.warning_codes).labels
+        details.append(f"- Review warnings: {render_display_list(labels)}")
+    if role.unavailable_reason:
+        label = display_label_for_code(role.unavailable_reason)
+        details.append(f"- Unavailable reason: {label if label != UNKNOWN_DISPLAY_LABEL else UNKNOWN_DISPLAY_LABEL}")
+
+    return "\n\n".join(("## Analysis\n\n" + analysis, "## Frozen debugging details\n\n" + "\n".join(details)))
+
+
+def _role_analysis_availability_line(role: SavedAgentTeamRoleSummaryRead) -> str:
+    if role.role_status in {"gated", "validation_failed"}:
+        return _LIVE_ANALYSIS_WITHHELD_LINE
+    if role.summary_markdown is None:
+        return _NO_FROZEN_ROLE_EVIDENCE_LINE
+    if any(_is_live_analysis_safeguard_code(code) for code in role.warning_codes):
+        return _LIVE_ANALYSIS_WITHHELD_LINE
+    return _LIVE_ANALYSIS_UNAVAILABLE_LINE
+
+
+def _is_live_analysis_safeguard_code(code: str) -> bool:
+    return code.endswith("_blocked") or (code.startswith("live_") and code.endswith("_dropped")) or code == "live_provider_safety_fallback"
+
+
+def _projected_final_synthesis_markdown(summary: SavedAgentTeamSummaryRead) -> str | None:
+    """Project the saved synthesis exactly, with display-token replacement only."""
+
+    synthesis = summary.final_synthesis_markdown
+    if not synthesis:
+        return None
+    from app.services.reports.display_labels import replace_internal_display_tokens
+
+    return replace_internal_display_tokens(synthesis)
 
 
 def _agent_team_report_headline(status: AgentTeamReportStatus) -> str | None:

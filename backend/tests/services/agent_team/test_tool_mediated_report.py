@@ -1286,7 +1286,7 @@ def test_p34a_t9b_live_overlay_preserves_all_deterministic_findings_and_adds_at_
             assert role_set.live_report_markdown is None
 
 
-def test_p36_t7_composer_keeps_risk_live_note_out_of_synthesis() -> None:
+def test_p36_t7_composer_keeps_all_analyst_live_notes_out_of_synthesis() -> None:
     provider = _FakeLiveProvider(
         content_by_role={
             "technical_analyst": _valid_live_report("technical_analyst"),
@@ -1304,16 +1304,17 @@ def test_p36_t7_composer_keeps_risk_live_note_out_of_synthesis() -> None:
     synthesis = summary.final_synthesis_markdown or ""
     assert "## Market context" in synthesis
     assert "## Risk and scope notes" in synthesis
-    assert _valid_live_report("technical_analyst") in synthesis
+    assert _valid_live_report("technical_analyst") not in synthesis
     assert _valid_live_report("risk_management_agent") not in synthesis
+    assert _role_summary(summary, "technical_analyst").live_report_markdown == _valid_live_report(
+        "technical_analyst"
+    )
     assert _role_summary(summary, "risk_management_agent").live_report_markdown == _valid_live_report(
         "risk_management_agent"
     )
     assert "Audited live role sections:" not in synthesis
     assert "###" not in synthesis
-    assert synthesis.index("Saved end-of-day market context was not available") < synthesis.index(
-        _valid_live_report("technical_analyst")
-    )
+    assert "Saved end-of-day market context was not available" in synthesis
 
 
 def test_p34a_t17_live_report_numeric_gate_allows_frozen_market_values() -> None:
@@ -1974,7 +1975,7 @@ def test_p35_t9_market_context_display_rows_use_reviewed_labels_and_dedupe_metad
     assert "| Omitted indicator |" in rendered
 
 
-def test_p36_t7_composer_keeps_risk_live_note_in_role_section_only() -> None:
+def test_p36_t7_composer_keeps_live_notes_out_of_synthesis() -> None:
     provider = _FakeLiveProvider()
     base_evidence = _evidence_package()
     evidence = base_evidence.model_copy(
@@ -1995,12 +1996,15 @@ def test_p36_t7_composer_keeps_risk_live_note_in_role_section_only() -> None:
     document = summary.final_synthesis_markdown or ""
     assert "reviews stock buy review" not in document
     assert "covers the saved stock buy" in document
-    assert "**Technical Analyst**" in document
+    assert "**Technical Analyst**" not in document
     assert "**Risk Manager**" not in document
+    assert _role_summary(summary, "technical_analyst").live_report_markdown is not None
+    assert _role_summary(summary, "technical_analyst").live_report_markdown not in document
     assert _role_summary(summary, "risk_management_agent").live_report_markdown is not None
+    assert _role_summary(summary, "risk_management_agent").live_report_markdown not in document
 
 
-def test_p35_t9_composer_names_missing_live_note_when_live_mode_ran() -> None:
+def test_p35_t9_composer_keeps_missing_live_note_message_out_of_synthesis() -> None:
     provider = _FakeLiveProvider(finish_reason_by_role={"technical_analyst": "length"})
 
     summary = build_tool_mediated_agent_team_summary(
@@ -2011,7 +2015,10 @@ def test_p35_t9_composer_names_missing_live_note_when_live_mode_ran() -> None:
     )
 
     document = summary.final_synthesis_markdown or ""
-    assert "No Technical Analyst note is available in this saved report." in document
+    technical_role = _role_summary(summary, "technical_analyst")
+    assert technical_role.live_report_markdown is None
+    assert "live_note_truncated_dropped" in technical_role.warning_codes
+    assert "No Technical Analyst note is available in this saved report." not in document
     assert "**Risk Manager**" not in document
 
 

@@ -1964,6 +1964,26 @@ exercise their own judgment within this frame.
   The composer, Markdown projection, and later frontend rendering must share
   this rule. This slice changes no gate, prompt, provider, source, or frozen
   evidence behavior.
+  **P36-T7-K1R contract review (2026-07-20): Claude G PASS with two required
+  edits, now applied in place** (availability row 2 extended to cover
+  no-live-attempted; whole-synthesis-document non-embedding rule added,
+  naming the Market context embed of the Technical note for removal with the
+  deterministic market-context table retained; non-embedding is a composition
+  invariant — historical frozen documents render exactly their saved content).
+  **P36-T7-K1R closed (2026-07-20): Claude G re-review PASS.** The composer no
+  longer embeds any analyst live text or absence-fallback line in the
+  synthesis document (deterministic market-context table retained; dead
+  live-note helpers deleted); frozen readback renders saved synthesis
+  byte-equal with provider/source tripwires proving zero rerun; each role
+  section renders two parts - verbatim accepted Analysis or one closed
+  availability line, plus humanized Frozen debugging details - covering
+  gated, validation-failed, retained-live-text-legacy, no-live-attempted,
+  and no-evidence states. Non-embedding is enforced as a composition
+  invariant by a five-role all-accepted canary whose read projection equals
+  the composed document. Reviewer independently reproduced 157 / 564 /
+  1695-171-6 and the historical-preservation behavior. F-DIR-1 backend
+  composition/projection is complete; the frontend two-part rendering
+  remains the deferred display-only slice.
   **P36-T7 F-DIR-2 - Analyst gate-survival tuning (OPEN 2026-07-20):** Claude E
   owns offline prompt and evaluation design; Codex C implements approved prompt
   changes; Claude G alone reviews any gate-threshold proposal. Tune prompts to

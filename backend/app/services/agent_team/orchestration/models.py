@@ -262,6 +262,7 @@ class RoleFindingSet:
     warning_codes: tuple[str, ...]
     unavailable_reason: str | None = None
     live_report_markdown: str | None = None
+    analysis_status: str | None = None
 
 
 @dataclass(frozen=True)

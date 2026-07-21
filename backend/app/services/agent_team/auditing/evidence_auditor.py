@@ -269,6 +269,7 @@ def audit_findings(
                 warning_codes=tuple(dict.fromkeys((*finding_set.warning_codes, *live_warning_codes, *flags))),
                 unavailable_reason=finding_set.unavailable_reason,
                 live_report_markdown=live_report_markdown,
+                analysis_status=finding_set.analysis_status,
             )
         )
     contradictions = _detect_contradictions(tuple(audited))

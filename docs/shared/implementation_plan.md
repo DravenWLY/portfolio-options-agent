@@ -1929,9 +1929,14 @@ exercise their own judgment within this frame.
   Alpha Vantage free daily history is capped at 100 bars and Twelve Data Basic
   is non-display, so neither is a rights-approved free-tier replacement for the
   required frozen 260-bar technical evidence. No provider or implementation
-  change is authorized. Next: Codex B source-contract decision, then Claude G
-  architecture/privacy/source-retention review. Details:
+  change is authorized. Details:
   `docs/codex-e-architecture/PHASE_36_NOW_PUBLIC_EVIDENCE_SOURCE_INVESTIGATION.md`.
+  **CLOSED 2026-07-21 by founder decision: the NOW case is skipped.** No FMP
+  plan upgrade and no SEC Company Facts EDGAR-XBRL contract will be pursued for
+  it. Symbols outside the configured FMP entitlement remain `not_ready` and are
+  excluded from acceptance runs; this is an honest source-entitlement limit,
+  not a defect, and no gate, source, or provider change follows from it. Reopen
+  only if the founder later chooses to fund or contract a replacement lane.
   **P36-T7-J5D - AAPL control-case preparation: DONE 2026-07-20.** A fresh
   thread was saved from the founder-saved AAPL review and prepared once with
   the approved FMP and EDGAR lanes. The metadata-only readiness response was

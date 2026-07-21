@@ -528,6 +528,7 @@ class SavedAgentTeamRoleSummaryRead(BaseModel):
     provider_status: str
     summary_markdown: str | None = None
     live_report_markdown: str | None = None
+    analysis_status: Literal["accepted", "withheld_by_review", "provider_unavailable", "no_evidence"] | None = None
     evidence_references: tuple[str, ...] = ()
     warning_codes: tuple[str, ...]
     unavailable_reason: str | None = None
@@ -642,6 +643,7 @@ class SavedToolMediatedRoleFindingSetRead(BaseModel):
     warning_codes: tuple[str, ...]
     unavailable_reason: str | None = None
     live_report_markdown: str | None = None
+    analysis_status: Literal["accepted", "withheld_by_review", "provider_unavailable", "no_evidence"] | None = None
 
     @model_validator(mode="after")
     def role_finding_set_must_be_safe(self) -> "SavedToolMediatedRoleFindingSetRead":
@@ -737,6 +739,7 @@ class SavedToolMediatedRunArtifactRead(BaseModel):
     auditor: SavedToolMediatedAuditorRead
     provider_runs: tuple[SavedToolMediatedProviderRunRead, ...] = ()
     pm_synthesis: SavedP36PmSynthesisRead | None = None
+    pm_fallback_reason: Literal["unavailable", "gate_drop"] | None = None
     open_questions: tuple[str, ...]
     synthesis_evidence_references: tuple[str, ...]
     warning_codes: tuple[str, ...]
@@ -1757,7 +1760,10 @@ def _render_frozen_role_section(role: SavedAgentTeamRoleSummaryRead) -> str:
 
     analysis = (
         replace_internal_display_tokens(role.live_report_markdown)
-        if role.role_status == "completed"
+        if (
+            role.analysis_status == "accepted"
+            or (role.analysis_status is None and role.role_status == "completed")
+        )
         else None
     )
     if not analysis:
@@ -1781,6 +1787,12 @@ def _render_frozen_role_section(role: SavedAgentTeamRoleSummaryRead) -> str:
 
 
 def _role_analysis_availability_line(role: SavedAgentTeamRoleSummaryRead) -> str:
+    if role.analysis_status == "withheld_by_review":
+        return _LIVE_ANALYSIS_WITHHELD_LINE
+    if role.analysis_status == "provider_unavailable":
+        return _LIVE_ANALYSIS_UNAVAILABLE_LINE
+    if role.analysis_status == "no_evidence":
+        return _NO_FROZEN_ROLE_EVIDENCE_LINE
     if role.role_status in {"gated", "validation_failed"}:
         return _LIVE_ANALYSIS_WITHHELD_LINE
     if role.summary_markdown is None:

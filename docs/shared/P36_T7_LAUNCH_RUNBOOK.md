@@ -2,9 +2,64 @@
 
 ## Purpose And Scope
 
-This runbook is for one explicitly authorized, local P36-T7 Agent Team report
-generation run. It layers the tracked launch overlay after the base Compose file
-and the dev-only live-LLM image overlay. It does not authorize a run by itself.
+This runbook is for a local P36-T7 Agent Team report generation run. It layers
+the tracked launch overlay after the base Compose file and the dev-only
+live-LLM image overlay.
+
+## Standing Run Authority (founder grant, 2026-07-21)
+
+The founder has granted Claude G and Codex B standing authority to create
+reviews, prepare evidence, and run live Agent Team report generation without a
+per-run authorization request. The grant covers operating the reviewed
+pipeline. It does not cover changing a gate, threshold, validator, prompt,
+source, provider, or schema; those keep their normal contract and review path.
+
+Standing terms:
+
+- One analytical attempt per target. Re-running after an infrastructure
+  failure (wrapper crash, container failure) is permitted and is not a second
+  attempt. A gate-driven drop is a result, not a reason to retry.
+- Every run archives to `reports/<run-folder>/` with full parity:
+  `run-metadata.json`, `agent-team-report.md`, and `agent-team-artifact.json`.
+- Every run tears down what it started and leaves pre-existing listeners alone.
+- Metadata review stays metadata-only. Report prose, account data, and `.env`
+  remain outside reviewer scope; the founder reads the report itself.
+
+### Run Archive Folder Naming
+
+`/reports/` is gitignored, so folder names may carry trade parameters. They
+must never be reproduced in tracked documents: plan records, contracts, and
+committed relays refer to a run by a neutral id such as `p36-t7-l2-run-1`.
+
+Order: UTC review-creation timestamp to the second, then symbol, then buy or
+sell, then instrument type, then option expiration and strike where they
+apply, then quantity, then price.
+
+- Stock: `20260721T050904Z-AAPL-buy-stock-10sh-324.00`
+- Option: `20260721T050904Z-AAPL-sell-option-20260815-C330-2ct-5.20`
+
+Timestamps are UTC with a trailing `Z`. Use hyphens only; no spaces, colons, or
+slashes. A multi-leg option strategy names the strategy and its primary leg;
+extend this convention by contract rather than improvising a new shape.
+
+**Naming metadata never comes from the frozen artifact.** Quantity and price
+are not recoverable from a saved artifact by design: `quantity` is a forbidden
+key and a digit-plus-`shares`/`contracts` span is a prohibited pattern in
+saved-review payloads (`app/schemas/reports.py:135,295`). The artifact layer
+rejects them rather than storing them. The run operator therefore takes the
+naming parameters from the founder's review request at run time and uses them
+only for the archive directory name. They must never be written into an
+artifact, a report payload, a tracked document, or a commit — the payload
+validator would reject them, and the tracked-document rule above forbids them
+independently.
+
+**Historical archives keep their neutral ids.** Archives created before this
+convention (`p36-t7-l1-run-1`, `p36-t7-j5d-run-1`,
+`p36-t7-j3-live-five-agent-1`, `p36-t6-2026-07-14`) cannot be converted,
+because the parameters were never retained anywhere. Do not rename them and do
+not reconstruct a name from partial data. Mock and smoke-test archives
+(`p36-t7-mock-run-1`, `p36-t7-mock-rehearsal-1`, `agent-team-test-results`)
+have no reviewed trade intent and stay outside this convention permanently.
 
 The overlay controls only these backend environment knobs:
 
@@ -166,6 +221,47 @@ they do not prove that a particular reviewed symbol is available from each
 source. A prior source-only compatibility check requires its own founder
 authorization because it calls external providers.
 
+## Target Resolution
+
+Resolve a saved-review target with one read-only, metadata-only query before a
+separately authorized generation. Do not use a report title, `report_type`,
+`status`, `agent_summary`, or `public_evidence` as the structural predicate:
+those fields are client-supplied, fixed at insertion, or may legitimately be
+present or absent before generation.
+
+Three distinct `symbol_or_underlying` fields exist in the schemas. For saved
+artifacts and saved-review sources, the canonical persisted symbol is the
+top-level deterministic-summary field:
+
+- `report_threads.saved_artifact_json -> 'deterministic_summary' ->> 'symbol_or_underlying'`
+- `saved_review_sources.deterministic_summary_json ->> 'symbol_or_underlying'`
+
+The nested `trade_intent.symbol_or_underlying` field belongs to the evidence
+package and is not a valid saved-artifact lookup path. A valid saved artifact
+has `saved_artifact_json` present and `source_kind=trade_review_workspace`.
+Use the presence of `agent_summary.tool_run_artifact` whose
+`artifact_schema_version` is `p36_tool_run_freeze_v1` as the generation marker;
+do not treat `agent_summary` presence alone as generation.
+
+The lookup may emit only: aggregate match count, saved-review-source match
+count, distinct user count, saved-artifact total count, distinct-symbol count,
+whether the newest match belongs to the prior run user, and for the newest
+unambiguous match only its UTC creation time, public-evidence-prepared boolean,
+generation boolean, provider mode, final-synthesis author, instrument kind,
+instrument-resolution status,
+`report_type_matches_saved_review_artifact`, and `status_matches_completed`.
+Never emit user, thread, artifact, account, or source identifiers, titles,
+symbols other than the supplied target, quantities, prices, evidence, or report
+content.
+
+Stop if multiple candidates share the newest creation timestamp, if the query
+errors, or if no target meets the reviewed predicate. Do not widen the query,
+prepare evidence, refresh a package, or generate a report. A target-resolution
+query never authorizes preparation or generation. Stop if the newest match
+already carries a frozen tool-run artifact. A generated artifact is never a
+valid target for a new run, because frozen evidence is never replaced in place;
+use the fresh-report-thread procedure below instead.
+
 ## Fresh Report Thread From A Saved Review Source
 
 Use this procedure only when the approved run requires a new frozen public-
@@ -259,6 +355,16 @@ After an authorized run, archive only operational metadata outside private
 artifacts: UTC start/end time, task/run label, git revision, image tag or digest,
 Compose file names, selected lane names, safe mode/status categories, exit code,
 and duration.
+
+The approved generation wrapper must capture these fields at call time, before
+any response reconstruction: `generation_started_at_utc` (UTC ISO timestamp),
+`elapsed_seconds` (numeric), `exit_code` (integer), and `http_status`
+(integer; use `0` only when no HTTP response was received). The metadata
+writer must never substitute nulls or diagnostic strings for those values.
+For a tool-mediated run, it also records the frozen artifact's
+`pm_fallback_reason` as one of `gate_drop`, `unavailable`, or null. This is
+safe categorical metadata only; it is not provider output or a diagnostic
+message.
 
 Task/run labels must be generic - a task id plus a sequence number - never
 symbols, account nicknames, or trade descriptions. Archive categorized error

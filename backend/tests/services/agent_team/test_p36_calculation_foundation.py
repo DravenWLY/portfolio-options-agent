@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime, timedelta
+from dataclasses import replace
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -27,6 +28,13 @@ from app.services.agent_team.auditing.v3_value_gates import (
     validate_p36_risk_analysis_section,
 )
 from app.services.agent_team.auditing.live_report_gates import prompt_fact_labels_for_tool_result
+from app.services.agent_team.auditing.analyst_note import (
+    ANALYST_NOTE_NO_FACTS_FLAG,
+    ANALYST_NOTE_STRUCTURE_FLAG,
+    AnalystNote,
+    parse_analyst_note,
+    validate_analyst_note,
+)
 from app.services.agent_team.auditing.p36_constants import P36_F6_VOCABULARY_ONLY_TOKENS
 from app.services.agent_team.orchestration.deterministic_standalone import (
     build_deterministic_standalone_summary_check,
@@ -35,7 +43,9 @@ from app.services.agent_team.orchestration.deterministic_standalone import (
 from app.services.agent_team.llm_clients.contracts import AGENT_TEAM_ROLES, LLMProviderResponse
 from app.services.agent_team.llm_clients.contracts import registered_static_system_prompts
 from app.services.agent_team.orchestration import tool_mediated_runner as runner
+from app.services.agent_team.orchestration.models import RoleFinding, RoleFindingSet
 from app.services.agent_team.orchestration.p36_public_prompts import (
+    P36_K3_PUBLIC_ROLE_BLOCKS,
     P36_PUBLIC_ROLE_BLOCKS,
     P36_PUBLIC_SYSTEM_PROMPTS,
     render_p36_public_system_prompt,
@@ -43,6 +53,9 @@ from app.services.agent_team.orchestration.p36_public_prompts import (
 from app.services.agent_team.orchestration.p36_pm_prompt import P36_PM_SYSTEM_PROMPT
 from app.services.agent_team.orchestration.p36_risk_prompt import (
     P36_ANALYST_GATE_DISCIPLINE,
+    P36_K3_ANALYST_CORE,
+    P36_K3_NOTE_SHAPE,
+    P36_K3_RISK_ROLE_BLOCK,
     P36_RISK_ROLE_BLOCK,
     P36_RISK_SYSTEM_PROMPT,
     render_p36_risk_system_prompt,
@@ -319,6 +332,17 @@ def _public_calculation_evidence(
         }
     )
     return evidence.model_copy(update={"public_evidence": public_evidence})
+
+
+def _public_calculation_evidence_for_symbol(symbol: str):
+    evidence = _public_calculation_evidence(include_eod=True)
+    return evidence.model_copy(
+        update={
+            "trade_intent_summary": evidence.trade_intent_summary.model_copy(
+                update={"symbol_or_underlying": symbol}
+            )
+        }
+    )
 
 
 def _calc_result(*, value_label: str = "1000000 dollars") -> ToolResult:
@@ -853,6 +877,7 @@ class _P36RiskLoopProvider:
         malformed: bool = False,
         excessive_requests: bool = False,
         execution_phrase: bool = False,
+        note_override: dict[str, list[str]] | None = None,
     ) -> None:
         self.calls = []
         self.invalid_requests = invalid_requests
@@ -863,11 +888,12 @@ class _P36RiskLoopProvider:
         self.malformed = malformed
         self.excessive_requests = excessive_requests
         self.execution_phrase = execution_phrase
+        self.note_override = note_override
 
     def complete(self, request):
         self.calls.append(request)
         if self.truncate:
-            content = _p36_risk_section()
+            content = json.dumps(_p36_k3_note())
         elif self.execution_phrase:
             content = "Please place an order."
         elif self.malformed:
@@ -893,9 +919,7 @@ class _P36RiskLoopProvider:
                 ']}'
             )
         else:
-            content = _p36_risk_section(include_values=self.include_values)
-            if self.mutated_numeric:
-                content = content.replace("60.0%", "60.1%")
+            content = json.dumps(self.note_override or _p36_k3_note(include_forbidden_digit=self.mutated_numeric))
         return LLMProviderResponse(
             request_id=request.request_id,
             role_name=request.role_name,
@@ -907,6 +931,45 @@ class _P36RiskLoopProvider:
             is_mock=True,
             finish_reason="length" if self.truncate else "stop",
         )
+
+
+def _p36_k3_note(
+    *,
+    include_forbidden_digit: bool = False,
+    role_marker: str | None = None,
+) -> dict[str, list[str]]:
+    """Synthetic K3 note: model-authored clauses carry no frozen facts."""
+
+    note = {
+        "observation": [
+            "the reviewed scope uses a frozen record and leaves later changes outside the evidence available for this report",
+            "the saved inputs describe only the reviewed context and do not establish changes beyond that fixed evidence boundary",
+            "the available record can combine inputs captured at different moments and therefore leaves timing differences visible to a reviewer",
+            "the underlying evidence names its coverage gaps plainly rather than filling absent context from outside this saved review",
+        ],
+        "why_it_matters": [
+            "the printed figures remain descriptive when the reviewed scope is incomplete or older inputs differ across the frozen context",
+            "the clearest limitation is the saved record boundary because it defines what the resulting section can and cannot establish",
+        ],
+        "what_to_verify": [
+            "Verify the saved inputs before relying on this section for the current review.",
+            "Compare the frozen evidence with the records available for the current review.",
+        ],
+    }
+    if include_forbidden_digit:
+        note["observation"][0] = f"{note['observation'][0]} 999"
+    if role_marker is not None:
+        note["observation"] = [
+            f"the {role_marker} record keeps the frozen evidence inside this review and leaves later context outside the saved boundary",
+            f"the {role_marker} context describes only the reviewed record and avoids filling gaps from information outside this saved package",
+            f"the {role_marker} inputs can reflect different capture moments and leave those timing limits visible within the frozen review",
+            f"the {role_marker} evidence names its coverage limits plainly rather than extending this saved record with outside context",
+        ]
+        note["why_it_matters"] = [
+            f"the {role_marker} limits keep this backend section descriptive when the saved context is incomplete or captured at different moments",
+            f"the {role_marker} boundary identifies what this frozen section can establish without replacing absent context from outside the review",
+        ]
+    return note
 
 
 def _p36_risk_section(*, include_values: bool = False) -> str:
@@ -954,7 +1017,9 @@ def test_p36_risk_loop_is_bounded_mediated_and_freezes_the_accepted_section() ->
     )
 
     risk = next(item for item in summary.role_summaries if item.role_name == "risk_management_agent")
-    assert risk.live_report_markdown == _p36_risk_section()
+    assert risk.analysis_status == "accepted"
+    assert risk.live_report_markdown is not None
+    assert risk.live_report_markdown.startswith("#### Risk and exposure analysis")
     assert len(provider.calls) == 2
 
 
@@ -968,9 +1033,9 @@ def test_p36_risk_loop_accepts_only_frozen_calculation_values_in_live_prose() ->
     )
 
     risk = next(item for item in summary.role_summaries if item.role_name == "risk_management_agent")
-    assert risk.live_report_markdown == _p36_risk_section(include_values=True)
-    assert "50.0% to 60.0%" in risk.live_report_markdown
-    assert "$100.00" in risk.live_report_markdown
+    assert risk.analysis_status == "accepted"
+    assert risk.live_report_markdown is not None
+    assert "Computed from the saved evidence" in risk.live_report_markdown
     assert {request.role_name for request in provider.calls} == {"risk_management_agent"}
     assert summary.tool_run_artifact is not None
     assert summary.tool_run_artifact.artifact_schema_version == "p36_tool_run_freeze_v1"
@@ -1072,9 +1137,9 @@ def test_p36_risk_loop_forces_the_floor_when_iteration_three_requests_again() ->
 
 
 def test_p36_risk_loop_drops_truncated_or_unproven_numeric_provider_output() -> None:
-    for provider in (
-        _P36RiskLoopProvider(truncate=True),
-        _P36RiskLoopProvider(include_values=True, mutated_numeric=True),
+    for provider, expected_status in (
+        (_P36RiskLoopProvider(truncate=True), "provider_unavailable"),
+        (_P36RiskLoopProvider(include_values=True, mutated_numeric=True), "withheld_by_review"),
     ):
         summary = build_tool_mediated_agent_team_summary(
             _public_calculation_evidence(include_eod=True),
@@ -1084,6 +1149,7 @@ def test_p36_risk_loop_drops_truncated_or_unproven_numeric_provider_output() -> 
         )
         risk = next(item for item in summary.role_summaries if item.role_name == "risk_management_agent")
         assert risk.live_report_markdown is None
+        assert risk.analysis_status == expected_status
         assert risk.summary_markdown
 
 
@@ -1288,7 +1354,7 @@ class _P36PublicLoopProvider:
             }[role_name]
             content = json.dumps({"tool_requests": [{"tool_id": tool_id, "args": {}} for tool_id in tool_ids]})
         else:
-            content = _p36_public_section(role_name)
+            content = json.dumps(_p36_k3_note())
         return LLMProviderResponse(
             request_id=request.request_id,
             role_name=role_name,
@@ -1307,8 +1373,8 @@ def test_p36_public_prompts_are_exact_reviewed_static_entries() -> None:
     assert set(P36_PUBLIC_SYSTEM_PROMPTS) == {"technical_analyst", "fundamentals_analyst", "news_analyst"}
     assert all(prompt in registered for prompt in P36_PUBLIC_SYSTEM_PROMPTS.values())
     assert "Your section describes saved history and nothing past it." in P36_PUBLIC_SYSTEM_PROMPTS["technical_analyst"]
-    assert "Your section stops at the reported past and its recency." in P36_PUBLIC_SYSTEM_PROMPTS["fundamentals_analyst"]
-    assert "Your section stops at the dated record and its recency." in P36_PUBLIC_SYSTEM_PROMPTS["news_analyst"]
+    assert "Your work is what that record covers" in P36_PUBLIC_SYSTEM_PROMPTS["fundamentals_analyst"]
+    assert "Your work is what kind of record exists" in P36_PUBLIC_SYSTEM_PROMPTS["news_analyst"]
 
 
 def _k2a_r2_verbatim_block(heading: str) -> str:
@@ -1321,6 +1387,224 @@ def _k2a_r2_verbatim_block(heading: str) -> str:
     design = design_path.read_text(encoding="utf-8")
     section = design.split(heading, 1)[1]
     return section.split("```text\n", 1)[1].split("\n```", 1)[0]
+
+
+def _k3b_r3_verbatim_block(heading: str) -> str:
+    design_path = (
+        Path(__file__).resolve().parents[4]
+        / "docs"
+        / "claude-e-agentic"
+        / "PHASE_36_T7_K3B_ANALYST_PROMPT_BLOCKS.md"
+    )
+    design = design_path.read_text(encoding="utf-8")
+    section = design.split(heading, 1)[1]
+    return section.split("```text\n", 1)[1].split("\n```", 1)[0]
+
+
+def test_p36_k3_prompts_match_the_live_r3_contract_and_replace_k2_assembly() -> None:
+    assert P36_K3_RISK_ROLE_BLOCK == _k3b_r3_verbatim_block("### 3.1 `risk_management_agent`")
+    assert P36_K3_PUBLIC_ROLE_BLOCKS["technical_analyst"] == _k3b_r3_verbatim_block("### 3.2 `technical_analyst`")
+    assert P36_K3_PUBLIC_ROLE_BLOCKS["fundamentals_analyst"] == _k3b_r3_verbatim_block("### 3.3 `fundamentals_analyst`")
+    assert P36_K3_PUBLIC_ROLE_BLOCKS["news_analyst"] == _k3b_r3_verbatim_block("### 3.4 `news_analyst`")
+    assert P36_K3_NOTE_SHAPE == _k3b_r3_verbatim_block("## 4. `P36_K3_NOTE_SHAPE`")
+    assert P36_K3_ANALYST_CORE == _k3b_r3_verbatim_block("## 5. `P36_K3_ANALYST_CORE`")
+    assert P36_ANALYST_GATE_DISCIPLINE not in P36_RISK_SYSTEM_PROMPT
+    assert all(P36_ANALYST_GATE_DISCIPLINE not in prompt for prompt in P36_PUBLIC_SYSTEM_PROMPTS.values())
+
+
+def test_p36_k3_analyst_note_contract_rejects_extra_keys_facts_and_whole_label_copies() -> None:
+    valid = _p36_k3_note()
+    note = parse_analyst_note(json.dumps(valid))
+    assert note is not None
+    assert validate_analyst_note(note, supplied_labels=("fresh", "market context")) is None
+
+    extra = dict(valid, extra="no")
+    assert parse_analyst_note(json.dumps(extra)) is None
+
+    copied = _p36_k3_note()
+    copied["observation"][0] = "the market context remains bounded by the frozen review scope and leaves later changes outside this saved evidence"
+    copied_note = parse_analyst_note(json.dumps(copied))
+    assert copied_note is not None
+    assert validate_analyst_note(copied_note, supplied_labels=("market context",)) == ANALYST_NOTE_NO_FACTS_FLAG
+
+    linked = _p36_k3_note()
+    linked["why_it_matters"][0] = "the frozen evidence remains bounded by the saved review scope and no external link may expand that record"
+    linked["what_to_verify"][0] = "Verify /private/frozen evidence before relying on this section for the current review."
+    linked_note = parse_analyst_note(json.dumps(linked))
+    assert linked_note is not None
+    assert validate_analyst_note(linked_note) == ANALYST_NOTE_NO_FACTS_FLAG
+
+    symbol = _p36_k3_note()
+    symbol["observation"][0] = "the aapl record remains bounded by the saved review scope and leaves later changes outside this frozen evidence package"
+    symbol_note = parse_analyst_note(json.dumps(symbol))
+    assert symbol_note is not None
+    assert validate_analyst_note(symbol_note) == ANALYST_NOTE_NO_FACTS_FLAG
+
+    reference = _p36_k3_note()
+    reference["why_it_matters"][0] = "the svrev_alpha record remains bounded by the saved review scope and leaves later changes outside this frozen evidence package"
+    reference_note = parse_analyst_note(json.dumps(reference))
+    assert reference_note is not None
+    assert validate_analyst_note(reference_note) == ANALYST_NOTE_NO_FACTS_FLAG
+
+    frozen_symbol = _p36_k3_note()
+    frozen_symbol["observation"][0] = "the xyz record remains bounded by the saved review scope and leaves later changes outside this frozen evidence package"
+    frozen_symbol_note = parse_analyst_note(json.dumps(frozen_symbol))
+    assert frozen_symbol_note is not None
+    assert validate_analyst_note(frozen_symbol_note, supplied_labels=("XYZ",)) == ANALYST_NOTE_NO_FACTS_FLAG
+
+    generic_reference = _p36_k3_note()
+    generic_reference["why_it_matters"][0] = "the agentrun_alpha record remains bounded by the saved review scope and leaves later changes outside this frozen evidence package"
+    generic_reference_note = parse_analyst_note(json.dumps(generic_reference))
+    assert generic_reference_note is not None
+    assert validate_analyst_note(generic_reference_note) == ANALYST_NOTE_NO_FACTS_FLAG
+
+    two_sentences = _p36_k3_note()
+    two_sentences["what_to_verify"][0] = "Verify the saved inputs before relying on this section. Compare another record before this review."
+    assert parse_analyst_note(json.dumps(two_sentences)) is None
+
+
+def _k3_clause(word_count: int) -> str:
+    return " ".join(("the", *(("reviewed",) * (word_count - 2)), "context"))
+
+
+def _k3_verification_sentence(word_count: int) -> str:
+    return " ".join(("Verify", *(("frozen",) * (word_count - 2)), "context."))
+
+
+def _k3_note_at_bounds(*, prose_words: int, verification_words: int) -> AnalystNote:
+    note = {
+        "observation": [_k3_clause(prose_words) for _ in range(4)],
+        "why_it_matters": [_k3_clause(prose_words) for _ in range(2)],
+        "what_to_verify": [_k3_verification_sentence(verification_words) for _ in range(2)],
+    }
+    parsed = parse_analyst_note(json.dumps(note))
+    assert parsed is not None
+    return parsed
+
+
+def _k3_deterministic_role(role_name: str) -> RoleFindingSet:
+    return RoleFindingSet(
+        role_name=role_name,
+        role_status="completed",
+        findings=(
+            RoleFinding(
+                finding_type="missing_context",
+                claim_text="Frozen review evidence is available.",
+                evidence_refs=("scope_state",),
+            ),
+        ),
+        warning_codes=(),
+    )
+
+
+def _k3_role_lane_variants() -> tuple[tuple[str, str, tuple[ToolResult, ...]], ...]:
+    public = _p36_public_role_results()
+    fundamentals_without_statements = tuple(
+        replace(result, availability="not_available") if result.tool_name == "calc_financial_ratios" else result
+        for result in public["fundamentals_analyst"]
+    )
+    news_without_macro = tuple(
+        replace(result, availability="not_available") if result.tool_name == "calc_macro_series_change" else result
+        for result in public["news_analyst"]
+    )
+    return (
+        ("risk_management_agent", "risk", _p36_risk_gate_results()),
+        ("technical_analyst", "eod_history", public["technical_analyst"]),
+        ("fundamentals_analyst", "reported_record", public["fundamentals_analyst"]),
+        ("fundamentals_analyst", "profile_only", fundamentals_without_statements),
+        ("news_analyst", "macro_available", public["news_analyst"]),
+        ("news_analyst", "macro_unavailable", news_without_macro),
+    )
+
+
+@pytest.mark.parametrize("bound", ("minimum", "maximum"))
+def test_p36_k3_role_scoped_note_bounds_persist_for_every_role_and_lane_variant(bound: str) -> None:
+    for role_name, _lane_variant, role_results in _k3_role_lane_variants():
+        maximum = 27 if role_name == "risk_management_agent" else 22
+        word_count = 15 if bound == "minimum" else maximum
+        verification_words = 8 if bound == "minimum" else maximum
+        note = _k3_note_at_bounds(prose_words=word_count, verification_words=verification_words)
+
+        assert validate_analyst_note(note, role_name=role_name) is None
+        completed = runner._complete_k3_analyst_note(_k3_deterministic_role(role_name), note, role_results)
+
+        assert completed.analysis_status == "accepted"
+        assert completed.live_report_markdown is not None
+        assert runner._k3_composed_length_is_valid(role_name, completed.live_report_markdown)
+
+
+@pytest.mark.parametrize(
+    ("role_name", "over_limit"),
+    (
+        ("risk_management_agent", 28),
+        ("technical_analyst", 23),
+        ("fundamentals_analyst", 23),
+        ("news_analyst", 23),
+    ),
+)
+def test_p36_k3_role_scoped_note_bounds_reject_every_item_above_its_role_maximum(
+    role_name: str,
+    over_limit: int,
+) -> None:
+    note = _k3_note_at_bounds(prose_words=over_limit, verification_words=over_limit)
+
+    assert validate_analyst_note(note, role_name=role_name) == ANALYST_NOTE_STRUCTURE_FLAG
+
+
+@pytest.mark.parametrize(
+    ("symbol", "expected_status", "expected_warning"),
+    (
+        ("XYZ", "withheld_by_review", ANALYST_NOTE_NO_FACTS_FLAG),
+        ("xyz", "accepted", None),
+    ),
+)
+def test_p36_k3_runtime_matches_frozen_trade_intent_symbol_case_sensitively(
+    symbol: str,
+    expected_status: str,
+    expected_warning: str | None,
+) -> None:
+    note = _p36_k3_note()
+    note["what_to_verify"][0] = f"Verify {symbol} evidence before relying on this section for the current review."
+    provider = _P36RiskLoopProvider(note_override=note)
+    summary = build_tool_mediated_agent_team_summary(
+        _public_calculation_evidence(include_eod=True),
+        report_generated_at=datetime(2026, 7, 20, tzinfo=UTC),
+        llm_provider=provider,
+        p36_risk_live_enabled=True,
+    )
+
+    risk = next(role for role in summary.role_summaries if role.role_name == "risk_management_agent")
+    assert risk.analysis_status == expected_status
+    assert (risk.live_report_markdown is None) is (expected_warning is not None)
+    if expected_warning is not None:
+        assert expected_warning in risk.warning_codes
+
+
+@pytest.mark.parametrize(
+    ("symbol", "verification_sentence"),
+    (
+        ("NOW", "Verify the frozen evidence now before relying on this section for the current review."),
+        ("ALL", "Verify all frozen evidence before relying on this section for the current review."),
+        ("A", "Verify a frozen record before relying on this section for the current review."),
+    ),
+)
+def test_p36_k3_runtime_keeps_common_word_frozen_symbols_without_injected_labels(
+    symbol: str,
+    verification_sentence: str,
+) -> None:
+    note = _p36_k3_note()
+    note["what_to_verify"][0] = verification_sentence
+    provider = _P36RiskLoopProvider(note_override=note)
+    state = run_tool_mediated_agent_team(
+        _public_calculation_evidence_for_symbol(symbol),
+        registry=default_tool_registry(),
+        llm_provider=provider,
+        p36_risk_live_enabled=True,
+    )
+
+    risk = next(role for role in state.audited_findings if role.role_name == "risk_management_agent")
+    assert risk.analysis_status == "accepted"
+    assert risk.live_report_markdown is not None
 
 
 def test_p36_k2b_analyst_prompt_constants_match_the_reviewed_k2a_r2_document() -> None:
@@ -1336,25 +1620,18 @@ def test_p36_k2b_analyst_prompt_constants_match_the_reviewed_k2a_r2_document() -
     assert fundamentals_delta in P36_PUBLIC_ROLE_BLOCKS["fundamentals_analyst"]
     assert news_delta in P36_PUBLIC_ROLE_BLOCKS["news_analyst"]
     assert technical_delta in P36_PUBLIC_ROLE_BLOCKS["technical_analyst"]
-    assert render_p36_risk_system_prompt().endswith(P36_ANALYST_GATE_DISCIPLINE)
-    assert all(
-        render_p36_public_system_prompt(role_name).endswith(P36_ANALYST_GATE_DISCIPLINE)
-        for role_name in P36_PUBLIC_SYSTEM_PROMPTS
-    )
+    assert P36_ANALYST_GATE_DISCIPLINE not in render_p36_risk_system_prompt()
+    assert all(P36_ANALYST_GATE_DISCIPLINE not in render_p36_public_system_prompt(role_name) for role_name in P36_PUBLIC_SYSTEM_PROMPTS)
 
 
 def test_p36_k2b_registration_is_exact_and_leaves_the_pm_prompt_byte_identical() -> None:
     expected_pm_digest = "7869fb9216b1722160406bab0bbe4f55188011606a498bcc0ea777e91962b4a7"
     analyst_prompts = frozenset((P36_RISK_SYSTEM_PROMPT, *P36_PUBLIC_SYSTEM_PROMPTS.values()))
-    superseded_prompts = frozenset(
-        prompt.removesuffix(f"\n\n{P36_ANALYST_GATE_DISCIPLINE}") for prompt in analyst_prompts
-    )
-
     assert sha256(P36_PM_SYSTEM_PROMPT.encode()).hexdigest() == expected_pm_digest
     assert P36_ANALYST_GATE_DISCIPLINE not in P36_PM_SYSTEM_PROMPT
     assert P36_RISK_SYSTEM_PROMPT == render_p36_risk_system_prompt()
     assert analyst_prompts.issubset(registered_static_system_prompts())
-    assert not superseded_prompts & registered_static_system_prompts()
+    assert all(P36_ANALYST_GATE_DISCIPLINE not in prompt for prompt in analyst_prompts)
 
 
 def test_p36_k2b_precision_canary_allows_decimal_equality_but_not_added_precision() -> None:
@@ -1622,10 +1899,14 @@ def test_p36_k3e_f1_five_role_dress_rehearsal_freezes_and_projects_without_rerun
     )
 
     roles = {item.role_name: item for item in summary.role_summaries}
-    assert all(roles[role_name].live_report_markdown for role_name in _K3E_ANALYST_ROLES)
+    accepted_sections = tuple(roles[role_name].live_report_markdown for role_name in _K3E_ANALYST_ROLES)
+    assert all(roles[role_name].analysis_status == "accepted" for role_name in _K3E_ANALYST_ROLES)
+    assert all(accepted_sections)
+    assert len(set(accepted_sections)) == len(_K3E_ANALYST_ROLES)
     assert summary.final_synthesis_authored_by == "portfolio_manager_agent"
     assert summary.tool_run_artifact is not None
     assert summary.tool_run_artifact.artifact_schema_version == "p36_tool_run_freeze_v1"
+    assert summary.tool_run_artifact.pm_fallback_reason is None
     assert {item.role_name for item in summary.tool_run_artifact.provider_runs} == set(AGENT_TEAM_ROLES)
     assert {item.prompt_version for item in summary.tool_run_artifact.provider_runs} <= {
         "p36-role-analysis-v1",
@@ -1633,6 +1914,19 @@ def test_p36_k3e_f1_five_role_dress_rehearsal_freezes_and_projects_without_rerun
     }
     assert "numeric_consistency_blocked" not in repr(summary)
     assert "live_numeric_mismatch_dropped" not in repr(summary)
+    prohibited_flags = {
+        "live_provider_safety_fallback",
+        "numeric_provenance_blocked",
+        "attribution_required_blocked",
+        "structure_contract_blocked",
+    }
+    all_warning_codes = {
+        code
+        for role in summary.role_summaries
+        for code in role.warning_codes
+    } | set(summary.warning_codes)
+    assert not prohibited_flags & all_warning_codes
+    assert not any(code.startswith("live_") and code.endswith("_dropped") for code in all_warning_codes)
 
     synthesis = summary.final_synthesis_markdown or ""
     assert _projected_final_synthesis_markdown(summary) == synthesis
@@ -1718,9 +2012,9 @@ def test_p36_k3e_f3_starved_package_drops_numbers_but_preserves_honest_absence()
 
     roles = {item.role_name: item for item in summary.role_summaries}
     assert roles["risk_management_agent"].live_report_markdown is None
-    assert "numeric_provenance_blocked" in roles["risk_management_agent"].warning_codes
+    assert "analyst_note_no_facts_blocked" in roles["risk_management_agent"].warning_codes
     assert roles["technical_analyst"].live_report_markdown is None
-    assert "numeric_provenance_blocked" in roles["technical_analyst"].warning_codes
+    assert "analyst_note_no_facts_blocked" in roles["technical_analyst"].warning_codes
     assert roles["fundamentals_analyst"].live_report_markdown is not None
     assert roles["news_analyst"].live_report_markdown is not None
     assert summary.final_synthesis_authored_by == "deterministic_template"
@@ -2318,7 +2612,7 @@ class _P36PmLoopProvider:
     def complete(self, request):
         self.calls.append(request)
         if request.role_name in {"technical_analyst", "fundamentals_analyst", "news_analyst"}:
-            content = _p36_public_section(request.role_name)
+            content = json.dumps(_p36_k3_note())
             return LLMProviderResponse(
                 request_id=request.request_id,
                 role_name=request.role_name,
@@ -2380,10 +2674,10 @@ class _P36PmWithRiskProvider:
                 '{"tool_id": "C15", "args": {}}'
                 ']}'
                 if self.risk_call_count == 1
-                else _p36_risk_section()
+                else json.dumps(_p36_k3_note())
             )
         elif request.role_name in {"technical_analyst", "fundamentals_analyst", "news_analyst"}:
-            content = _p36_public_section(request.role_name)
+            content = json.dumps(_p36_k3_note())
         else:
             content = json.dumps(_p36_pm_synthesis_payload())
         return LLMProviderResponse(
@@ -2424,9 +2718,17 @@ class _P36GateSurvivalLoopProvider:
                 tool_ids = tuple(tool_id for tool_id in tool_ids if tool_id != self.missing_technical_tool)
             content = json.dumps({"tool_requests": [{"tool_id": tool_id, "args": {}} for tool_id in tool_ids]})
         elif role_name == "risk_management_agent":
-            content = _p36_risk_section(include_values=True)
+            content = json.dumps(_p36_k3_note(role_marker="risk"))
         else:
-            content = _p36_public_section(role_name)
+            content = json.dumps(
+                _p36_k3_note(
+                    role_marker={
+                        "technical_analyst": "technical",
+                        "fundamentals_analyst": "company",
+                        "news_analyst": "events",
+                    }[role_name]
+                )
+            )
         return LLMProviderResponse(
             request_id=request.request_id,
             role_name=role_name,
@@ -2487,7 +2789,7 @@ def test_p36_pm_receives_accepted_risk_section_with_only_vocabulary_relaxed() ->
     pm_request = provider.calls[-1]
     assert pm_request.role_name == "portfolio_manager_agent"
     assert pm_request.messages[1].content_kind == "p36_pm_accepted_sections"
-    assert "cash calculation" in pm_request.messages[1].content
+    assert "Computed from the saved evidence" in pm_request.messages[1].content
     assert [request.role_name for request in provider.calls] == [
         "fundamentals_analyst",
         "news_analyst",
@@ -2575,11 +2877,11 @@ class _P36StarvedPackageProvider:
     def complete(self, request):
         self.calls.append(request)
         if request.role_name == "risk_management_agent":
-            content = _p36_risk_section() + "\n\nThe unreviewed value is 999."
+            content = json.dumps(_p36_k3_note(include_forbidden_digit=True))
         elif request.role_name == "technical_analyst":
-            content = _p36_public_section("technical_analyst") + "\n\nThe frozen technical record includes 999."
+            content = json.dumps(_p36_k3_note(include_forbidden_digit=True))
         elif request.role_name in {"fundamentals_analyst", "news_analyst"}:
-            content = _p36_public_section(request.role_name)
+            content = json.dumps(_p36_k3_note())
         else:
             payload = _p36_pm_synthesis_payload()
             payload["trust_assessment"] = f"{payload['trust_assessment']} The unreviewed value is 999."
@@ -2608,11 +2910,11 @@ def test_p36_starved_package_drops_unproven_digits_but_keeps_honest_public_gaps(
 
     roles = {role.role_name: role for role in summary.role_summaries}
     assert roles["technical_analyst"].live_report_markdown is None
-    assert "numeric_provenance_blocked" in roles["technical_analyst"].warning_codes
+    assert "analyst_note_no_facts_blocked" in roles["technical_analyst"].warning_codes
     assert roles["fundamentals_analyst"].live_report_markdown is not None
     assert roles["news_analyst"].live_report_markdown is not None
-    assert "could not be verified" in roles["fundamentals_analyst"].live_report_markdown
-    assert "not reviewed" in roles["news_analyst"].live_report_markdown
+    assert "named gap" in roles["fundamentals_analyst"].live_report_markdown
+    assert "##### Filing and release record" in roles["news_analyst"].live_report_markdown
     assert summary.final_synthesis_authored_by == "deterministic_template"
     assert summary.tool_run_artifact is not None
     assert summary.tool_run_artifact.pm_synthesis is None
@@ -2645,3 +2947,4 @@ def test_p36_pm_loop_drops_the_whole_block_to_the_deterministic_floor(
     assert expected_line in (summary.final_synthesis_markdown or "")
     assert summary.tool_run_artifact is not None
     assert summary.tool_run_artifact.pm_synthesis is None
+    assert summary.tool_run_artifact.pm_fallback_reason == ("gate_drop" if unsafe_pm else "unavailable")

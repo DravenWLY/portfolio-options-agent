@@ -153,3 +153,48 @@ the smallest additive read-contract proposal for Codex B and Claude G review.
 - No prompt tuning, provider change, source expansion, or live run.
 - No frontend implementation in this slice.
 - No second live validation without fresh founder authorization.
+
+## Amendment — K3 additive status field (Codex B binding decision, K3A-R1)
+
+Recorded by Claude E at Codex B's direction while resolving the P36-T7-K3A
+design blockers. See
+`docs/claude-e-agentic/PHASE_36_T7_K3A_ANALYST_OUTPUT_SURVIVAL_DESIGN.md` §5.
+
+K3 authorizes **exactly two** additive fields and no other expansion:
+
+```python
+analysis_status: Literal[
+    "accepted", "withheld_by_review", "provider_unavailable", "no_evidence"
+] | None = None
+```
+
+- It is added to the frozen source model and to the read projection.
+- It is **nullable with default `None`**. It must not default to
+  `no_evidence`: a pre-K3 artifact never had this state evaluated, and
+  stamping one would retroactively assert a status that was never determined.
+- **Historical artifacts carrying `None` retain the existing K1-compatible
+  projection behavior exactly** — the two-part rendering rule above is
+  unchanged for them. No migration and no backfill.
+- Every newly generated K3 role writes a non-null value, asserted by test.
+- `analysis_status == "accepted"` becomes the sole signal that a role's
+  `Analysis` may render composed live analysis for a K3 run; any other
+  non-null value renders exactly one approved availability line from the table
+  above. A completed provider request is explicitly not sufficient.
+
+K3 also authorizes this metadata-only frozen tool-run artifact field:
+
+```python
+pm_fallback_reason: Literal["unavailable", "gate_drop"] | None = None
+```
+
+- It has a closed vocabulary and defaults to `None` for successful synthesis
+  and legacy artifacts.
+- It records only the deterministic PM fallback category after the P36-T7-L1
+  regression; it does not expose provider content, prompts, calculations, or
+  new report facts.
+- It is rendered solely through one of the two approved static PM fallback
+  disclosure lines, never as free-form metadata or new user-visible prose.
+
+No other field, subsection, or projection behavior is expanded by K3. The
+binding rendering rule, cross-role separation rule, and privacy constraints of
+this contract remain in force unchanged.

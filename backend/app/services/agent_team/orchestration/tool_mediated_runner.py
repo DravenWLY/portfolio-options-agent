@@ -87,9 +87,21 @@ from app.services.agent_team.auditing.live_report_gates import (
 from app.services.agent_team.auditing.v3_value_gates import (
     P36_ARTIFACT_SCHEMA_VERSION,
     P36_PM_PROMPT_VERSION,
+    P36_PUBLIC_WORD_BOUNDS,
     P36_ROLE_PROMPT_VERSION,
+    P36_RISK_HEADINGS,
+    P36_RISK_TABLE_HEADER,
     pm_calculation_matches_surfaced_values,
+    validate_p36_public_analysis_section,
+    validate_p36_risk_analysis_section,
     validate_p36_pm_synthesis,
+)
+from app.services.agent_team.auditing.analyst_note import (
+    ANALYST_NOTE_NO_FACTS_FLAG,
+    ANALYST_NOTE_STRUCTURE_FLAG,
+    AnalystNote,
+    parse_analyst_note,
+    validate_analyst_note,
 )
 from app.services.agent_team.orchestration.p36_risk_prompt import P36_RISK_SYSTEM_PROMPT
 from app.services.agent_team.orchestration.p36_public_prompts import P36_PUBLIC_SYSTEM_PROMPTS
@@ -631,10 +643,10 @@ def _run_p36_risk_loop(
     """Run the bounded, backend-mediated P36 Risk loop without tool bindings."""
 
     if deterministic.role_status == "skipped" or not deterministic.findings:
-        return deterministic, (), ()
+        return _k3_no_evidence(deterministic), (), ()
     evidence_refs = _ordered_refs(_union_refs(deterministic.findings))
     if not evidence_refs:
-        return deterministic, (), ()
+        return _k3_no_evidence(deterministic), (), ()
 
     loop_results: list[ToolResult] = []
     provider_runs: list[ProviderRunMeta] = []
@@ -682,16 +694,15 @@ def _run_p36_risk_loop(
                         eval_flag="live_provider_validation_failed",
                     ), tuple(loop_results), tuple(provider_runs)
                 continue
-            tool_requests, section_markdown = parsed
-            if section_markdown is not None:
+            tool_requests, note = parsed
+            if note is not None:
+                completed = _complete_k3_analyst_note(
+                    deterministic,
+                    note,
+                    role_results,
+                )
                 return (
-                    RoleFindingSet(
-                        role_name="risk_management_agent",
-                        role_status="completed",
-                        findings=deterministic.findings,
-                        warning_codes=tuple(dict.fromkeys((*deterministic.warning_codes, "live_provider_reasoning_used"))),
-                        live_report_markdown=section_markdown,
-                    ),
+                    completed,
                     tuple(loop_results),
                     tuple(provider_runs),
                 )
@@ -755,8 +766,8 @@ def _p36_risk_provider_request(
                     "available_calculation_ids": tuple(P36_RISK_CALC_TOOL_IDS),
                     "response_contract": (
                         "Return either JSON object {'tool_requests': [{'tool_id': <approved calculation ID>, "
-                        "'args': {}}]} or the final markdown analysis section. Tool arguments may use only "
-                        "the enum scope_category single_name, industry, or sector for C1."
+                        "'args': {}}]} or the final strict AnalystNote JSON object. Tool arguments may use "
+                        "only the enum scope_category single_name, industry, or sector for C1."
                     ),
                 }
             ),
@@ -776,21 +787,8 @@ def _p36_risk_provider_request(
     )
 
 
-def _parse_p36_risk_response(content: str) -> tuple[tuple[dict[str, object], ...], str | None] | None:
-    if not content:
-        return None
-    if content.startswith("#### Risk and exposure analysis"):
-        return (), content
-    try:
-        parsed = json.loads(content)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(parsed, dict) or set(parsed) != {"tool_requests"}:
-        return None
-    requests = parsed.get("tool_requests")
-    if not isinstance(requests, list) or not requests or not all(isinstance(item, dict) for item in requests):
-        return None
-    return tuple(requests), None
+def _parse_p36_risk_response(content: str) -> tuple[tuple[dict[str, object], ...], AnalystNote | None] | None:
+    return _parse_p36_analyst_response(content)
 
 
 def _validate_p36_risk_calc_request(
@@ -841,10 +839,10 @@ def _run_p36_public_role_loop(
 
     role_name = deterministic.role_name
     if role_name not in P36_PUBLIC_ROLE_CALC_TOOL_IDS or deterministic.role_status == "skipped" or not deterministic.findings:
-        return deterministic, (), ()
+        return _k3_no_evidence(deterministic), (), ()
     evidence_refs = _ordered_refs(_union_refs(deterministic.findings))
     if not evidence_refs:
-        return deterministic, (), ()
+        return _k3_no_evidence(deterministic), (), ()
 
     loop_results: list[ToolResult] = []
     provider_runs: list[ProviderRunMeta] = []
@@ -882,16 +880,15 @@ def _run_p36_public_role_loop(
                         eval_flag="live_provider_validation_failed",
                     ), tuple(loop_results), tuple(provider_runs)
                 continue
-            tool_requests, section_markdown = parsed
-            if section_markdown is not None:
+            tool_requests, note = parsed
+            if note is not None:
+                completed = _complete_k3_analyst_note(
+                    deterministic,
+                    note,
+                    role_results,
+                )
                 return (
-                    RoleFindingSet(
-                        role_name=role_name,
-                        role_status="completed",
-                        findings=deterministic.findings,
-                        warning_codes=tuple(dict.fromkeys((*deterministic.warning_codes, "live_provider_reasoning_used"))),
-                        live_report_markdown=section_markdown,
-                    ),
+                    completed,
                     tuple(loop_results),
                     tuple(provider_runs),
                 )
@@ -963,7 +960,7 @@ def _p36_public_provider_request(
                     "available_calculation_ids": calculation_ids,
                     "response_contract": (
                         "Return either JSON object {'tool_requests': [{'tool_id': <approved calculation ID>, "
-                        "'args': {}}]} or the final markdown analysis section. Tool arguments must be empty."
+                        "'args': {}}]} or the final strict AnalystNote JSON object. Tool arguments must be empty."
                     ),
                 }
             ),
@@ -986,26 +983,227 @@ def _p36_public_provider_request(
 def _parse_p36_public_response(
     role_name: str,
     content: str,
-) -> tuple[tuple[dict[str, object], ...], str | None] | None:
+) -> tuple[tuple[dict[str, object], ...], AnalystNote | None] | None:
+    del role_name
+    return _parse_p36_analyst_response(content)
+
+
+def _parse_p36_analyst_response(content: str) -> tuple[tuple[dict[str, object], ...], AnalystNote | None] | None:
+    """Parse one mediated calc request or the exact K3 AnalystNote shape."""
+
     if not content:
         return None
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(parsed, dict) and set(parsed) == {"tool_requests"}:
+        requests = parsed.get("tool_requests")
+        if isinstance(requests, list) and requests and all(isinstance(item, dict) for item in requests):
+            return tuple(requests), None
+        return None
+    note = parse_analyst_note(content)
+    return ((), note) if note is not None else None
+
+
+def _complete_k3_analyst_note(
+    deterministic: RoleFindingSet,
+    note: AnalystNote,
+    role_results: tuple[ToolResult, ...],
+) -> RoleFindingSet:
+    """Validate and compose one fact-free AnalystNote into the frozen section."""
+
+    supplied_labels = tuple(
+        str(row[field])
+        for result in role_results
+        for row in prompt_fact_labels_for_tool_result(result)
+        for field in ("fact_key", "value_label")
+        if isinstance(row.get(field), str)
+    )
+    flag = validate_analyst_note(
+        note,
+        role_name=deterministic.role_name,
+        supplied_labels=supplied_labels,
+        frozen_symbol=_k3_frozen_symbol(role_results),
+    )
+    if flag is not None:
+        return _k3_note_withheld(deterministic, flag)
+    markdown = _compose_k3_analyst_section(deterministic.role_name, note, role_results)
+    if not _k3_composed_length_is_valid(deterministic.role_name, markdown):
+        return _k3_note_withheld(deterministic, ANALYST_NOTE_STRUCTURE_FLAG)
+    flag = (
+        validate_p36_risk_analysis_section(markdown=markdown, role_results=role_results)
+        if deterministic.role_name == "risk_management_agent"
+        else validate_p36_public_analysis_section(
+            role_name=deterministic.role_name,
+            markdown=markdown,
+            role_results=role_results,
+        )
+    )
+    if flag is not None:
+        return _k3_note_withheld(deterministic, flag)
+    return RoleFindingSet(
+        role_name=deterministic.role_name,
+        role_status="completed",
+        findings=deterministic.findings,
+        warning_codes=tuple(dict.fromkeys((*deterministic.warning_codes, "live_provider_reasoning_used"))),
+        live_report_markdown=markdown,
+        analysis_status="accepted",
+    )
+
+
+def _k3_note_withheld(deterministic: RoleFindingSet, flag: str) -> RoleFindingSet:
+    return RoleFindingSet(
+        role_name=deterministic.role_name,
+        role_status="validation_failed",
+        findings=deterministic.findings,
+        warning_codes=tuple(dict.fromkeys((*deterministic.warning_codes, flag, "live_provider_validation_failed"))),
+        unavailable_reason=flag,
+        analysis_status="withheld_by_review",
+    )
+
+
+def _k3_no_evidence(deterministic: RoleFindingSet) -> RoleFindingSet:
+    return RoleFindingSet(
+        role_name=deterministic.role_name,
+        role_status=deterministic.role_status,
+        findings=deterministic.findings,
+        warning_codes=deterministic.warning_codes,
+        unavailable_reason=deterministic.unavailable_reason,
+        analysis_status="no_evidence",
+    )
+
+
+def _compose_k3_analyst_section(
+    role_name: str,
+    note: AnalystNote,
+    role_results: tuple[ToolResult, ...],
+) -> str:
+    """Compose all factual prose, labels, tables, and references backend-side."""
+
+    observations = tuple(f"Computed from the saved evidence, {clause}." for clause in note.observation)
+    matters = tuple(f"Per this run's review scope, {clause}." for clause in note.why_it_matters)
+    verified = _k3_verified_line(role_results)
+    table_rows = _k3_table_rows(role_results)
+    table = (P36_RISK_TABLE_HEADER, *table_rows)
+    if role_name == "risk_management_agent":
+        sections = (
+            P36_RISK_HEADINGS[0],
+            P36_RISK_HEADINGS[1],
+            *observations[:2],
+            P36_RISK_HEADINGS[2],
+            *observations[2:],
+            *(matters[:1]),
+            P36_RISK_HEADINGS[3],
+            *(matters[1:]),
+            P36_RISK_HEADINGS[4],
+            verified,
+            *note.what_to_verify,
+            *table,
+        )
+        return "\n\n".join(sections)
+
+    symbol = _k3_frozen_symbol(role_results)
     title_prefixes = {
         "technical_analyst": "#### Technical analysis — ",
         "fundamentals_analyst": "#### Company context — ",
         "news_analyst": "#### Events and macro context — ",
     }
-    if content.startswith(title_prefixes.get(role_name, "")):
-        return (), content
-    try:
-        parsed = json.loads(content)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(parsed, dict) or set(parsed) != {"tool_requests"}:
-        return None
-    requests = parsed.get("tool_requests")
-    if not isinstance(requests, list) or not requests or not all(isinstance(item, dict) for item in requests):
-        return None
-    return tuple(requests), None
+    title = f"{title_prefixes[role_name]}{symbol}" if symbol else f"{title_prefixes[role_name]}unavailable"
+    if role_name == "technical_analyst":
+        headings = ("##### Range and trend context", "##### Volatility context", "##### Gaps and caveats")
+    elif role_name == "fundamentals_analyst":
+        statement_available = any(
+            item.tool_name == "calc_financial_ratios" and item.availability in {"available", "limited"}
+            for item in role_results
+        )
+        headings = (
+            "##### Reported record" if statement_available else "##### What was reviewed",
+            "##### Recency and coverage",
+        )
+    else:
+        macro_available = any(
+            item.tool_name == "calc_macro_series_change" and item.availability in {"available", "limited"}
+            for item in role_results
+        )
+        headings = (
+            "##### Filing and release record",
+            *(("##### Macro backdrop",) if macro_available else ()),
+            "##### Recency against this review",
+        )
+    prose_groups = (observations, matters)
+    sections: list[str] = [title]
+    for index, heading in enumerate(headings):
+        sections.append(heading)
+        sections.extend(prose_groups[index] if index < len(prose_groups) else matters)
+    sections.extend(("##### What was verified", verified, *note.what_to_verify, *table))
+    return "\n\n".join(sections)
+
+
+def _k3_composed_length_is_valid(role_name: str, markdown: str) -> bool:
+    prose = " ".join(
+        line for line in markdown.splitlines() if not line.strip().startswith(("#", "|"))
+    )
+    count = len(re.findall(r"\b[\w'-]+\b", prose))
+    lower, upper = (125, 450) if role_name == "risk_management_agent" else P36_PUBLIC_WORD_BOUNDS[role_name]
+    return lower <= count <= upper
+
+
+def _k3_frozen_symbol(role_results: tuple[ToolResult, ...]) -> str | None:
+    for result in role_results:
+        if result.tool_name != "trade_intent_summary":
+            continue
+        symbol = result.summary_payload.get("symbol_or_underlying")
+        if isinstance(symbol, str) and re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,14}", symbol.strip().upper()):
+            return symbol.strip().upper()
+    return None
+
+
+def _k3_verified_line(role_results: tuple[ToolResult, ...]) -> str:
+    for result in role_results:
+        if not result.source_label:
+            continue
+        as_of = result.as_of.date().isoformat() if result.as_of is not None else next(
+            (
+                str(row["value_label"])
+                for row in prompt_fact_labels_for_tool_result(result)
+                if isinstance(row.get("value_label"), str)
+                and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(row["value_label"]))
+            ),
+            None,
+        )
+        if as_of is None:
+            continue
+        method_label = result.summary_payload.get("method_label")
+        method = f" using {method_label}" if isinstance(method_label, str) and method_label else ""
+        return (
+            f"Computed from the saved evidence, {result.source_label}{method} was cross-checked against "
+            f"{as_of}; unavailable frozen inputs remain a named gap."
+        )
+    return "Computed from the saved evidence, no dated source could be cross-checked because the frozen inputs were unavailable."
+
+
+def _k3_table_rows(role_results: tuple[ToolResult, ...]) -> tuple[str, ...]:
+    rows: list[str] = []
+    for result in role_results:
+        if len(rows) >= 4:
+            break
+        source = result.source_label or "Frozen saved evidence"
+        as_of = result.as_of.date().isoformat() if result.as_of is not None else "as-of unavailable"
+        for fact in prompt_fact_labels_for_tool_result(result):
+            if len(rows) >= 4:
+                break
+            key = str(fact.get("fact_key") or "")
+            label = FACT_DISPLAY_LABELS.get(key)
+            value = fact.get("value_label")
+            if label is None or not isinstance(value, str) or not value:
+                continue
+            rows.append(
+                f"| {label} | {value} | Computed from the saved evidence; {source} {as_of} | {result.availability} |"
+            )
+    return tuple(rows) or (
+        "| Frozen evidence status | No reviewed calculation value was available | Computed from the saved evidence; as-of unavailable | unavailable |",
+    )
 
 
 def _validate_p36_public_calc_request(
@@ -1648,6 +1846,11 @@ def _live_provider_fallback(
         findings=deterministic.findings,
         warning_codes=warning_codes,
         unavailable_reason=None,
+        analysis_status=(
+            "provider_unavailable"
+            if status in {"unavailable", "provider_timeout", "provider_auth_error", "rate_limited", "quota_exceeded"}
+            else "withheld_by_review"
+        ),
     )
 
 
@@ -1664,6 +1867,7 @@ def _live_provider_skipped(
         findings=(),
         warning_codes=tuple(dict.fromkeys((warning_code, *((eval_flag,) if eval_flag else ())))),
         unavailable_reason=warning_code,
+        analysis_status="provider_unavailable",
     )
 
 
@@ -2179,6 +2383,7 @@ def _tool_run_artifact_payload(
         auditor=asdict(run_state.auditor),
         provider_runs=tuple(asdict(provider_run) for provider_run in run_state.provider_runs),
         pm_synthesis=asdict(run_state.pm_synthesis) if run_state.pm_synthesis is not None else None,
+        pm_fallback_reason=run_state.pm_fallback_reason,  # type: ignore[arg-type]
         open_questions=run_state.open_questions,
         synthesis_evidence_references=synthesis_refs,
         warning_codes=warning_codes,
@@ -2227,6 +2432,7 @@ def _frozen_finding_set(finding_set: RoleFindingSet) -> dict:
         "warning_codes": finding_set.warning_codes,
         "unavailable_reason": finding_set.unavailable_reason,
         "live_report_markdown": replace_internal_display_tokens(finding_set.live_report_markdown),
+        "analysis_status": finding_set.analysis_status,
     }
 
 
@@ -2246,6 +2452,7 @@ def _role_summary_from_findings(finding_set: RoleFindingSet) -> SavedAgentTeamRo
         provider_status=provider_status,
         summary_markdown=summary,
         live_report_markdown=replace_internal_display_tokens(finding_set.live_report_markdown),
+        analysis_status=finding_set.analysis_status,
         evidence_references=refs,
         warning_codes=finding_set.warning_codes,
         unavailable_reason=finding_set.unavailable_reason,
